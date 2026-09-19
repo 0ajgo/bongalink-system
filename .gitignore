@@ -1,0 +1,67 @@
+# ---- Secrets & environment ----
+.env
+.env.*
+!.env.example
+Backend/.env
+*.pem
+*.key
+*.p12
+credentials.json
+service-account*.json
+
+# ---- Node / Express ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+
+# ---- Python / TensorFlow ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+.ipynb_checkpoints/
+
+# ---- ML models & datasets ----
+*.h5
+*.keras
+*.pb
+*.ckpt
+*.tflite
+saved_model/
+checkpoints/
+data/raw/
+
+# ---- Database ----
+*.sql.bak
+*.sqlite
+*.sqlite3
+*.db
+dumps/
+
+# ---- Runtime uploads ----
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+
+# ---- Build & deployment ----
+dist/
+build/
+.docker/
+docker-compose.override.yml
+
+# ---- Logs & temp ----
+logs/
+*.log
+tmp/
+temp/
+
+# ---- Editor & OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

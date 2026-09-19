@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout — Bongalink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../CSS/store.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="shell masthead__inner">
+    <a class="wordmark" href="../Homepage/homepage.html">Bongalink <span>est. 2008</span></a>
+    <a class="back-link" href="cart.html">Back to cart</a>
+  </div>
+</header>
+
+<main class="shell page">
+  <div id="checkout-body">
+
+    <div class="page__head">
+      <div>
+        <h1>Checkout</h1>
+        <p>Delivery details are saved to your Bongalink account so you do not have to re-enter them next time.</p>
+      </div>
+    </div>
+
+    <div class="layout">
+
+      <!-- ================================================
+           CHECKOUT FORM — five sections feeding one payload
+           built in the script's submit handler (see "6. SUBMIT
+           HANDLER" below): Contact -> contact{}, Delivery
+           address -> recipient{}+address{}, Delivery region ->
+           address.shippingZone, Payment -> payment{}, Privacy ->
+           consent{}. Field names match `name="..."` attributes,
+           which validate()/showError() below look up by name.
+           ================================================ -->
+      <form id="checkout-form" novalidate>
+
+        <section class="form-block">
+          <div class="form-block__head">
+            <h2>Contact</h2>
+            <p>Order updates are sent here</p>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="email">Email address</label>
+              <input type="email" id="email" name="email" autocomplete="email" required>
+              <span class="field__error" data-error-for="email"></span>
+            </div>
+            <div class="field">
+              <label for="phone">Mobile number</label>
+              <input type="tel" id="phone" name="phone" inputmode="tel" placeholder="09XX XXX XXXX" autocomplete="tel" required>
+              <span class="field__hint">The courier uses this to reach you on delivery day.</span>
+              <span class="field__error" data-error-for="phone"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-block">
+          <div class="form-block__head">
+            <h2>Delivery address</h2>
+            <p>Philippines only</p>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="firstName">First name</label>
+              <input type="text" id="firstName" name="firstName" autocomplete="given-name" required>
+              <span class="field__error" data-error-for="firstName"></span>
+            </div>
+            <div class="field">
+              <label for="lastName">Last name</label>
+              <input type="text" id="lastName" name="lastName" autocomplete="family-name" required>
+              <span class="field__error" data-error-for="lastName"></span>
+            </div>
+            <div class="field field--wide">
+              <label for="street">House or unit number and street</label>
+              <input type="text" id="street" name="street" autocomplete="address-line1" required>
+              <span class="field__error" data-error-for="street"></span>
+            </div>
+            <div class="field">
+              <label for="barangay">Barangay</label>
+              <input type="text" id="barangay" name="barangay" autocomplete="address-line2" required>
+              <span class="field__error" data-error-for="barangay"></span>
+            </div>
+            <div class="field">
+              <label for="city">City or municipality</label>
+              <input type="text" id="city" name="city" autocomplete="address-level2" required>
+              <span class="field__error" data-error-for="city"></span>
+            </div>
+            <div class="field">
+              <label for="province">Province</label>
+              <input type="text" id="province" name="province" autocomplete="address-level1" placeholder="Leave blank for Metro Manila">
+            </div>
+            <div class="field">
+              <label for="postalCode">Postal code</label>
+              <input type="text" id="postalCode" name="postalCode" inputmode="numeric" maxlength="4" autocomplete="postal-code" required>
+              <span class="field__error" data-error-for="postalCode"></span>
+            </div>
+            <div class="field field--wide">
+              <label for="landmark">Landmark or delivery note (optional)</label>
+              <input type="text" id="landmark" name="landmark" placeholder="Gate colour, nearest corner, best time to deliver">
+            </div>
+          </div>
+        </section>
+
+        <section class="form-block">
+          <div class="form-block__head">
+            <h2>Delivery region</h2>
+            <p>Sets the shipping fee</p>
+          </div>
+          <!-- Filled in by the script from cart.js's SHIPPING_ZONES —
+               see "3. RENDER STATIC SECTIONS" below. Not hand-written
+               here so the fee shown always matches what the server
+               will actually charge. -->
+          <div class="choices" id="zone-choices"></div>
+          <span class="field__error" data-error-for="zone"></span>
+        </section>
+
+        <section class="form-block">
+          <div class="form-block__head">
+            <h2>Payment</h2>
+            <p>Pay after the order is confirmed</p>
+          </div>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="payment" value="BANK_TRANSFER" checked>
+              <span>
+                <span class="choice__name">Bank transfer</span>
+                <span class="choice__detail">Account details are sent to your email once stock is confirmed.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="payment" value="GCASH">
+              <span>
+                <span class="choice__name">GCash</span>
+                <span class="choice__detail">Send to the shop number shown on your order page, then upload the receipt.</span>
+              </span>
+            </label>
+          </div>
+          <div class="choice-note">
+            <p>Your items are held for 24 hours while payment clears. If nothing arrives in that window the stock goes back on sale automatically.</p>
+            <p>Upload proof of payment from your order page so the shop can release the parcel to the courier.</p>
+          </div>
+        </section>
+
+        <section class="form-block">
+          <div class="form-block__head">
+            <h2>Privacy</h2>
+          </div>
+          <div class="choices">
+            <label class="consent">
+              <input type="checkbox" id="consentRequired" name="consentRequired" required>
+              <span>I allow Bongalink to store and use my name, contact number, email and delivery address to process and deliver this order. Required to place an order.</span>
+            </label>
+            <label class="consent consent--optional">
+              <input type="checkbox" id="consentMarketing" name="consentMarketing">
+              <span>Send me restock alerts and promotions. Optional, and you can turn this off any time from your account settings.</span>
+            </label>
+          </div>
+          <span class="field__error" data-error-for="consentRequired"></span>
+        </section>
+
+      </form>
+
+      <!-- ================================================
+           ORDER SUMMARY — read-only recap of the cart, kept in
+           sync with the chosen shipping zone by paintTotals()
+           ================================================ -->
+      <aside class="summary" aria-label="Order summary">
+        <h2>Order summary</h2>
+        <div class="summary__items" id="summary-items"></div>
+        <div class="summary__row"><span>Subtotal</span><strong class="money" id="sum-subtotal">—</strong></div>
+        <div class="summary__row"><span id="sum-shipping-label">Shipping</span><strong class="money" id="sum-shipping">Choose a region</strong></div>
+        <div class="summary__total">
+          <span>Total due</span>
+          <b class="money" id="sum-total">—</b>
+        </div>
+        <p class="field__error" id="order-error" style="margin-bottom:8px"></p>
+        <button class="button" type="submit" form="checkout-form" id="place-order">Place order</button>
+        <p class="summary__note">Placing an order does not charge you. The shop confirms stock, then sends payment instructions.</p>
+      </aside>
+
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="shell footer__inner">
+    <span>Bongalink — computer, laptop and printer parts since 2008.</span>
+    <span>Secured checkout. Card details are never collected.</span>
+  </div>
+</footer>
+
+<!-- api.js -> apiFetch()/isLoggedIn(); cart.js -> readCart()/writeCart()/
+     money()/subtotalOf()/shippingFor()/SHIPPING_ZONES. Load order matters:
+     both must be present before this inline script runs. -->
+<script src="../../JS/api.js"></script>
+<script src="../../JS/cart.js"></script>
+<script>
+/* ---------------------------------------------------------------------
+   1. AUTH GUARD
+   Placing an order needs a JWT (POST /api/orders requires it), so bounce
+   straight to login if there's no session — no point rendering a form
+   the user can't actually submit.
+   --------------------------------------------------------------------- */
+if (!isLoggedIn()) {
+  window.location.href = "../Homepage/login.html";
+}
+
+/* ---------------------------------------------------------------------
+   2. STATE + DOM REFERENCES
+   `cart` is a read-only snapshot for this page — checkout doesn't let
+   you edit quantities, only cart.html does. `selectedZone` starts null
+   so the shipping/total fields show "Choose a region" until one is
+   picked (see paintTotals()).
+   --------------------------------------------------------------------- */
+const cart = readCart();
+let selectedZone = null;
+
+const els = {
+  items:    document.getElementById("summary-items"),
+  subtotal: document.getElementById("sum-subtotal"),
+  shipping: document.getElementById("sum-shipping"),
+  shipLbl:  document.getElementById("sum-shipping-label"),
+  total:    document.getElementById("sum-total"),
+  zones:    document.getElementById("zone-choices"),
+  form:     document.getElementById("checkout-form")
+};
+
+/* ---------------------------------------------------------------------
+   3. RENDER STATIC SECTIONS — the order-summary mini cart and the
+   shipping-zone radio list. Both are built once from data (the cart
+   array, SHIPPING_ZONES) rather than hand-written in the HTML above,
+   so they can never drift out of sync with what's actually in the cart
+   or what the server will actually charge.
+   --------------------------------------------------------------------- */
+els.items.innerHTML = cart.map(item => `
+  <div class="mini-line">
+    <span class="mini-line__wrap">
+      <img class="mini-line__thumb" src="${item.image}" alt="">
+      <span class="mini-line__count">${item.quantity}</span>
+    </span>
+    <span class="mini-line__name">${item.name}<br><span class="sku">${item.productId}</span></span>
+    <span class="mini-line__price">${money(item.unitPrice * item.quantity)}</span>
+  </div>`).join("");
+
+els.zones.innerHTML = Object.entries(SHIPPING_ZONES).map(([key, zone]) => `
+  <label class="choice">
+    <input type="radio" name="zone" value="${key}">
+    <span>
+      <span class="choice__name">${zone.label}</span>
+      <span class="choice__detail">Arrives in ${zone.eta}</span>
+    </span>
+    <span class="choice__price">${money(zone.fee)}</span>
+  </label>`).join("");
+
+els.zones.addEventListener("change", (event) => {
+  selectedZone = event.target.value;
+  paintTotals();
+  clearError("zone");
+});
+
+/* ---------------------------------------------------------------------
+   4. TOTALS — recomputed on every zone change (see the change listener
+   above). Subtotal never changes on this page; only the shipping fee
+   and therefore the total depend on `selectedZone`.
+   --------------------------------------------------------------------- */
+function paintTotals() {
+  const subtotal = subtotalOf(cart);
+  const zone = shippingFor(selectedZone);
+
+  els.subtotal.textContent = money(subtotal);
+
+  if (zone) {
+    els.shipLbl.textContent = `Shipping to ${zone.label}`;
+    els.shipping.textContent = money(zone.fee);
+    els.total.textContent = money(subtotal + zone.fee);
+  } else {
+    els.shipLbl.textContent = "Shipping";
+    els.shipping.textContent = "Choose a region";
+    els.total.textContent = money(subtotal);
+  }
+}
+
+paintTotals();
+
+/* ---------------------------------------------------------------------
+   5. VALIDATION — every check here mirrors a constraint the backend
+   also enforces (see Backend/routes/orders.js), so a well-behaved
+   browser never gets a surprise 400 from the server. It's belt-and-
+   braces: this is for instant feedback, the server is the real gate.
+   --------------------------------------------------------------------- */
+function showError(name, message) {
+  const slot = document.querySelector(`[data-error-for="${name}"]`);
+  if (slot) slot.textContent = message;
+  const input = els.form.elements[name];
+  if (input && input.setAttribute) input.setAttribute("aria-invalid", "true");
+}
+
+function clearError(name) {
+  const slot = document.querySelector(`[data-error-for="${name}"]`);
+  if (slot) slot.textContent = "";
+  const input = els.form.elements[name];
+  if (input && input.removeAttribute) input.removeAttribute("aria-invalid");
+}
+
+function validate() {
+  const required = ["email", "phone", "firstName", "lastName", "street", "barangay", "city", "postalCode"];
+  let firstBad = null;
+
+  required.forEach(name => {
+    clearError(name);
+    const value = els.form.elements[name].value.trim();
+    if (!value) {
+      showError(name, "This field is required.");
+      firstBad ??= name;
+    }
+  });
+
+  const email = els.form.elements.email.value.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    showError("email", "Enter a valid email address.");
+    firstBad ??= "email";
+  }
+
+  const phone = els.form.elements.phone.value.replace(/\D/g, "");
+  if (phone && !/^(09\d{9}|639\d{9})$/.test(phone)) {
+    showError("phone", "Enter an 11-digit mobile number starting with 09.");
+    firstBad ??= "phone";
+  }
+
+  const postal = els.form.elements.postalCode.value.trim();
+  if (postal && !/^\d{4}$/.test(postal)) {
+    showError("postalCode", "Philippine postal codes are 4 digits.");
+    firstBad ??= "postalCode";
+  }
+
+  if (!selectedZone) {
+    showError("zone", "Choose a delivery region so shipping can be calculated.");
+    firstBad ??= "zone";
+  }
+
+  if (!els.form.elements.consentRequired.checked) {
+    showError("consentRequired", "Tick the box to allow Bongalink to process your delivery details.");
+    firstBad ??= "consentRequired";
+  }
+
+  return firstBad;
+}
+
+/* ---------------------------------------------------------------------
+   6. SUBMIT HANDLER — the shape of `payload` here is the actual API
+   contract: it must match what POST /api/orders destructures in
+   Backend/routes/orders.js (`{ contact, recipient, address, payment,
+   consent }`). If you add a field on either side, update both places.
+   On success the order id comes back and cart.html/checkout.html's
+   shared local cart is cleared; on failure the real server error
+   message is shown inline instead of pretending it worked.
+   --------------------------------------------------------------------- */
+els.form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const bad = validate();
+  if (bad) {
+    const target = els.form.elements[bad];
+    if (target && target.focus) target.focus();
+    return;
+  }
+
+  const errorSlot = document.getElementById("order-error");
+  errorSlot.textContent = "";
+
+  const payload = {
+    contact: {
+      email: els.form.elements.email.value.trim(),
+      phone: els.form.elements.phone.value.trim()
+    },
+    recipient: {
+      firstName: els.form.elements.firstName.value.trim(),
+      lastName:  els.form.elements.lastName.value.trim()
+    },
+    address: {
+      street:       els.form.elements.street.value.trim(),
+      barangay:     els.form.elements.barangay.value.trim(),
+      city:         els.form.elements.city.value.trim(),
+      province:     els.form.elements.province.value.trim() || null,
+      postalCode:   els.form.elements.postalCode.value.trim(),
+      landmark:     els.form.elements.landmark.value.trim() || null,
+      shippingZone: selectedZone
+    },
+    payment: {
+      method: els.form.elements.payment.value
+    },
+    consent: {
+      marketing: els.form.elements.consentMarketing.checked,
+      policyVersion: "2026-01"
+    }
+  };
+
+  const button = document.getElementById("place-order");
+  button.disabled = true;
+  button.textContent = "Placing order…";
+
+  try {
+    const result = await apiFetch("/orders", { method: "POST", body: JSON.stringify(payload) });
+    const reference = `BGL-${new Date().getFullYear()}-${String(result.orderId).padStart(4, "0")}`;
+    writeCart([]);
+    showConfirmation(reference);
+  } catch (err) {
+    console.error(err);
+    errorSlot.textContent = err.message || "Checkout failed. Please try again.";
+    button.disabled = false;
+    button.textContent = "Place order";
+  }
+});
+
+/* ---------------------------------------------------------------------
+   7. CONFIRMATION — replaces the whole form with a receipt screen.
+   `reference` is a display-only label built from the real orderId
+   the server returned (see the submit handler above), not something
+   the server generates itself.
+   --------------------------------------------------------------------- */
+function showConfirmation(reference) {
+  document.getElementById("checkout-body").innerHTML = `
+    <div class="confirm">
+      <h1>Order placed</h1>
+      <p>Bongalink is confirming stock now. Payment instructions arrive by email within the hour.</p>
+      <p class="confirm__ref">${reference}</p>
+      <p>Keep this reference. You can use it to track the parcel once the courier picks it up.</p>
+      <a class="button button--quiet" href="../Homepage/homepage.html" style="margin-top:22px;display:inline-block;width:auto;padding-inline:28px">Back to the shop</a>
+    </div>`;
+  window.scrollTo({ top: 0 });
+}
+</script>
+</body>
+</html>

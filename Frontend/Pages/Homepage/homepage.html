@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bongalink — Product Catalog</title>
+<link rel="stylesheet" href="../../CSS/homepage.css">
+</head>
+<body>
+
+<!-- =========================================================
+     TOP NAV — brand logo + Catalog / Login / About links
+     ========================================================= -->
+<header class="top">
+<div class="brand">
+<a href="homepage.html" class="brand-name">Bongalink</a>
+</div>
+
+<nav class="tabs">
+<a href="homepage.html" class="nav-link active">Product Catalog</a>
+<a href="login.html" class="nav-link">Login / Register</a>
+<a href="#" class="nav-link" id="aboutLink">About</a>
+<a href="../COpage/cart.html" class="nav-link">Cart <span class="cart-badge" data-cart-count>0</span></a>
+</nav>
+</header>
+
+<!-- =========================================================
+     HERO — page title + product search box (#searchInput)
+     ========================================================= -->
+<section class="hero">
+<div>
+<h1>Bongalink</h1>
+<p>Product Catalog</p>
+</div>
+
+<div class="search">
+<input id="searchInput" type="text" placeholder="Search products, brands, or categories...">
+</div>
+</section>
+
+<div class="layout">
+
+<!-- =========================================================
+     SIDEBAR — category filter list (#catList) + admin
+     "List a Product" trigger button (#openAddBtn)
+     ========================================================= -->
+<aside class="sidebar">
+<h3>Categories</h3>
+<div id="catList"></div>
+
+<button class="add-listing-btn" id="openAddBtn">
++ List a Product
+</button>
+</aside>
+
+<!-- =========================================================
+     MAIN — product grid (#grid), filtered by category + search
+     ========================================================= -->
+<main>
+
+<div class="grid-head">
+<h2 id="gridTitle">All Available Products</h2>
+<span class="count" id="gridCount"></span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+</main>
+
+<!-- =========================================================
+     CART SIDEBAR — line items (#cartLines), totals, checkout
+     ========================================================= -->
+<aside class="cart">
+
+<div class="cart-head">
+<h3>Shopping Cart</h3>
+<span class="cart-badge" id="cartBadge">0</span>
+</div>
+
+<div id="cartLines"></div>
+
+<div class="totals">
+
+<div class="trow">
+<span>Subtotal</span>
+<span id="subtotal">₱0.00</span>
+</div>
+
+<div class="trow">
+<span>Est. Delivery</span>
+<span>Free</span>
+</div>
+
+<div class="trow total">
+<span>Total</span>
+<span id="total">₱0.00</span>
+</div>
+
+</div>
+
+<button class="checkout-btn" id="checkoutBtn" disabled>
+Proceed to Checkout
+</button>
+
+</aside>
+
+</div>
+
+<!-- =========================================================
+     MODAL — "Admin Login Required"
+     Shown when a non-admin clicks "+ List a Product" or a
+     product's delete (×) button.
+     ========================================================= -->
+<div class="overlay" id="adminLoginOverlay">
+<div class="modal-wrap">
+<div class="modal admin-access-modal">
+
+<button class="close-x" id="closeAdminLogin">×</button>
+
+<div class="admin-icon">🔒</div>
+
+<h2>Admin Login Required</h2>
+
+<p class="sub">
+Only an administrator can add products to the Bongalink catalog.
+Please login with an admin account to continue.
+</p>
+
+<div class="modal-actions">
+<button class="btn-ghost" id="cancelAdminLogin">Cancel</button>
+<a href="login.html" class="btn-primary admin-login-link">Admin Login</a>
+</div>
+
+</div>
+</div>
+</div>
+
+<!-- =========================================================
+     MODAL — "List a Product" (admin only)
+     Submitting #productForm adds a new item straight into the
+     inventory (see js/Homepage.js, section 11, and the
+     `products` table in database/bongalink_schema.sql).
+     ========================================================= -->
+<div class="overlay" id="productOverlay">
+<div class="modal-wrap">
+<div class="modal">
+
+<button class="close-x" id="closeProductModal">×</button>
+
+<h2>List a Product</h2>
+<p class="sub">Add a new product to the Bongalink catalog.</p>
+
+<form id="productForm">
+
+<div class="field">
+<label for="productName">Product Name</label>
+<input id="productName" type="text" placeholder="Enter product name" required>
+</div>
+
+<div class="row2">
+
+<div class="field">
+<label for="productCategory">Category</label>
+<select id="productCategory" required>
+<option value="">Select category</option>
+<option value="Printer Parts">Printer Parts</option>
+<option value="Computer Parts">Computer Parts</option>
+<option value="Laptop Parts">Laptop Parts</option>
+<option value="Accessories">Accessories</option>
+<option value="Electronics">Electronics</option>
+<option value="Other">Other</option>
+</select>
+</div>
+
+<div class="field">
+<label for="productBrand">Brand</label>
+<input id="productBrand" type="text" placeholder="e.g. Epson">
+</div>
+
+</div>
+
+<div class="row2">
+
+<div class="field">
+<label for="productPrice">Price</label>
+<input id="productPrice" type="number" min="0" step="0.01" placeholder="0.00" required>
+</div>
+
+<div class="field">
+<label for="productStock">Stock Quantity</label>
+<input id="productStock" type="number" min="0" step="1" placeholder="0" required>
+</div>
+
+</div>
+
+<div class="field">
+<label for="productImage">Product Image</label>
+<input id="productImage" type="file" accept="image/*">
+<div class="image-preview" id="imagePreview">No image selected</div>
+</div>
+
+<div class="field">
+<label for="productDescription">Description</label>
+<textarea id="productDescription" placeholder="Enter product description"></textarea>
+</div>
+
+<div class="modal-actions">
+<button type="button" class="btn-ghost" id="cancelProduct">Cancel</button>
+<button type="submit" class="btn-primary">Add Product</button>
+</div>
+
+</form>
+
+</div>
+</div>
+</div>
+
+<!-- Toast notification (bottom-center, used for all quick feedback messages) -->
+<div class="toast" id="toast"></div>
+
+<!-- api.js must load first: Homepage.js depends on apiFetch() and API_BASE_URL.
+     cart.js must load before Homepage.js too: it mirrors added/removed items
+     into the localStorage cart that cart.html and checkout.html read. -->
+<script src="../../JS/api.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/Homepage.js"></script>
+
+</body>
+</html>

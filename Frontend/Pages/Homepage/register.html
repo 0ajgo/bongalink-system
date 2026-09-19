@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bongalink — Register</title>
+<!-- Reuses login.css: register.html mirrors login.html's card/field styles -->
+<link rel="stylesheet" href="../../CSS/login.css">
+</head>
+<body>
+
+<!-- =========================================================
+     BACKGROUND — full-bleed looping video + dark overlay, same
+     treatment as login.html so the two pages feel like one flow
+     ========================================================= -->
+<video class="background-video" autoplay muted loop playsinline>
+<source src="../../Images/Bongalink.mp4" type="video/mp4">
+</video>
+
+<div class="video-overlay"></div>
+
+<main class="login-page">
+<div class="login-card">
+
+<div class="brand">
+<a href="homepage.html">Bongalink</a>
+</div>
+
+<div class="login-header">
+<h1>Create Account</h1>
+<p>Register to start shopping on Bongalink.</p>
+</div>
+
+<!-- =========================================================
+     REGISTER FORM — submit handled in js/register.js section 3.
+     POSTs to /api/auth/register, which INSERTs a real row into
+     the `users` table (always role "user" — see the backend
+     comment in Backend/routes/auth.js for why admins are never
+     created through this form).
+     ========================================================= -->
+<form id="registerForm">
+
+<div class="field">
+<label for="regUsername">Username</label>
+<input id="regUsername" type="text" placeholder="Choose a username" autocomplete="username" required>
+</div>
+
+<div class="field">
+<label for="regEmail">Email</label>
+<input id="regEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+</div>
+
+<div class="field">
+<label for="regPassword">Password</label>
+
+<div class="password-box">
+<input id="regPassword" type="password" placeholder="Create a password" autocomplete="new-password" required>
+<button type="button" id="toggleRegPassword">Show</button>
+</div>
+</div>
+
+<div class="field">
+<label for="regConfirmPassword">Confirm Password</label>
+
+<div class="password-box">
+<input id="regConfirmPassword" type="password" placeholder="Re-enter your password" autocomplete="new-password" required>
+<button type="button" id="toggleRegConfirmPassword">Show</button>
+</div>
+</div>
+
+<p id="registerMessage" class="login-message"></p>
+
+<button type="submit" class="login-btn">Create Account</button>
+
+</form>
+
+<!-- =========================================================
+     GUEST / LOGIN LINKS — no auth needed, plain navigation
+     ========================================================= -->
+<div class="divider">
+<span>or</span>
+</div>
+
+<a href="homepage.html" class="catalog-btn">
+Browse Catalog as Guest
+</a>
+
+<p class="register-text">
+Already have an account?
+<a href="login.html">Login</a>
+</p>
+
+</div>
+</main>
+
+<!-- api.js must load first: register.js depends on apiFetch() and API_BASE_URL -->
+<script src="../../JS/api.js"></script>
+<script src="../../JS/register.js"></script>
+
+</body>
+</html>
