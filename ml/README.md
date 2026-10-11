@@ -1,14 +1,18 @@
-# Bongalink — Stock Prediction & Trend Shift (ML + Rust backend)
+# Bongalink — Stock Prediction & Trend Shift (ML)
 
-Implements the Machine Learning part of the Database System objective (REQ07, REQ028, REQ032):
-models are trained with **TensorFlow in Google Colab**, and the **Rust backend** serves the results to the admin dashboard.
+Implements the Machine Learning part of the Database System objective (REQ07, REQ028, REQ032).
+The models are first trained with **TensorFlow in Google Colab**. The **Python ML worker**
+(`worker/`) then keeps the predictions up to date as products are added, removed or
+restocked, and retrains them automatically with TensorFlow. The Node API serves the
+results to the admin dashboard.
 
 ```
 colab/bongalink_training.ipynb   Colab notebook: data -> train -> calibrate -> export JSON
 colab/build_notebook.py          Source of the notebook (python build_notebook.py --test runs the non-TF cells)
-backend/                         Rust (axum + sqlx/MySQL) API
-backend/models/*.json            Model files exported by the notebook
-db/schema.sql                    MySQL tables the API reads + stock audit trigger
+worker/                          Python ML runtime: change detection, inference, automatic retraining (see worker/README.md)
+backend/models/*.json            Colab export: the worker's starting model + fixed trend threshold + parity example
+backend/                         Rust parity checker: `cargo test` proves the feature/forecast/trend maths match the notebook
+db/schema.sql                    (superseded: the live schema is Backend/database/bongalink_schema.sql + migrations/)
 ```
 
 ## The two algorithms
@@ -16,22 +20,24 @@ db/schema.sql                    MySQL tables the API reads + stock audit trigge
 | | Stock prediction | Trend shift |
 |---|---|---|
 | Method | Linear regression on 6 features of the last 28 days | Segmented (two-piece) linear regression; breakpoint found by optimization |
-| Trained in Colab | TensorFlow `Dense(1)`, verified against closed-form least squares | TensorFlow curve fit; shift threshold calibrated on 600 labeled series |
+| Trained with TensorFlow | `Dense(1)` in Colab, and again automatically by the worker on real orders (nightly / every 200 sold items) | TensorFlow curve fit; shift threshold calibrated on 600 labeled series in Colab |
 | Output | Units expected to sell in the next 7 days, days until stockout, reorder suggestion | Whether demand changed direction, when, and which way |
 
-The models in `backend/models/` right now are **placeholders** from synthetic data so the backend runs immediately.
-Replace them with your own Colab export.
+The models in `backend/models/` right now are **placeholders** from synthetic data. The worker registers them as
+`v0-colab` and replaces them as soon as a model retrained on real orders validates better.
 
 ## Workflow
 
-1. Open `colab/bongalink_training.ipynb` in Google Colab, `Runtime → Run all`.
-   It downloads `stock_lr.json`, `trend_config.json`, `parity.json`.
-2. Copy the three files into `backend/models/`.
-3. `cd backend && cargo test` — confirms Rust computes exactly what the notebook computed.
-4. `mysql -u root -p < ../db/schema.sql`, then `cp .env.example .env` and edit `DATABASE_URL`.
-5. `cargo run` → `http://127.0.0.1:8080`
+1. Run the worker: see `worker/README.md` (Python 3.12 venv with TensorFlow, `python -m bongalink_ml`).
+2. Optional: retrain in Colab with `DATA_SOURCE = "mysql"`, copy the three exported files into `backend/models/`,
+   and run `cd backend && cargo test` to confirm the maths still match. The Python worker runs the
+   same parity check (`worker/tests/test_core.py`).
 
-When real orders accumulate (at least ~4 months), set `DATA_SOURCE = "mysql"` in the notebook and retrain.
+## Legacy Rust API
+
+The Rust server (`cargo run`) is no longer the runtime. Its SQL has been updated to the live schema, but
+the dashboard reads `ml_predictions` through the Node API (`/api/admin/ml/*`) instead. The endpoints below
+are kept for reference only.
 
 ## Endpoints
 
@@ -51,13 +57,14 @@ curl -X POST localhost:8080/api/ml/stock-forecast -H 'Content-Type: application/
   -d '{"history":[3,2,4,1,0,5,3,2,3,4,2,6,3,3,4,2,5,3,4,6,2,5,4,3,6,5,4,7],"current_stock":10}'
 ```
 
-## Contract between notebook and backend
+## Contract between notebook, worker and Rust checker
 
-Changing any of these requires changing **both** `make_features` (notebook) and `src/features.rs` (Rust), then retraining:
+Changing any of these requires changing `make_features` in the notebook, `worker/bongalink_ml/core.py`
+**and** `backend/src/features.rs`, then retraining:
 
 - `WINDOW = 28`, `HORIZON = 7`, `TREND_DAYS = 84`, `MIN_SEGMENT = 14`
 - Features: `mean_7, mean_14, mean_28, slope_14, zero_ratio_28, paydays_next_7`
 - Payday window: 14th–16th, last two days of the month, and the 1st
-- "Units sold" = order items in orders with status `paid`, `shipped`, or `delivered`
+- "Units sold" = order items in orders with status `processing` or `completed`, dated by `orders.created_at`
 
-`cargo test` fails loudly if the two sides drift apart.
+`cargo test` and `worker/tests/test_core.py` both fail loudly if any side drifts from `parity.json`.

@@ -51,6 +51,8 @@ router.post("/", requireAuth, async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
+    // Tags the stock decrements below in ml_events (see migrations/003_ml_sync.sql).
+    await connection.query("SET @app_user_id = ?", [req.user.userId]);
     await connection.beginTransaction();
 
     // --- Step 1: find the user's cart row -------------------------------
@@ -66,7 +68,7 @@ router.post("/", requireAuth, async (req, res) => {
     // too, so a second checkout racing this one can't read the same
     // stock_quantity and oversell the same last unit.
     const [items] = await connection.query(
-      `SELECT ci.product_id, ci.quantity, p.price, p.stock_quantity
+      `SELECT ci.product_id, ci.quantity, p.price, p.stock_quantity, p.is_active
        FROM cart_items ci
        JOIN products p ON p.product_id = ci.product_id
        WHERE ci.cart_id = ? FOR UPDATE`,
@@ -82,6 +84,10 @@ router.post("/", requireAuth, async (req, res) => {
     // The cart could have been sitting untouched for a while, and
     // someone else may have bought the last units in the meantime.
     for (const item of items) {
+      if (!item.is_active) {
+        await connection.rollback();
+        return res.status(409).json({ error: "A product in your cart is no longer available. Please review your cart." });
+      }
       if (item.quantity > item.stock_quantity) {
         await connection.rollback();
         return res.status(409).json({ error: "Some items no longer have enough stock. Please review your cart." });
@@ -162,6 +168,7 @@ router.post("/", requireAuth, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Checkout failed." });
   } finally {
+    await connection.query("SET @app_user_id = NULL").catch(() => {});
     connection.release();
   }
 });

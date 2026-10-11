@@ -65,3 +65,5 @@ temp/
 .DS_Store
 Thumbs.db
 desktop.ini
+# ---- ML worker runtime model versions (written by the worker) ----
+ml/worker/models/

@@ -1,8 +1,15 @@
 /* =====================================================================
    routes/products.js
-   Powers: the product grid + search/filter on homepage.html, and the
-   admin "List a Product" / delete (×) actions.
+   Powers: the product grid + search/filter on homepage.html, the
+   admin "List a Product" / delete (×) actions, and the stock/price
+   edits on the admin inventory page (Pages/Admin/inventory.html).
    Backing table: products (this IS the inventory table)
+
+   Removing a product is a soft delete (is_active = 0): order_items
+   and the sales history the ML trends are built from keep pointing at
+   a real row. Every add/remove/stock/price change is written to
+   ml_events by database triggers (migrations/003_ml_sync.sql); the
+   ML worker picks those up on its own, so nothing here waits on it.
 
    Images: uploaded files are saved to /uploads and served statically
    from server.js as /uploads/<filename>. The DB stores image_path as
@@ -50,7 +57,7 @@ router.get("/", async (req, res) => {
            p.description, p.created_by, p.created_at
     FROM products p
     JOIN categories c ON c.category_id = p.category_id
-    WHERE 1=1
+    WHERE p.is_active = 1
   `;
   const params = [];
 
@@ -105,14 +112,124 @@ router.post("/", requireAdmin, upload.single("image"), async (req, res) => {
 });
 
 /* ---------------------------------------------------------------------
-   DELETE /api/products/:id — admin only
+   Runs fn(connection) on a dedicated connection with @app_user_id set,
+   so the ml_events triggers record which admin made the change. The
+   variable is cleared before the connection goes back to the pool.
+   --------------------------------------------------------------------- */
+async function asUser(userId, fn) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.query("SET @app_user_id = ?", [userId]);
+    return await fn(connection);
+  } finally {
+    await connection.query("SET @app_user_id = NULL").catch(() => {});
+    connection.release();
+  }
+}
+
+/* ---------------------------------------------------------------------
+   PATCH /api/products/:id — admin only. JSON body, every field optional:
+   { name, brand, description, category, price, stock }
+   --------------------------------------------------------------------- */
+const EDITABLE_TEXT = { name: "name", brand: "brand", description: "description" };
+
+router.patch("/:id", requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const sets = [];
+    const params = [];
+
+    for (const [field, column] of Object.entries(EDITABLE_TEXT)) {
+      if (body[field] === undefined) continue;
+      const value = body[field] === null ? null : String(body[field]).trim();
+      if (field === "name" && !value) {
+        return res.status(400).json({ error: "Product name cannot be empty." });
+      }
+      sets.push(`${column} = ?`);
+      params.push(value || null);
+    }
+
+    if (body.price !== undefined) {
+      const price = Number(body.price);
+      if (body.price === "" || !Number.isFinite(price) || price < 0) {
+        return res.status(400).json({ error: "Price must be a number of 0 or more." });
+      }
+      sets.push("price = ?");
+      params.push(price);
+    }
+
+    if (body.stock !== undefined) {
+      const stock = Number(body.stock);
+      if (body.stock === "" || !Number.isInteger(stock) || stock < 0) {
+        return res.status(400).json({ error: "Stock must be a whole number of 0 or more." });
+      }
+      sets.push("stock_quantity = ?");
+      params.push(stock);
+    }
+
+    if (body.category !== undefined) {
+      const [catRows] = await pool.query("SELECT category_id FROM categories WHERE name = ?", [body.category]);
+      if (catRows.length === 0) {
+        return res.status(400).json({ error: "Unknown category." });
+      }
+      sets.push("category_id = ?");
+      params.push(catRows[0].category_id);
+    }
+
+    if (sets.length === 0) {
+      return res.status(400).json({ error: "Nothing to update." });
+    }
+
+    // Column names come only from the fixed lists above; values are bound.
+    const [result] = await asUser(req.user.userId, connection =>
+      connection.query(
+        `UPDATE products SET ${sets.join(", ")} WHERE product_id = ? AND is_active = 1`,
+        [...params, req.params.id]
+      )
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Product not found." });
+    }
+    res.json({ message: "Product updated." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update product." });
+  }
+});
+
+/* ---------------------------------------------------------------------
+   DELETE /api/products/:id — admin only. Soft delete: hides the product
+   from the catalog, carts and new predictions, but keeps the row for
+   order history and historical trend charts.
    --------------------------------------------------------------------- */
 router.delete("/:id", requireAdmin, async (req, res) => {
-  const [result] = await pool.query("DELETE FROM products WHERE product_id = ?", [req.params.id]);
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: "Product not found." });
+  try {
+    const removed = await asUser(req.user.userId, async connection => {
+      await connection.beginTransaction();
+      try {
+        const [result] = await connection.query(
+          "UPDATE products SET is_active = 0 WHERE product_id = ? AND is_active = 1",
+          [req.params.id]
+        );
+        if (result.affectedRows > 0) {
+          await connection.query("DELETE FROM cart_items WHERE product_id = ?", [req.params.id]);
+        }
+        await connection.commit();
+        return result.affectedRows > 0;
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      }
+    });
+
+    if (!removed) {
+      return res.status(404).json({ error: "Product not found." });
+    }
+    res.json({ message: "Product deleted." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete product." });
   }
-  res.json({ message: "Product deleted." });
 });
 
 module.exports = router;

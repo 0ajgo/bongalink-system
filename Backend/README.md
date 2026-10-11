@@ -23,6 +23,16 @@ select `database/bongalink_schema.sql` → Go. This creates the
 `bongalink` database and all tables (users, categories, products,
 carts, cart_items, orders, order_items) with the seeded categories.
 
+Then apply the migration that adds soft delete (`products.is_active`),
+the product change log and the ML tables/triggers:
+```bash
+mysql -u root -p bongalink < database/migrations/003_ml_sync.sql
+```
+The admin **Inventory & Forecasts** page (`Pages/Admin/inventory.html`)
+reads what the Python ML worker writes. See `ml/worker/README.md` to
+run it. Removing a product now hides it (`is_active = 0`) instead of
+deleting the row, so order history and sales trends stay intact.
+
 **Create your first admin account** (registration only creates
 regular users, by design — admins are provisioned directly):
 ```sql

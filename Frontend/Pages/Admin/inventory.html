@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bongalink — Inventory &amp; Forecasts</title>
+<link rel="stylesheet" href="../../CSS/homepage.css">
+<link rel="stylesheet" href="../../CSS/inventory.css">
+</head>
+<body>
+
+<!-- =========================================================
+     TOP NAV
+     ========================================================= -->
+<header class="top">
+<div class="brand">
+<a href="../Homepage/homepage.html" class="brand-name">Bongalink</a>
+</div>
+<nav class="tabs">
+<a href="../Homepage/homepage.html" class="nav-link">Product Catalog</a>
+<a href="inventory.html" class="nav-link active">Inventory &amp; Forecasts</a>
+</nav>
+</header>
+
+<main class="inv">
+
+<!-- Shown instead of the dashboard when not logged in as admin -->
+<section class="inv-locked" id="locked" hidden>
+<h2>Admin account required</h2>
+<p>Log in with an admin account to see inventory forecasts.</p>
+<a class="btn-primary" href="../Homepage/login.html">Go to login</a>
+</section>
+
+<div id="dashboard" hidden>
+
+<!-- =========================================================
+     MODEL STATUS BANNER — last model update + state (REQ028)
+     ========================================================= -->
+<section class="status-banner" id="statusBanner" aria-live="polite">
+<div class="status-main">
+<span class="status-badge" id="statusBadge">…</span>
+<div>
+<div class="status-line">Last model update: <strong id="lastUpdate">—</strong></div>
+<div class="status-sub" id="statusSub"></div>
+</div>
+</div>
+<div class="status-model" id="statusModel"></div>
+</section>
+
+<!-- =========================================================
+     PREDICTIONS TABLE — active products only
+     ========================================================= -->
+<section class="panel">
+<div class="panel-head">
+<h2>Stock forecast — next 7 days</h2>
+<span class="muted" id="productCount"></span>
+</div>
+<div class="table-wrap">
+<table class="inv-table">
+<thead>
+<tr>
+<th>Product</th>
+<th>Category</th>
+<th class="num">Price (₱)</th>
+<th class="num">Stock</th>
+<th class="num">Forecast 7d</th>
+<th class="num">Days of stock</th>
+<th>Reorder</th>
+<th>Trend</th>
+<th></th>
+</tr>
+</thead>
+<tbody id="predRows"></tbody>
+</table>
+</div>
+<p class="footnote">
+Forecasts come from the TensorFlow stock model. <span class="tag tag-muted">Insufficient data</span>
+means the product was listed fewer than 28 days ago or has never sold, so the number shown is its
+category's average, not a forecast for that product. Edits are picked up by the ML worker within
+about 10 seconds of your last change.
+</p>
+</section>
+
+<!-- =========================================================
+     SALES HISTORY — includes removed products
+     ========================================================= -->
+<section class="panel">
+<div class="panel-head">
+<h2 id="historyTitle">Units sold per day</h2>
+<div class="history-controls">
+<select id="historyProduct" aria-label="Product"></select>
+<select id="historyDays" aria-label="Period">
+<option value="28">Last 28 days</option>
+<option value="84" selected>Last 84 days</option>
+<option value="180">Last 180 days</option>
+</select>
+</div>
+</div>
+<div class="chart" id="historyChart"></div>
+<div class="chart-tip" id="chartTip" hidden></div>
+<p class="footnote" id="historyNote"></p>
+</section>
+
+<!-- =========================================================
+     CHANGE LOG — ml_events audit trail
+     ========================================================= -->
+<section class="panel">
+<div class="panel-head">
+<h2>Product change log</h2>
+<span class="muted">Every add, removal, stock and price change</span>
+</div>
+<div class="table-wrap">
+<table class="inv-table compact">
+<thead>
+<tr><th>When</th><th>Product</th><th>Change</th><th class="num">Old</th><th class="num">New</th><th>By</th><th>ML</th></tr>
+</thead>
+<tbody id="eventRows"></tbody>
+</table>
+</div>
+</section>
+
+</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/inventory.js"></script>
+</body>
+</html>

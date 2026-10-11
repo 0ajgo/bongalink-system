@@ -81,12 +81,12 @@ def simulate_series(rng, dates, base, n_shifts):
 CSV_PATH = "sales_daily.csv"
 MYSQL_URL = "mysql+pymysql://USER:PASSWORD@HOST:3306/bongalink"   # needs: !pip install pymysql sqlalchemy
 
-# Same definition of "demand" the backend uses (backend/src/db.rs)
+# Same definition of "demand" the ML worker uses (worker/bongalink_ml/db.py)
 SALES_SQL = """
-SELECT oi.product_id, DATE(o.order_date) AS date, SUM(oi.quantity) AS units
+SELECT oi.product_id, DATE(o.created_at) AS date, SUM(oi.quantity) AS units
 FROM order_items oi JOIN orders o ON o.order_id = oi.order_id
-WHERE o.order_status IN ('paid', 'shipped', 'delivered')
-GROUP BY oi.product_id, DATE(o.order_date)
+WHERE o.status IN ('processing', 'completed')
+GROUP BY oi.product_id, DATE(o.created_at)
 """
 
 CATALOG = {

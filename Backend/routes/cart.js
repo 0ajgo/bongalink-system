@@ -49,7 +49,7 @@ router.post("/", requireAuth, async (req, res) => {
   if (!productId) return res.status(400).json({ error: "productId is required." });
 
   const [productRows] = await pool.query(
-    "SELECT stock_quantity FROM products WHERE product_id = ?", [productId]
+    "SELECT stock_quantity FROM products WHERE product_id = ? AND is_active = 1", [productId]
   );
   if (productRows.length === 0) return res.status(404).json({ error: "Product not found." });
   if (productRows[0].stock_quantity <= 0) {

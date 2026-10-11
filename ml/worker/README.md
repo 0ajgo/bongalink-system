@@ -1,0 +1,157 @@
+# Bongalink ML worker
+
+Keeps the admin dashboard's stock forecasts and trend insights (REQ07, REQ028) in step
+with the product catalog. Products can be added, removed or restocked at any time; the
+dashboard never shows predictions for removed products and never misses new ones.
+
+```
+Admin edits product ──► Node API (Backend/routes/products.js)
+                          │  UPDATE/INSERT products
+                          ▼
+                    MySQL triggers (migrations/003_ml_sync.sql)
+                          │  same transaction: one ml_events row per change
+                          ▼
+              Python worker (this folder) — polls every 5 s
+                          │  debounce: waits until edits stop for 10 s (max 60 s)
+                          │  inference for all active products (no retraining)
+                          ▼
+     ml_predictions + ml_status ──► Node API (routes/ml.js) ──► Admin dashboard
+                                                                 (Pages/Admin/inventory.html)
+```
+
+## What triggers what
+
+| Change | Event | Worker does |
+|---|---|---|
+| Product added (or re-activated) | `ADDED` | Re-scores. New product gets its category's average, labelled **insufficient data** |
+| Product removed (soft delete, `is_active = 0`) | `REMOVED` | Re-scores; the product's prediction row is deleted. Its sales history stays for trend charts |
+| Stock changed (admin edit or checkout) | `STOCK_CHANGED` | Re-scores (days of stock / reorder change; demand does not) |
+| Price changed | `PRICE_CHANGED` | Recorded in the audit trail; re-scores |
+| Product ID changed | `ID_CHANGED` | Recorded in the audit trail; re-scores |
+| Nothing for an hour | — | Full re-score (new orders change demand without touching `products`) |
+| Nightly (first poll after 02:00) or 200 newly sold items | — | **Retrain** with TensorFlow |
+
+No event ever needs a retrain: the stock model takes 6 per-product features, not the product
+list, so adding or removing products only changes *which* products are scored.
+
+### Cold start
+A product listed fewer than 28 days ago, or that has never sold, has zeros in its 28-day
+window that mean "didn't exist yet", not "no demand". Its forecast column shows the average
+model forecast of its category (or of the whole store if the category has none), tagged
+`insufficient_data`. That estimate never triggers a reorder by itself; only an empty shelf does.
+Trend detection likewise needs 84 days.
+
+### Retraining safety
+Every attempt is recorded in `ml_model_versions`:
+
+- `active`: promoted because its validation MAE was no worse than the previous model's on the
+  same holdout (the most recent 20% of days).
+- `rejected`: worse than the active model, which stays in use.
+- `failed`: an exception (or TensorFlow missing); the active model stays in use.
+
+Model files are written to `models/versions/stock_lr_<version>.json` in the same format the
+Colab notebook exports. `trained_with` says exactly how each model was trained, e.g.
+`tensorflow 2.21.0 (Keras Dense(1), Adam, 300 epochs, batch 60)`. If TensorFlow is
+missing, training **fails** (default `ML_TRAINER=tensorflow`). With `ML_TRAINER=auto` it
+falls back to least squares and says so: `numpy … closed-form least squares (FALLBACK: TensorFlow not installed)`.
+The first run registers the Colab export (`ml/backend/models/stock_lr.json`) as `v0-colab`.
+
+The trend-shift threshold is not retrained: it was calibrated on labeled series in Colab,
+and real orders carry no "was this a real shift?" labels.
+
+## Local setup (Windows, Python 3.12)
+
+TensorFlow has no wheels for Python 3.14, so the worker uses its own Python 3.12 virtual
+environment.
+
+```powershell
+# once: install Python 3.12 next to your existing Python
+py install 3.12
+
+cd ml\worker
+py -V:3.12 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -c "import tensorflow as tf; print(tf.__version__)"   # should print 2.21.x
+
+copy .env.example .env      # then fill in DB_PASSWORD (same as Backend/.env) and DB_NAME
+```
+
+Apply the migration to your database once (it adds `products.is_active`, the `ml_*` tables
+and the triggers):
+
+```powershell
+mysql -u root -p bongalink < ..\..\Backend\database\migrations\003_ml_sync.sql
+```
+
+Run the worker (leave it running next to `npm run dev`):
+
+```powershell
+.venv\Scripts\python -m bongalink_ml            # until Ctrl+C
+.venv\Scripts\python -m bongalink_ml --once     # one update, then exit
+.venv\Scripts\python -m bongalink_ml --retrain  # retrain now, then exit
+```
+
+Settings are in `.env.example` (debounce windows, cold-start days, retrain schedule).
+
+## Demo for the defense
+
+```powershell
+.venv\Scripts\python seed_demo.py            # creates bongalink_test, ~150 days of orders
+```
+
+This creates the real schema plus migration 003 in a separate `bongalink_test` database. It
+refuses any database name not ending in `_test`. It adds:
+
+- an admin `demo_admin` / `DemoAdmin123!`, plus 40 customers;
+- 15 products, including one with rising demand (Epson printhead), one with falling demand
+  (Seagate HDD), two brand-new products (insufficient data), and several low-stock ones;
+- one product removed 20 days ago that still has history.
+
+`--days 365` gives enough history for the first automatic retrain to beat the Colab model and
+be promoted. With 150 days, the retrained model may be rejected; either outcome is shown on
+the dashboard.
+
+Then point the API and the worker at it:
+
+```powershell
+# terminal 1 (Backend/): an env var overrides Backend/.env for this terminal session only
+$env:DB_NAME="bongalink_test"; npm run dev
+# terminal 2 (ml/worker/, DB_NAME=bongalink_test in .env)
+.venv\Scripts\python -m bongalink_ml
+```
+
+Log in as `demo_admin` and open **Inventory & Forecasts**. To script the whole story (add,
+restock, re-price, remove, 20 rapid edits → 1 update) through the real API:
+
+```powershell
+.venv\Scripts\python demo.py                     # runs the worker in-process
+.venv\Scripts\python demo.py --external-worker   # uses the worker from terminal 2
+```
+
+## Tests
+
+```powershell
+.venv\Scripts\python -m unittest discover -s tests -t . -v
+```
+
+- `tests/test_core.py` (no database): parity with the notebook's `parity.json`, cold-start
+  fallback, reorder rules, and the training-window rules.
+- `tests/test_integration.py`: creates and drops `bongalink_worker_test` on the MySQL server
+  from `.env`, then exercises the real triggers. It covers add, stock change (no retrain),
+  price change, soft delete, debounce (20 edits → 1 update), rollback (no event), a crashed
+  retrain (old model kept) and a worse model (rejected). It is skipped if MySQL is unreachable.
+
+## Docker
+
+From the repository root, with a `.env` containing `DB_PASSWORD` and `JWT_SECRET`:
+
+```bash
+docker compose up --build                       # mysql + api + worker + frontend
+docker compose logs -f worker                   # see refreshes and training
+docker compose run --rm worker python seed_demo.py
+DB_NAME=bongalink_test docker compose up -d api worker   # switch to the demo data
+```
+
+The worker image is `python:3.12-slim` with `tensorflow-cpu`. Model versions persist in the
+`ml-models` volume.

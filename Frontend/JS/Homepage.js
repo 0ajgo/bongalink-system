@@ -532,6 +532,8 @@ async function loadCategories() {
 }
 
 async function loadCatalog() {
+  // UI hint only: the dashboard's API routes enforce requireAdmin themselves.
+  document.getElementById("inventoryLink").hidden = !isAdmin();
   await loadCategories();
   await loadProducts();
   await loadCart();

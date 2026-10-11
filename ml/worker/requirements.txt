@@ -1,0 +1,5 @@
+# Python 3.12 (TensorFlow does not publish wheels for 3.14 yet).
+tensorflow>=2.16,<2.22
+numpy>=1.26
+PyMySQL>=1.1
+python-dotenv>=1.0
