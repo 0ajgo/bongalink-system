@@ -155,3 +155,17 @@ DB_NAME=bongalink_test docker compose up -d api worker   # switch to the demo da
 
 The worker image is `python:3.12-slim` with `tensorflow-cpu`. Model versions persist in the
 `ml-models` volume.
+
+## Importing the real sales sheet
+
+```powershell
+# put the sheet at ml/worker/data/2026 Bongalink Sheet SALES.xlsx (git-ignored)
+.venv\Scripts\python import_sales.py --dry-run     # cleaned products, mappings, skipped rows; writes nothing
+.venv\Scripts\python import_sales.py               # drops + rebuilds bongalink_real and imports paid sales
+$env:DB_NAME="bongalink_real"; .venv\Scripts\python -m bongalink_ml --once
+```
+
+The script never writes to `bongalink`. The dry run lists every excluded service, every
+unpaid row, the item/model mappings, and each row whose quantity or price came from free
+text. Review those before trusting the numbers. Stock counts are placeholders (5 per
+product), because the sheet records sales, not stock.

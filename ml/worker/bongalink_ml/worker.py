@@ -77,7 +77,7 @@ class Worker:
         started = time.monotonic()
         try:
             rows = compute_predictions(self.conn, self.model, self.model_version, self.trend,
-                                       self.s.cold_start_days)
+                                       self.s.cold_start_days, trend_min_sale_days=self.s.trend_min_sale_days)
             marked = db.write_predictions(self.conn, rows, max_event_id)
             db.set_status(self.conn, state="up_to_date", last_update_at="NOW()", last_error=None)
             self.last_full_refresh = time.monotonic()

@@ -67,3 +67,6 @@ Thumbs.db
 desktop.ini
 # ---- ML worker runtime model versions (written by the worker) ----
 ml/worker/models/
+
+# ---- Real sales data (imported locally, never committed) ----
+ml/worker/data/

@@ -8,9 +8,10 @@ What it creates, so every dashboard state shows up during the demo:
   * an admin account   demo_admin / DemoAdmin123!   and 40 customers (password DemoCustomer123!)
   * 15 active products across 5 categories with daily sales shaped like the Colab
     simulator: weekend bumps, payday spikes (1st, 14th-16th, end of month), noise;
-      - "Epson L3110 Printhead"  flat, then demand starts climbing ~40 days ago   -> UPWARD trend shift
-      - "Seagate 1TB HDD"        flat, then demand starts falling ~40 days ago    -> DOWNWARD trend shift
-        (the trend model detects a change in slope, so the seed changes the slope, not just the level)
+      - "Epson L3110 Printhead"  flat, then demand climbs steadily for the last ~50 days -> UPWARD trend shift
+      - "Seagate 1TB HDD"        flat, then demand falls steadily for the last ~50 days  -> DOWNWARD trend shift
+        (the trend model detects a change in slope, so the seed changes the slope, not just the level;
+         the ramps are strong enough to be read correctly for every random seed tried, 11/11)
       - "Ugreen USB-C Dock"      listed 6 days ago   -> insufficient data (category average)
       - "Arctic MX-4 Thermal Paste" listed 3 days ago, no sales -> insufficient data
       - a few products with low stock -> reorder recommended
@@ -47,13 +48,13 @@ CATEGORIES = [(1, "Printer Parts"), (2, "Computer Parts"), (3, "Laptop Parts"),
 # name, category_id, brand, price, stock, base units/day, listed days ago (None = start of history),
 # shift = (days ago it starts, ramp days, multiplier) or None
 PRODUCTS = [
-    ("Epson L3110 Printhead",      1, "Epson",    2850, 6,  1.2, None, (40, 40, 3.5)),
+    ("Epson L3110 Printhead",      1, "Epson",    2850, 6,  1.0, None, (50, 50, 6.0)),
     ("Epson Waste Ink Pad",        1, "Epson",     450, 40, 2.5, None, None),
     ("Canon Pickup Roller",        1, "Canon",     380, 25, 1.8, None, None),
     ("CISS Ink Tank Kit",          1, "Generic",  1200, 12, 1.0, None, None),
     ("Kingston 8GB DDR4 RAM",      2, "Kingston", 1650, 30, 2.2, None, None),
     ("Kingston 256GB SSD",         2, "Kingston", 1890, 18, 2.6, None, None),
-    ("Seagate 1TB HDD",            2, "Seagate",  2450, 35, 3.0, None, (40, 40, 0.3)),
+    ("Seagate 1TB HDD",            2, "Seagate",  2450, 35, 3.5, None, (50, 50, 0.15)),
     ("Corsair 500W PSU",           2, "Corsair",  2900, 8,  0.8, None, None),
     ("Laptop Battery (Generic)",   3, "Generic",  1750, 10, 1.5, None, None),
     ("Laptop Keyboard (Generic)",  3, "Generic",   950, 14, 1.1, None, None),

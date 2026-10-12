@@ -122,7 +122,9 @@ function reorderCell(p) {
 
 function trendCell(p) {
   if (!p.computed_at) return "";
-  if (p.trend_status !== "ok") return `<span class="tag tag-muted" title="Needs 84 days of history">Insufficient data</span>`;
+  if (p.trend_status !== "ok") {
+    return `<span class="tag tag-muted" title="A trend needs 84 days of history and sales on at least 8 different days in that period">Insufficient data</span>`;
+  }
   const since = `${p.trend_days_since_breakpoint} days ago`;
   if (p.trend_direction === "upward") return `<span class="trend up" title="Demand started rising ${since}">↑ Rising since ${since}</span>`;
   if (p.trend_direction === "downward") return `<span class="trend down" title="Demand started falling ${since}">↓ Falling since ${since}</span>`;

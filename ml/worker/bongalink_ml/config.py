@@ -42,6 +42,8 @@ class Settings:
     retry_seconds: int = _int("ML_RETRY_SECONDS", 30)          # back-off after a failed refresh
 
     cold_start_days: int = _int("ML_COLD_START_DAYS", 28)
+    # Trend labels need sales on at least this many distinct days in the 84-day window.
+    trend_min_sale_days: int = _int("ML_TREND_MIN_SALE_DAYS", 8)
     retrain_items: int = _int("ML_RETRAIN_ITEMS", 200)         # sold items since last training
     retrain_hour: int = _int("ML_RETRAIN_HOUR", 2)             # nightly retrain, local hour
     # "tensorflow" (default): retraining fails loudly if TensorFlow is missing.

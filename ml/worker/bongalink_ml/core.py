@@ -95,7 +95,10 @@ def stock_outlook(demand_7d: float, current_stock: int, allow_reorder: bool = Tr
     """
     daily = demand_7d / HORIZON
     stock = max(current_stock, 0)
-    days_until_stockout = _round_half_up(stock / daily, 1) if daily > 0 else None
+    # A forecast that rounds to 0.00 units means "no expected demand": dividing stock by a
+    # near-zero rate would show thousands of days of stock.
+    has_demand = _round_half_up(demand_7d, 2) > 0
+    days_until_stockout = _round_half_up(stock / daily, 1) if has_demand else None
     by_demand = days_until_stockout is not None and days_until_stockout < HORIZON
     reorder = current_stock <= 0 or (allow_reorder and by_demand)
     qty = max(math.ceil(daily * COVER_DAYS) - stock, 0) if reorder else 0

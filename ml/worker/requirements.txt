@@ -3,3 +3,4 @@ tensorflow>=2.16,<2.22
 numpy>=1.26
 PyMySQL>=1.1
 python-dotenv>=1.0
+openpyxl>=3.1          # import_sales.py (reads the .xlsx sales sheet)

@@ -9,19 +9,44 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
-from statistics import mean
+from statistics import mean, median_low
+
+import numpy as np
 
 from . import db
 from .core import TREND_DAYS, WINDOW, StockModel, TrendConfig, stock_outlook
 
 
+def trend_series(lines: list[dict], typical_qty: dict[int, int], start: dt.date, days: int) -> dict[int, np.ndarray]:
+    """Daily units for trend detection, with each order line capped at its product's typical
+    (median) order size, so one bulk order can't decide the trend direction on its own.
+    The stock forecast still uses the raw units: a bulk order really does empty the shelf."""
+    out: dict[int, np.ndarray] = defaultdict(lambda: np.zeros(days))
+    for line in lines:
+        cap = typical_qty.get(line["product_id"], 1)
+        out[line["product_id"]][(line["d"] - start).days] += min(int(line["quantity"]), cap)
+    return out
+
+
+def typical_order_size(lines: list[dict]) -> dict[int, int]:
+    """Median quantity per order line (lower median, at least 1), per product."""
+    sizes = defaultdict(list)
+    for line in lines:
+        sizes[line["product_id"]].append(int(line["quantity"]))
+    return {pid: max(1, int(median_low(q))) for pid, q in sizes.items()}
+
+
 def compute_predictions(conn, model: StockModel, model_version: str, trend: TrendConfig,
-                        cold_start_days: int, today: dt.date | None = None) -> list[dict]:
+                        cold_start_days: int, today: dt.date | None = None,
+                        trend_min_sale_days: int = 8) -> list[dict]:
     today = today or db.today(conn)
     products = db.active_products(conn)
     ids = [p["product_id"] for p in products]
-    history = db.daily_units(conn, today - dt.timedelta(days=TREND_DAYS), today, ids)
+    window_start = today - dt.timedelta(days=TREND_DAYS)
+    history = db.daily_units(conn, window_start, today, ids)
     lifetime = db.lifetime_units(conn, ids)
+    typical = typical_order_size(db.order_lines(conn, ids))
+    trend_input = trend_series(db.order_lines(conn, ids, window_start, today), typical, window_start, TREND_DAYS)
 
     rows = []
     for p in products:
@@ -43,8 +68,11 @@ def compute_predictions(conn, model: StockModel, model_version: str, trend: Tren
         else:
             row.update(data_status="insufficient_data")  # filled in below
 
-        if age >= TREND_DAYS and has_sales:
-            t = trend.detect(h)
+        # A slope change needs enough sale days to be more than noise: with only a handful,
+        # the two-segment fit mostly fits the empty days around them.
+        sale_days = int(np.count_nonzero(h))
+        if age >= TREND_DAYS and sale_days >= trend_min_sale_days:
+            t = trend.detect(trend_input[pid])
             row.update(trend_status="ok", trend_direction=t["direction"],
                        trend_relative_change=round(t["relative_change"], 6),
                        trend_days_since_breakpoint=int(t["days_since_breakpoint"]))

@@ -130,6 +130,25 @@ def daily_units(conn, start: dt.date, end: dt.date, product_ids=None) -> dict[in
     return dict(out)
 
 
+def order_lines(conn, product_ids, start: dt.date | None = None, end: dt.date | None = None) -> list[dict]:
+    """Individual sold order lines (product_id, day, quantity), optionally limited to start <= day < end."""
+    if not product_ids:
+        return []
+    params = [*SOLD_STATUSES, *product_ids]
+    window = ""
+    if start is not None:
+        window = "AND o.created_at >= %s AND o.created_at < %s"
+        params += [start, end]
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT oi.product_id, DATE(o.created_at) AS d, oi.quantity
+                FROM order_items oi JOIN orders o ON o.order_id = oi.order_id
+                WHERE o.status IN ({_in(SOLD_STATUSES)}) AND oi.product_id IN ({_in(product_ids)}) {window}""",
+            params,
+        )
+        return cur.fetchall()
+
+
 def sold_items_total(conn) -> int:
     with conn.cursor() as cur:
         cur.execute(

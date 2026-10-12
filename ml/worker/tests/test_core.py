@@ -56,6 +56,11 @@ class Outlook(unittest.TestCase):
         self.assertTrue(o["reorder_recommended"])                  # < 7 days left
         self.assertEqual(core._round_half_up(2.25, 1), 2.3)        # Python round() would give 2.2
 
+    def test_near_zero_demand_has_no_stockout_date(self):
+        o = core.stock_outlook(0.004, 5)                           # displays as 0.00 units
+        self.assertIsNone(o["days_until_stockout"])                # not "9530.4 days"
+        self.assertFalse(o["reorder_recommended"])
+
     def test_estimate_never_triggers_reorder_by_itself(self):
         o = core.stock_outlook(70.0, 5, allow_reorder=False)
         self.assertEqual(o["days_until_stockout"], 0.5)
@@ -88,6 +93,39 @@ class ColdStart(unittest.TestCase):
         self.assertEqual(rows[0]["forecast_source"], "none")
         self.assertIsNone(rows[0]["predicted_demand_7d"])
         self.assertTrue(rows[0]["reorder_recommended"])            # empty shelf still flagged
+
+
+class TrendInput(unittest.TestCase):
+    start = dt.date(2026, 7, 1)
+
+    def line(self, pid, day, qty):
+        return {"product_id": pid, "d": self.start + dt.timedelta(days=day), "quantity": qty}
+
+    def test_bulk_order_capped_at_typical_order_size(self):
+        history = [self.line(1, d, 1) for d in range(0, 60, 5)] + [self.line(1, 70, 30)]
+        typical = predict.typical_order_size(history)
+        self.assertEqual(typical[1], 1)
+        series = predict.trend_series(history, typical, self.start, core.TREND_DAYS)
+        self.assertEqual(series[1][70], 1)                  # the 30-piece order counts as one typical order
+        self.assertEqual(series[1].sum(), 13)
+
+    def test_products_sold_in_multiples_keep_their_usual_size(self):
+        lines = [self.line(2, d, 4) for d in range(0, 40, 4)] + [self.line(2, 50, 40)]
+        typical = predict.typical_order_size(lines)
+        series = predict.trend_series(lines, typical, self.start, core.TREND_DAYS)
+        self.assertEqual(typical[2], 4)
+        self.assertEqual(series[2][0], 4)
+        self.assertEqual(series[2][50], 4)
+
+    def test_one_bulk_order_no_longer_flips_the_direction(self):
+        cfg = core.TrendConfig.from_file(MODELS / "trend_config.json")
+        lines = [self.line(1, d, 1) for d in range(0, 84, 3)] + [self.line(1, 80, 25)]
+        raw = np.zeros(core.TREND_DAYS)
+        for ln in lines:
+            raw[(ln["d"] - self.start).days] += ln["quantity"]
+        capped = predict.trend_series(lines, predict.typical_order_size(lines), self.start, core.TREND_DAYS)[1]
+        self.assertEqual(cfg.detect(raw)["direction"], "upward")       # one bulk order at the end
+        self.assertEqual(cfg.detect(capped)["direction"], "none")      # steady demand, correctly
 
 
 class Dataset(unittest.TestCase):
