@@ -47,13 +47,18 @@ const upload = multer({
    Public — populates the catalog grid. Joins categories for the
    readable category name (matches product.category in the old
    localStorage shape, so the frontend rendering logic barely changes).
+
+   `stock` is AVAILABLE stock: units on hand minus units reserved by
+   unpaid orders (anti ghost stock). 0 means out of stock, even if the
+   shelf still holds units waiting for someone's payment.
    --------------------------------------------------------------------- */
 router.get("/", async (req, res) => {
   const { category, search } = req.query;
 
   let sql = `
     SELECT p.product_id AS id, p.name, c.name AS category, p.brand,
-           p.price, p.stock_quantity AS stock, p.image_path AS image,
+           p.price, p.stock_quantity - LEAST(p.reserved, p.stock_quantity) AS stock,
+           p.image_path AS image,
            p.description, p.created_by, p.created_at
     FROM products p
     JOIN categories c ON c.category_id = p.category_id
