@@ -82,10 +82,13 @@ CSV_PATH = "sales_daily.csv"
 MYSQL_URL = "mysql+pymysql://USER:PASSWORD@HOST:3306/bongalink"   # needs: !pip install pymysql sqlalchemy
 
 # Same definition of "demand" the ML worker uses (worker/bongalink_ml/db.py)
-SALES_SQL = """
+# and Backend/routes/ml.js: paid orders count as sales; unpaid, expired and
+# cancelled orders don't. Keep all three lists identical.
+SOLD_STATUSES = ("processing", "completed", "paid", "packed", "shipped", "delivered")
+SALES_SQL = f"""
 SELECT oi.product_id, DATE(o.created_at) AS date, SUM(oi.quantity) AS units
 FROM order_items oi JOIN orders o ON o.order_id = oi.order_id
-WHERE o.status IN ('processing', 'completed')
+WHERE o.status IN ({", ".join(repr(s) for s in SOLD_STATUSES)})
 GROUP BY oi.product_id, DATE(o.created_at)
 """
 
