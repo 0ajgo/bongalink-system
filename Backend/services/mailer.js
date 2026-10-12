@@ -55,6 +55,28 @@ const mail = {
       `Order #${orderId} shipped via ${courierLabel}. ${trackingNumber ? 'Tracking no: ' + trackingNumber : ''} ${trackingUrl || ''}`
     ),
 
+  // Shop alert when an order is paid (replaces the real-time dashboard push).
+  // order = { orderId, amount, courierLabel, shipName, shipPhone, shipAddress, items: [{ name, quantity }] }
+  orderPaidAlert: (to, order) =>
+    send(
+      to,
+      `New paid order #${order.orderId} - ${peso(order.amount)}`,
+      layout(`Order #${order.orderId} is paid`, `<p>Pack and ship this order:</p>
+        <table style="border-collapse:collapse;width:100%">
+          ${order.items.map((i) => `<tr><td style="padding:4px 0">${esc(i.name)}</td>
+            <td style="padding:4px 0;text-align:right">x ${Number(i.quantity)}</td></tr>`).join('')}
+        </table>
+        <p><b>Courier:</b> ${esc(order.courierLabel)}</p>
+        <p><b>Ship to:</b> ${esc(order.shipName)} (${esc(order.shipPhone)})<br>${esc(order.shipAddress)}</p>
+        <p><b>Total paid:</b> ${peso(order.amount)}</p>`),
+      [
+        `Order #${order.orderId} is paid (${peso(order.amount)}).`,
+        ...order.items.map((i) => `- ${i.name} x ${i.quantity}`),
+        `Courier: ${order.courierLabel}`,
+        `Ship to: ${order.shipName} (${order.shipPhone}), ${order.shipAddress}`,
+      ].join('\n')
+    ),
+
   delivered: (to, name, orderId) =>
     send(
       to,

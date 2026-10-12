@@ -127,6 +127,16 @@ router.get('/orders/:id/tracking', requireAuth, ah(async (req, res) => {
 
 // ---------------------------------------------------------------- admin
 
+// GET /admin/orders/to-ship  - paid orders not shipped yet (paid or packed).
+// The admin dashboard polls this for its "to ship" badge.
+router.get('/admin/orders/to-ship', requireAdmin, ah(async (req, res) => {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS count, MIN(paid_at) AS oldest_paid_at FROM orders WHERE status IN (?)`,
+    [READY_TO_SHIP]
+  );
+  res.json({ count: Number(row.count), oldest_paid_at: row.oldest_paid_at });
+}));
+
 // GET /admin/shipments?status=IN_TRANSIT  (REQ012, REQ016) - booked deliveries only
 router.get('/admin/shipments', requireAdmin, ah(async (req, res) => {
   const params = [];

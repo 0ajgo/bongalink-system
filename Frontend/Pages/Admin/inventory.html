@@ -20,6 +20,9 @@
 <a href="../Homepage/homepage.html" class="nav-link">Product Catalog</a>
 <a href="inventory.html" class="nav-link active">Inventory &amp; Forecasts</a>
 </nav>
+<!-- Paid orders waiting to be shipped; inventory.js polls
+     GET /api/v1/admin/orders/to-ship every 30 seconds. -->
+<span class="status-badge" id="to-ship-badge" role="status" aria-live="polite" hidden></span>
 </header>
 
 <main class="inv">

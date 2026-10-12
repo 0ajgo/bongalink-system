@@ -214,6 +214,15 @@
           }
         },
         {
+          "name": "Admin — paid orders to ship (dashboard badge)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/admin/orders/to-ship",
+            "description": "Count of paid/packed orders not shipped yet. The admin Inventory page polls this every 30 seconds."
+          }
+        },
+        {
           "name": "Admin — shipments list",
           "request": {
             "method": "GET",

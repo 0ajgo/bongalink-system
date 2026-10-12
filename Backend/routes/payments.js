@@ -5,6 +5,7 @@ const pool = require('../db');
 const ah = require('../lib/asyncHandler');
 const paymongo = require('../services/paymongo');
 const { mail } = require('../services/mailer');
+const { COURIER_LABEL } = require('../services/shippingRates');
 const { requireAuth, requireAdmin, requireRole, requireVerifiedEmail } = require('../middleware/auth');
 
 const toCentavos = (php) => Math.round(Number(php) * 100);
@@ -184,8 +185,34 @@ async function paymongoWebhook(req, res) {
       [result.orderId]
     );
     mail.paymentReceived(c.email, c.name, result.orderId, result.amount).catch((e) => console.error('Mail failed:', e.message));
+    await alertShop(result).catch((e) => console.error('Shop alert failed:', e.message));
   }
   res.status(200).json({ received: true });
+}
+
+// Emails the shop (ADMIN_ALERT_EMAIL) what to pack and where to send it.
+// The admin dashboard also polls GET /api/v1/admin/orders/to-ship for a badge.
+// Only the lookups are awaited; a slow SMTP server never delays the webhook reply.
+async function alertShop({ orderId, amount }) {
+  const to = process.env.ADMIN_ALERT_EMAIL;
+  if (!to) return;
+  const [[o]] = await pool.query(
+    `SELECT o.courier, a.recipient_name, a.recipient_phone,
+            CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS address
+       FROM orders o LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
+      WHERE o.order_id = ?`,
+    [orderId]
+  );
+  const [items] = await pool.query(
+    `SELECT p.name, oi.quantity FROM order_items oi JOIN products p ON p.product_id = oi.product_id
+      WHERE oi.order_id = ? ORDER BY oi.order_item_id`,
+    [orderId]
+  );
+  mail.orderPaidAlert(to, {
+    orderId, amount, items,
+    courierLabel: COURIER_LABEL[o.courier] || o.courier || 'Not chosen',
+    shipName: o.recipient_name, shipPhone: o.recipient_phone, shipAddress: o.address,
+  }).catch((e) => console.error('Shop alert failed:', e.message));
 }
 
 module.exports = { router, paymongoWebhook };

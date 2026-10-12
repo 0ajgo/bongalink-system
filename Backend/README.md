@@ -113,6 +113,7 @@ Fill in the new keys in `.env` (listed in `.env.example`):
 | Key | Where to get it |
 |---|---|
 | `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Shop Gmail → turn on 2-Step Verification → Security → App passwords |
+| `ADMIN_ALERT_EMAIL` | Shop inbox that gets an email for every paid order (products, quantities, courier, address) |
 | `VERIFICATION_SECRET` | Any long random string: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `PAYMONGO_SECRET_KEY` | PayMongo dashboard → Developers → API keys (`sk_test_...`) |
 | `PAYMONGO_WEBHOOK_SECRET` | PayMongo → Developers → Webhooks → add `https://<public-url>/api/v1/webhooks/paymongo`, event `checkout_session.payment.paid` (`whsk_...`) |
@@ -136,6 +137,11 @@ How an order flows:
    (`jobs/expireOrders.js`, runs every 5 minutes).
 5. The admin books Lalamove or encodes the J&T/LBC waybill; the customer sees
    the timeline at `GET /api/v1/orders/:id/tracking`.
+
+The shop is alerted to each paid order by email (`ADMIN_ALERT_EMAIL`) and by a
+"paid orders to ship" badge on the admin Inventory page (polls
+`GET /api/v1/admin/orders/to-ship` every 30 seconds). The catalog shows
+**available** stock (on hand minus units held by unpaid orders).
 
 The J&T/LBC fees in `shipping_rates` are **placeholders** — replace them with
 the shop's real rates. Products need a real `weight_kg` for accurate fees.

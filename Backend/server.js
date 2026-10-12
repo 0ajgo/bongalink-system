@@ -73,7 +73,7 @@ app.use((err, req, res, next) => {
 
 // Names only — never print the values.
 const INTEGRATION_ENV = [
-  "VERIFICATION_SECRET", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "APP_URL",
+  "VERIFICATION_SECRET", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "ADMIN_ALERT_EMAIL", "APP_URL",
   "PAYMONGO_SECRET_KEY", "PAYMONGO_WEBHOOK_SECRET"
 ];
 
