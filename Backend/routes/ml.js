@@ -18,7 +18,7 @@ const router = express.Router();
 router.use(requireAdmin);
 
 // Same definition of a sale the worker uses (ml/worker/bongalink_ml/db.py).
-const SOLD_STATUSES = ["processing", "completed"];
+const SOLD_STATUSES = ["processing", "completed", "paid", "packed", "shipped", "delivered"];
 
 // The worker updates heartbeat_at every poll; older than this = not running.
 const WORKER_TIMEOUT_SECONDS = 120;

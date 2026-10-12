@@ -10,10 +10,12 @@ import pymysql.cursors
 
 from .config import Settings
 
-# What counts as a sale: payment confirmed (processing) or delivered (completed).
-# pending = bank transfer not yet confirmed, cancelled = never happened.
+# What counts as a sale: payment confirmed (processing, paid, packed, shipped)
+# or delivered (completed, delivered). processing/completed are the statuses
+# used before PayMongo; the rest come from migration 004.
+# pending/pending_payment = not paid yet, expired/cancelled = never happened.
 # Must match SOLD_STATUSES in Backend/routes/ml.js.
-SOLD_STATUSES = ("processing", "completed")
+SOLD_STATUSES = ("processing", "completed", "paid", "packed", "shipped", "delivered")
 
 
 def connect(s: Settings) -> pymysql.connections.Connection:

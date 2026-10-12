@@ -28,7 +28,7 @@ router.get("/", requireAuth, async (req, res) => {
 
   const [rows] = await pool.query(
     `SELECT ci.product_id AS id, ci.quantity, p.name, p.price,
-            p.image_path AS image, p.stock_quantity AS stock
+            p.image_path AS image, p.stock_quantity - LEAST(p.reserved, p.stock_quantity) AS stock
      FROM cart_items ci
      JOIN products p ON p.product_id = ci.product_id
      WHERE ci.cart_id = ?`,
@@ -49,10 +49,12 @@ router.post("/", requireAuth, async (req, res) => {
   if (!productId) return res.status(400).json({ error: "productId is required." });
 
   const [productRows] = await pool.query(
-    "SELECT stock_quantity FROM products WHERE product_id = ? AND is_active = 1", [productId]
+    `SELECT stock_quantity - LEAST(reserved, stock_quantity) AS available
+     FROM products WHERE product_id = ? AND is_active = 1`, [productId]
   );
   if (productRows.length === 0) return res.status(404).json({ error: "Product not found." });
-  if (productRows[0].stock_quantity <= 0) {
+  // Units held by unpaid orders (products.reserved) can't go into another cart.
+  if (productRows[0].available <= 0) {
     return res.status(400).json({ error: "This product is out of stock." });
   }
 
@@ -62,7 +64,7 @@ router.post("/", requireAuth, async (req, res) => {
     `INSERT INTO cart_items (cart_id, product_id, quantity)
      VALUES (?, ?, ?)
      ON DUPLICATE KEY UPDATE quantity = LEAST(quantity + VALUES(quantity), ?)`,
-    [cartId, productId, quantity, productRows[0].stock_quantity]
+    [cartId, productId, quantity, productRows[0].available]
   );
 
   res.json({ message: "Product added to cart." });
