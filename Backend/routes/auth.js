@@ -9,6 +9,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
+const { issueVerificationCode } = require("./emailVerification");
 
 const router = express.Router();
 
@@ -39,12 +40,28 @@ router.post("/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    await pool.query(
+    const [result] = await pool.query(
       "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
       [username, email, passwordHash]
     );
 
-    res.status(201).json({ message: "Account created." });
+    // The account exists either way; if the email can't be sent now, the
+    // user can ask for a new code from the verify step.
+    let emailSent = true;
+    try {
+      await issueVerificationCode({ id: result.insertId, name: username, email });
+    } catch (err) {
+      emailSent = false;
+      console.error("Verification email failed:", err.message);
+    }
+
+    res.status(201).json({
+      message: emailSent
+        ? "Account created. Enter the 6-digit code we sent to your email."
+        : "Account created, but we couldn't send the verification email. Use \"Resend code\" to try again.",
+      verificationRequired: true,
+      emailSent
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Registration failed." });
