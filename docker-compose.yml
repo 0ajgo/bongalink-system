@@ -11,8 +11,8 @@
 #   docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py
 #   DB_NAME=bongalink_real docker compose up -d api worker
 #
-# A fresh volume is initialised from the schema dump + migration 003. For an existing
-# database, apply Backend/database/migrations/003_ml_sync.sql yourself instead.
+# A fresh volume is initialised from the schema dump + migrations 003 and 004. For an existing
+# database, apply Backend/database/migrations/003_ml_sync.sql and 004_api_integrations.sql yourself instead.
 
 services:
   mysql:
@@ -24,6 +24,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ./Backend/database/bongalink_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./Backend/database/migrations/003_ml_sync.sql:/docker-entrypoint-initdb.d/03_ml_sync.sql:ro
+      - ./Backend/database/migrations/004_api_integrations.sql:/docker-entrypoint-initdb.d/04_api_integrations.sql:ro
     ports:
       - "3307:3306"            # 3307 on the host so it doesn't clash with a local MySQL
     healthcheck:
@@ -45,6 +46,28 @@ services:
       DB_NAME: ${DB_NAME:-bongalink}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRES_IN: 7d
+      APP_URL: ${APP_URL:-http://localhost:5500}
+      # Email verification, PayMongo and Lalamove — see Backend/.env.example
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      VERIFICATION_SECRET: ${VERIFICATION_SECRET:-}
+      PAYMONGO_SECRET_KEY: ${PAYMONGO_SECRET_KEY:-}
+      PAYMONGO_WEBHOOK_SECRET: ${PAYMONGO_WEBHOOK_SECRET:-}
+      PAYMONGO_METHODS: ${PAYMONGO_METHODS:-gcash,qrph,dob,dob_ubp}
+      LALAMOVE_ENV: ${LALAMOVE_ENV:-sandbox}
+      LALAMOVE_API_KEY: ${LALAMOVE_API_KEY:-}
+      LALAMOVE_API_SECRET: ${LALAMOVE_API_SECRET:-}
+      LALAMOVE_SERVICE_TYPE: ${LALAMOVE_SERVICE_TYPE:-MOTORCYCLE}
+      STORE_LAT: ${STORE_LAT:-}
+      STORE_LNG: ${STORE_LNG:-}
+      STORE_ADDRESS: ${STORE_ADDRESS:-}
+      STORE_CONTACT_NAME: ${STORE_CONTACT_NAME:-Bongalink}
+      STORE_PHONE: ${STORE_PHONE:-}
+      TRACKING_URL_JNT: ${TRACKING_URL_JNT:-}
+      TRACKING_URL_LBC: ${TRACKING_URL_LBC:-}
     volumes:
       - uploads:/app/uploads
     ports:
