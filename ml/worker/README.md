@@ -94,41 +94,6 @@ Run the worker (leave it running next to `npm run dev`):
 
 Settings are in `.env.example` (debounce windows, cold-start days, retrain schedule).
 
-## Demo for the defense
-
-```powershell
-.venv\Scripts\python seed_demo.py            # creates bongalink_test, ~150 days of orders
-```
-
-This creates the real schema plus migration 003 in a separate `bongalink_test` database. It
-refuses any database name not ending in `_test`. It adds:
-
-- an admin `demo_admin` / `DemoAdmin123!`, plus 40 customers;
-- 15 products, including one with rising demand (Epson printhead), one with falling demand
-  (Seagate HDD), two brand-new products (insufficient data), and several low-stock ones;
-- one product removed 20 days ago that still has history.
-
-`--days 365` gives enough history for the first automatic retrain to beat the Colab model and
-be promoted. With 150 days, the retrained model may be rejected; either outcome is shown on
-the dashboard.
-
-Then point the API and the worker at it:
-
-```powershell
-# terminal 1 (Backend/): an env var overrides Backend/.env for this terminal session only
-$env:DB_NAME="bongalink_test"; npm run dev
-# terminal 2 (ml/worker/, DB_NAME=bongalink_test in .env)
-.venv\Scripts\python -m bongalink_ml
-```
-
-Log in as `demo_admin` and open **Inventory & Forecasts**. To script the whole story (add,
-restock, re-price, remove, 20 rapid edits → 1 update) through the real API:
-
-```powershell
-.venv\Scripts\python demo.py                     # runs the worker in-process
-.venv\Scripts\python demo.py --external-worker   # uses the worker from terminal 2
-```
-
 ## Tests
 
 ```powershell
@@ -136,11 +101,13 @@ restock, re-price, remove, 20 rapid edits → 1 update) through the real API:
 ```
 
 - `tests/test_core.py` (no database): parity with the notebook's `parity.json`, cold-start
-  fallback, reorder rules, and the training-window rules.
+  fallback, reorder rules, trend input (bulk orders capped), and the training-window rules.
 - `tests/test_integration.py`: creates and drops `bongalink_worker_test` on the MySQL server
-  from `.env`, then exercises the real triggers. It covers add, stock change (no retrain),
-  price change, soft delete, debounce (20 edits → 1 update), rollback (no event), a crashed
-  retrain (old model kept) and a worse model (rejected). It is skipped if MySQL is unreachable.
+  from `.env`, filled with synthetic orders from `tests/fixture_data.py`, then exercises the
+  real triggers. It covers add, stock change (no retrain), price change, soft delete, debounce
+  (20 edits → 1 update), rollback (no event), a crashed retrain (old model kept) and a worse
+  model (rejected). It is skipped if MySQL is unreachable, and the fixture refuses any database
+  name not ending in `_test`.
 
 ## Docker
 
@@ -149,8 +116,9 @@ From the repository root, with a `.env` containing `DB_PASSWORD` and `JWT_SECRET
 ```bash
 docker compose up --build                       # mysql + api + worker + frontend
 docker compose logs -f worker                   # see refreshes and training
-docker compose run --rm worker python seed_demo.py
-DB_NAME=bongalink_test docker compose up -d api worker   # switch to the demo data
+# import the sales sheet (kept on the host) into bongalink_real, then switch to it
+docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py
+DB_NAME=bongalink_real docker compose up -d api worker
 ```
 
 The worker image is `python:3.12-slim` with `tensorflow-cpu`. Model versions persist in the

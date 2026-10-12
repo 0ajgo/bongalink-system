@@ -1,8 +1,8 @@
 """Integration tests against a throwaway MySQL database (bongalink_worker_test).
 
 Needs the MySQL server from ml/worker/.env; skipped if it can't be reached.
-The database is recreated from the real schema + migration 003 and seed data,
-so these exercise the actual triggers, not a mock of them.
+The database is recreated from the real schema + migration 003 and the synthetic
+data in tests/fixture_data.py, so these exercise the actual triggers, not a mock of them.
 """
 import dataclasses
 import sys
@@ -24,9 +24,9 @@ TEST_DB = "bongalink_worker_test"
 def setUpModule():
     global SETTINGS, TMP
     import pymysql
-    import seed_demo
+    from tests import fixture_data
     try:
-        seed_demo.seed(TEST_DB, days=150, quiet=True)
+        fixture_data.build(TEST_DB, days=150)
     except pymysql.err.OperationalError as e:  # server down / wrong credentials
         raise unittest.SkipTest(f"MySQL not available for integration tests: {e}")
     TMP = tempfile.TemporaryDirectory()

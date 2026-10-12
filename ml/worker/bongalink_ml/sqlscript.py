@@ -1,5 +1,5 @@
 """Run a .sql file (mysqldump output or a migration with DELIMITER blocks) through
-PyMySQL, the way the mysql command-line client would. Used by seed_demo.py and
+PyMySQL, the way the mysql command-line client would. Used by import_sales.py and
 the integration tests so they need no mysql client installed."""
 from __future__ import annotations
 
