@@ -60,6 +60,9 @@ class Outlook(unittest.TestCase):
         o = core.stock_outlook(0.004, 5)                           # displays as 0.00 units
         self.assertIsNone(o["days_until_stockout"])                # not "9530.4 days"
         self.assertFalse(o["reorder_recommended"])
+        empty = core.stock_outlook(0.004, 0)                       # out of stock, no expected demand
+        self.assertTrue(empty["reorder_recommended"])              # still flagged: the shelf is empty
+        self.assertEqual(empty["suggested_reorder_qty"], 0)        # but no demand to cover, not "1"
 
     def test_estimate_never_triggers_reorder_by_itself(self):
         o = core.stock_outlook(70.0, 5, allow_reorder=False)

@@ -101,7 +101,7 @@ def stock_outlook(demand_7d: float, current_stock: int, allow_reorder: bool = Tr
     days_until_stockout = _round_half_up(stock / daily, 1) if has_demand else None
     by_demand = days_until_stockout is not None and days_until_stockout < HORIZON
     reorder = current_stock <= 0 or (allow_reorder and by_demand)
-    qty = max(math.ceil(daily * COVER_DAYS) - stock, 0) if reorder else 0
+    qty = max(math.ceil(daily * COVER_DAYS) - stock, 0) if reorder and has_demand else 0
     return {
         "predicted_demand_7d": _round_half_up(demand_7d, 2),
         "avg_daily_demand": _round_half_up(daily, 3),
