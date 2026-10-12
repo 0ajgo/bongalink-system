@@ -2,12 +2,15 @@
    middleware/auth.js
    - requireAuth  : any logged-in user (user or admin)
    - requireAdmin : must be logged in AND role === "admin"
+   - requireRole  : after requireAuth, allow only the listed roles
+   - requireVerifiedEmail : after requireAuth, block unverified emails
      (this is the server-side version of isAdmin() that used to only
      live in Homepage.js — the real gate now lives here, since a
      frontend-only check can be bypassed in devtools)
    ===================================================================== */
 
 const jwt = require("jsonwebtoken");
+const pool = require("../db");
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
@@ -35,4 +38,22 @@ function requireAdmin(req, res, next) {
   });
 }
 
-module.exports = { requireAuth, requireAdmin };
+// Use after requireAuth. Roles are "user" (customer) and "admin".
+const requireRole = (...roles) => (req, res, next) =>
+  roles.includes(req.user?.role) ? next() : res.status(403).json({ error: "You don't have access to this." });
+
+// Use after requireAuth. Blocks checkout until the customer has verified
+// their email (POST /api/v1/auth/verify-email/confirm).
+async function requireVerifiedEmail(req, res, next) {
+  try {
+    const [[user]] = await pool.query("SELECT email_verified_at FROM users WHERE user_id = ?", [req.user.userId]);
+    if (!user?.email_verified_at) {
+      return res.status(403).json({ error: "Please verify your email first.", code: "EMAIL_NOT_VERIFIED" });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { requireAuth, requireAdmin, requireRole, requireVerifiedEmail };
