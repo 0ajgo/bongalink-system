@@ -3,20 +3,34 @@
    Backs cart.html / checkout.html. Items are written here by Homepage.js
    (see its "LOCAL CART MIRROR" section) whenever a logged-in shopper adds
    or removes a product, so this localStorage copy always matches what the
-   catalog page shows. Shipping is still a placeholder (see the TODO).
+   catalog page shows. Shipping fees come from the server at checkout.
    ========================================================================== */
 
 const CART_KEY = "bongalink.cart";
 
-/* Region-based rates. TODO (REQ015): replace with live rates from the
-   J&T / LBC REST APIs, keyed on parcel weight and destination. */
-const SHIPPING_ZONES = {
-  "NCR":            { label: "Metro Manila",        fee: 120, eta: "1–2 business days" },
-  "LUZON":          { label: "Luzon",               fee: 180, eta: "2–4 business days" },
-  "VISAYAS":        { label: "Visayas",             fee: 250, eta: "3–6 business days" },
-  "MINDANAO":       { label: "Mindanao",            fee: 280, eta: "4–7 business days" },
-  "ISLAND_PROVINCE":{ label: "Island province",     fee: 340, eta: "5–9 business days" }
-};
+/* PSGC regions for the checkout address form. Shipping fees are NOT
+   kept here: checkout.html asks POST /api/v1/shipping/quote, and the
+   server recomputes the fee again when the order is placed (REQ015). */
+const PSGC_REGIONS = [
+  { code: "NCR",   label: "NCR — Metro Manila" },
+  { code: "CAR",   label: "CAR — Cordillera Administrative Region" },
+  { code: "I",     label: "Region I — Ilocos Region" },
+  { code: "II",    label: "Region II — Cagayan Valley" },
+  { code: "III",   label: "Region III — Central Luzon" },
+  { code: "IV-A",  label: "Region IV-A — CALABARZON" },
+  { code: "IV-B",  label: "Region IV-B — MIMAROPA" },
+  { code: "V",     label: "Region V — Bicol Region" },
+  { code: "VI",    label: "Region VI — Western Visayas" },
+  { code: "NIR",   label: "NIR — Negros Island Region" },
+  { code: "VII",   label: "Region VII — Central Visayas" },
+  { code: "VIII",  label: "Region VIII — Eastern Visayas" },
+  { code: "IX",    label: "Region IX — Zamboanga Peninsula" },
+  { code: "X",     label: "Region X — Northern Mindanao" },
+  { code: "XI",    label: "Region XI — Davao Region" },
+  { code: "XII",   label: "Region XII — SOCCSKSARGEN" },
+  { code: "XIII",  label: "Region XIII — Caraga" },
+  { code: "BARMM", label: "BARMM — Bangsamoro" }
+];
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -53,10 +67,6 @@ const subtotalOf = (items) =>
 
 const countOf = (items) =>
   items.reduce((sum, item) => sum + item.quantity, 0);
-
-function shippingFor(zoneKey) {
-  return SHIPPING_ZONES[zoneKey] ?? null;
-}
 
 /* Stock label drives the colour signal in the UI. This is the guard against
    the "ghost stock" problem: quantity can never exceed stockOnHand. */

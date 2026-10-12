@@ -41,7 +41,12 @@ async function apiFetch(path, options = {}) {
     // Every route in Backend/routes/*.js responds with { error: "..." }
     // on failure, so this is what callers' catch(err) => err.message
     // blocks are usually showing the user.
-    throw new Error(data.error || "Something went wrong.");
+    // status/code let callers react to specific cases, e.g.
+    // code "EMAIL_NOT_VERIFIED" on checkout.
+    const error = new Error(data.error || "Something went wrong.");
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
   }
   return data;
 }

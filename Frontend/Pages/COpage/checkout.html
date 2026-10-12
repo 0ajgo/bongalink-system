@@ -8,6 +8,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../CSS/store.css">
+<style>
+  /* .button and .field set display, which would beat the hidden attribute. */
+  [hidden] { display: none !important; }
+  .pin-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pin-row .button { width: auto; padding-inline: 18px; }
+  .verify-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+  .verify-box .field { margin-bottom: 10px; }
+  .verify-box .pin-row .button { flex: 1; }
+</style>
 </head>
 <body>
 
@@ -32,12 +41,12 @@
 
       <!-- ================================================
            CHECKOUT FORM — five sections feeding one payload
-           built in the script's submit handler (see "6. SUBMIT
+           built in the script's submit handler (see "7. SUBMIT
            HANDLER" below): Contact -> contact{}, Delivery
-           address -> recipient{}+address{}, Delivery region ->
-           address.shippingZone, Payment -> payment{}, Privacy ->
-           consent{}. Field names match `name="..."` attributes,
-           which validate()/showError() below look up by name.
+           address -> recipient{}+address{}, Courier -> courier,
+           Payment -> payment{}, Privacy -> consent{}. Field names
+           match `name="..."` attributes, which validate()/showError()
+           below look up by name.
            ================================================ -->
       <form id="checkout-form" novalidate>
 
@@ -93,8 +102,15 @@
               <span class="field__error" data-error-for="city"></span>
             </div>
             <div class="field">
+              <label for="region">Region</label>
+              <!-- Options filled from cart.js's PSGC_REGIONS (see "3. RENDER STATIC SECTIONS"). -->
+              <select id="region" name="region" required></select>
+              <span class="field__error" data-error-for="region"></span>
+            </div>
+            <div class="field">
               <label for="province">Province</label>
               <input type="text" id="province" name="province" autocomplete="address-level1" placeholder="Leave blank for Metro Manila">
+              <span class="field__hint">Island provinces (e.g. Palawan) use island shipping rates.</span>
             </div>
             <div class="field">
               <label for="postalCode">Postal code</label>
@@ -105,46 +121,57 @@
               <label for="landmark">Landmark or delivery note (optional)</label>
               <input type="text" id="landmark" name="landmark" placeholder="Gate colour, nearest corner, best time to deliver">
             </div>
+            <!-- Map pin: optional, Metro Manila only. Lalamove needs exact
+                 coordinates; without a pin only J&T / LBC are offered. -->
+            <div class="field field--wide" id="pin-field" hidden>
+              <label>Map pin for same-day Lalamove delivery (optional)</label>
+              <div class="pin-row">
+                <button type="button" class="button button--quiet" id="pin-locate">Use my current location</button>
+                <button type="button" class="button button--quiet" id="pin-clear" hidden>Remove pin</button>
+                <span class="field__hint" id="pin-status">No pin set. Lalamove is only offered with a pin.</span>
+              </div>
+              <span class="field__error" data-error-for="pin"></span>
+            </div>
           </div>
         </section>
 
         <section class="form-block">
           <div class="form-block__head">
-            <h2>Delivery region</h2>
+            <h2>Courier</h2>
             <p>Sets the shipping fee</p>
           </div>
-          <!-- Filled in by the script from cart.js's SHIPPING_ZONES —
-               see "3. RENDER STATIC SECTIONS" below. Not hand-written
-               here so the fee shown always matches what the server
-               will actually charge. -->
-          <div class="choices" id="zone-choices"></div>
-          <span class="field__error" data-error-for="zone"></span>
+          <!-- Filled from POST /api/v1/shipping/quote (see "4. SHIPPING
+               QUOTE"). The server recomputes the fee when the order is
+               placed, so the browser never decides what is charged. -->
+          <div class="choices" id="courier-choices">
+            <p class="field__hint">Choose your region to see shipping options.</p>
+          </div>
+          <span class="field__error" data-error-for="courier"></span>
         </section>
 
         <section class="form-block">
           <div class="form-block__head">
             <h2>Payment</h2>
-            <p>Pay after the order is confirmed</p>
+            <p>Paid securely through PayMongo</p>
           </div>
           <div class="choices">
             <label class="choice">
-              <input type="radio" name="payment" value="BANK_TRANSFER" checked>
+              <input type="radio" name="payment" value="GCASH" checked>
               <span>
-                <span class="choice__name">Bank transfer</span>
-                <span class="choice__detail">Account details are sent to your email once stock is confirmed.</span>
+                <span class="choice__name">GCash</span>
+                <span class="choice__detail">You'll be sent to PayMongo to approve the payment in GCash.</span>
               </span>
             </label>
             <label class="choice">
-              <input type="radio" name="payment" value="GCASH">
+              <input type="radio" name="payment" value="BANK_TRANSFER">
               <span>
-                <span class="choice__name">GCash</span>
-                <span class="choice__detail">Send to the shop number shown on your order page, then upload the receipt.</span>
+                <span class="choice__name">Bank transfer</span>
+                <span class="choice__detail">Pay from your bank app with QR Ph, or with BPI / UnionBank online banking, on PayMongo's page.</span>
               </span>
             </label>
           </div>
           <div class="choice-note">
-            <p>Your items are held for 24 hours while payment clears. If nothing arrives in that window the stock goes back on sale automatically.</p>
-            <p>Upload proof of payment from your order page so the shop can release the parcel to the courier.</p>
+            <p>Your items are held for 24 hours while you pay. If payment doesn't arrive in that window the stock goes back on sale automatically.</p>
           </div>
         </section>
 
@@ -169,20 +196,38 @@
 
       <!-- ================================================
            ORDER SUMMARY — read-only recap of the cart, kept in
-           sync with the chosen shipping zone by paintTotals()
+           sync with the chosen courier by paintTotals()
            ================================================ -->
       <aside class="summary" aria-label="Order summary">
         <h2>Order summary</h2>
         <div class="summary__items" id="summary-items"></div>
         <div class="summary__row"><span>Subtotal</span><strong class="money" id="sum-subtotal">—</strong></div>
-        <div class="summary__row"><span id="sum-shipping-label">Shipping</span><strong class="money" id="sum-shipping">Choose a region</strong></div>
+        <div class="summary__row"><span id="sum-shipping-label">Shipping</span><strong class="money" id="sum-shipping">Choose a courier</strong></div>
         <div class="summary__total">
           <span>Total due</span>
           <b class="money" id="sum-total">—</b>
         </div>
         <p class="field__error" id="order-error" style="margin-bottom:8px"></p>
-        <button class="button" type="submit" form="checkout-form" id="place-order">Place order</button>
-        <p class="summary__note">Placing an order does not charge you. The shop confirms stock, then sends payment instructions.</p>
+        <button class="button" type="submit" form="checkout-form" id="place-order">Place order and pay</button>
+        <p class="summary__note">You'll be sent to PayMongo to pay with GCash or your bank. The final total is confirmed by the server.</p>
+
+        <!-- Shown when the server answers EMAIL_NOT_VERIFIED (see "6. EMAIL VERIFICATION"). -->
+        <div class="verify-box" id="verify-box" hidden>
+          <p class="summary__note" id="verify-intro">Verify your email before checking out. We sent a 6-digit code to your account's email.</p>
+          <div class="field">
+            <label for="verify-email">Account email</label>
+            <input type="email" id="verify-email" autocomplete="email">
+          </div>
+          <div class="field">
+            <label for="verify-code">6-digit code</label>
+            <input type="text" id="verify-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+          </div>
+          <p class="field__error" id="verify-message"></p>
+          <div class="pin-row">
+            <button type="button" class="button" id="verify-confirm">Verify and place order</button>
+            <button type="button" class="button button--quiet" id="verify-resend">Resend code</button>
+          </div>
+        </div>
       </aside>
 
     </div>
@@ -197,8 +242,8 @@
 </footer>
 
 <!-- api.js -> apiFetch()/isLoggedIn(); cart.js -> readCart()/writeCart()/
-     money()/subtotalOf()/shippingFor()/SHIPPING_ZONES. Load order matters:
-     both must be present before this inline script runs. -->
+     money()/subtotalOf()/PSGC_REGIONS. Load order matters: both must be
+     present before this inline script runs. -->
 <script src="../../JS/api.js"></script>
 <script src="../../JS/cart.js"></script>
 <script>
@@ -215,12 +260,14 @@ if (!isLoggedIn()) {
 /* ---------------------------------------------------------------------
    2. STATE + DOM REFERENCES
    `cart` is a read-only snapshot for this page — checkout doesn't let
-   you edit quantities, only cart.html does. `selectedZone` starts null
-   so the shipping/total fields show "Choose a region" until one is
-   picked (see paintTotals()).
+   you edit quantities, only cart.html does. `options` holds the courier
+   options from the last quote; `selectedCourier` starts null so the
+   shipping/total fields show "Choose a courier" until one is picked.
    --------------------------------------------------------------------- */
 const cart = readCart();
-let selectedZone = null;
+let options = [];
+let selectedCourier = null;
+let pin = null; // { lat, lng } or null
 
 const els = {
   items:    document.getElementById("summary-items"),
@@ -228,16 +275,22 @@ const els = {
   shipping: document.getElementById("sum-shipping"),
   shipLbl:  document.getElementById("sum-shipping-label"),
   total:    document.getElementById("sum-total"),
-  zones:    document.getElementById("zone-choices"),
-  form:     document.getElementById("checkout-form")
+  couriers: document.getElementById("courier-choices"),
+  region:   document.getElementById("region"),
+  pinField: document.getElementById("pin-field"),
+  pinStatus:document.getElementById("pin-status"),
+  pinClear: document.getElementById("pin-clear"),
+  form:     document.getElementById("checkout-form"),
+  button:   document.getElementById("place-order"),
+  orderErr: document.getElementById("order-error")
 };
+
+const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 /* ---------------------------------------------------------------------
    3. RENDER STATIC SECTIONS — the order-summary mini cart and the
-   shipping-zone radio list. Both are built once from data (the cart
-   array, SHIPPING_ZONES) rather than hand-written in the HTML above,
-   so they can never drift out of sync with what's actually in the cart
-   or what the server will actually charge.
+   region dropdown, both built from data (the cart array, PSGC_REGIONS).
    --------------------------------------------------------------------- */
 els.items.innerHTML = cart.map(item => `
   <div class="mini-line">
@@ -249,40 +302,128 @@ els.items.innerHTML = cart.map(item => `
     <span class="mini-line__price">${money(item.unitPrice * item.quantity)}</span>
   </div>`).join("");
 
-els.zones.innerHTML = Object.entries(SHIPPING_ZONES).map(([key, zone]) => `
-  <label class="choice">
-    <input type="radio" name="zone" value="${key}">
-    <span>
-      <span class="choice__name">${zone.label}</span>
-      <span class="choice__detail">Arrives in ${zone.eta}</span>
-    </span>
-    <span class="choice__price">${money(zone.fee)}</span>
-  </label>`).join("");
-
-els.zones.addEventListener("change", (event) => {
-  selectedZone = event.target.value;
-  paintTotals();
-  clearError("zone");
-});
+els.region.innerHTML = `<option value="">Choose a region</option>` +
+  PSGC_REGIONS.map(r => `<option value="${r.code}">${r.label}</option>`).join("");
 
 /* ---------------------------------------------------------------------
-   4. TOTALS — recomputed on every zone change (see the change listener
-   above). Subtotal never changes on this page; only the shipping fee
-   and therefore the total depend on `selectedZone`.
+   4. SHIPPING QUOTE — asks the server for every courier option for this
+   cart + address (J&T and LBC from the rate table; Lalamove only for
+   Metro Manila with a map pin). Re-run whenever the region, province
+   or pin changes. Each request gets a sequence number so a slow,
+   older answer can't overwrite a newer one.
+   --------------------------------------------------------------------- */
+let quoteSeq = 0;
+
+function addressLine() {
+  const f = els.form.elements;
+  return [f.street.value, f.barangay.value, f.city.value, f.province.value]
+    .map(v => v.trim()).filter(Boolean).join(", ");
+}
+
+async function refreshQuote() {
+  const region = els.region.value;
+  els.pinField.hidden = region !== "NCR";
+  if (region !== "NCR") setPin(null, false);
+
+  if (!region) {
+    options = [];
+    selectedCourier = null;
+    els.couriers.innerHTML = `<p class="field__hint">Choose your region to see shipping options.</p>`;
+    paintTotals();
+    return;
+  }
+
+  const seq = ++quoteSeq;
+  els.couriers.innerHTML = `<p class="field__hint">Getting shipping options…</p>`;
+  try {
+    const result = await apiFetch("/v1/shipping/quote", {
+      method: "POST",
+      body: JSON.stringify({
+        items: cart.map(i => ({ product_id: Number(i.productId), quantity: i.quantity })),
+        address: {
+          region,
+          province: els.form.elements.province.value.trim() || null,
+          line: addressLine() || region,
+          lat: pin?.lat, lng: pin?.lng
+        }
+      })
+    });
+    if (seq !== quoteSeq) return;
+    options = result.options;
+  } catch (err) {
+    if (seq !== quoteSeq) return;
+    options = [];
+    els.couriers.innerHTML = `<p class="field__error">${escapeHtml(err.message || "Couldn't load shipping options.")}</p>`;
+  }
+
+  if (!options.some(o => o.courier === selectedCourier)) selectedCourier = null;
+  if (options.length) renderCouriers();
+  else if (!els.couriers.querySelector(".field__error")) {
+    els.couriers.innerHTML = `<p class="field__error">No courier delivers this order to that region. Please contact the shop.</p>`;
+  }
+  paintTotals();
+}
+
+function renderCouriers() {
+  els.couriers.innerHTML = options.map(o => `
+    <label class="choice">
+      <input type="radio" name="courier" value="${o.courier}" ${o.courier === selectedCourier ? "checked" : ""}>
+      <span>
+        <span class="choice__name">${escapeHtml(o.label)}</span>
+        <span class="choice__detail">Arrives in ${escapeHtml(o.eta)}</span>
+      </span>
+      <span class="choice__price">${money(o.fee)}</span>
+    </label>`).join("");
+}
+
+els.couriers.addEventListener("change", (event) => {
+  selectedCourier = event.target.value;
+  paintTotals();
+  clearError("courier");
+});
+
+els.region.addEventListener("change", () => { clearError("region"); refreshQuote(); });
+els.form.elements.province.addEventListener("change", refreshQuote);
+
+// Map pin from the browser's location (asks the customer's permission).
+function setPin(value, requote = true) {
+  pin = value;
+  els.pinClear.hidden = !pin;
+  els.pinStatus.textContent = pin
+    ? `Pin set at ${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}.`
+    : "No pin set. Lalamove is only offered with a pin.";
+  if (requote) refreshQuote();
+}
+
+document.getElementById("pin-locate").addEventListener("click", () => {
+  clearError("pin");
+  if (!navigator.geolocation) return showError("pin", "This browser can't share your location.");
+  els.pinStatus.textContent = "Finding your location…";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => setPin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+    () => { setPin(null, false); showError("pin", "Location wasn't shared. You can still use J&T or LBC."); },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+});
+els.pinClear.addEventListener("click", () => setPin(null));
+
+/* ---------------------------------------------------------------------
+   5. TOTALS — subtotal from the cart, shipping from the chosen quote.
+   The server recomputes both when the order is placed.
    --------------------------------------------------------------------- */
 function paintTotals() {
   const subtotal = subtotalOf(cart);
-  const zone = shippingFor(selectedZone);
+  const option = options.find(o => o.courier === selectedCourier);
 
   els.subtotal.textContent = money(subtotal);
 
-  if (zone) {
-    els.shipLbl.textContent = `Shipping to ${zone.label}`;
-    els.shipping.textContent = money(zone.fee);
-    els.total.textContent = money(subtotal + zone.fee);
+  if (option) {
+    els.shipLbl.textContent = `Shipping via ${option.label}`;
+    els.shipping.textContent = money(option.fee);
+    els.total.textContent = money(subtotal + option.fee);
   } else {
     els.shipLbl.textContent = "Shipping";
-    els.shipping.textContent = "Choose a region";
+    els.shipping.textContent = "Choose a courier";
     els.total.textContent = money(subtotal);
   }
 }
@@ -290,7 +431,7 @@ function paintTotals() {
 paintTotals();
 
 /* ---------------------------------------------------------------------
-   5. VALIDATION — every check here mirrors a constraint the backend
+   VALIDATION — every check here mirrors a constraint the backend
    also enforces (see Backend/routes/orders.js), so a well-behaved
    browser never gets a surprise 400 from the server. It's belt-and-
    braces: this is for instant feedback, the server is the real gate.
@@ -310,7 +451,7 @@ function clearError(name) {
 }
 
 function validate() {
-  const required = ["email", "phone", "firstName", "lastName", "street", "barangay", "city", "postalCode"];
+  const required = ["email", "phone", "firstName", "lastName", "street", "barangay", "city", "region", "postalCode"];
   let firstBad = null;
 
   required.forEach(name => {
@@ -340,9 +481,9 @@ function validate() {
     firstBad ??= "postalCode";
   }
 
-  if (!selectedZone) {
-    showError("zone", "Choose a delivery region so shipping can be calculated.");
-    firstBad ??= "zone";
+  if (!selectedCourier) {
+    showError("courier", "Choose a courier so shipping can be calculated.");
+    firstBad ??= "region";
   }
 
   if (!els.form.elements.consentRequired.checked) {
@@ -354,15 +495,61 @@ function validate() {
 }
 
 /* ---------------------------------------------------------------------
-   6. SUBMIT HANDLER — the shape of `payload` here is the actual API
-   contract: it must match what POST /api/orders destructures in
-   Backend/routes/orders.js (`{ contact, recipient, address, payment,
-   consent }`). If you add a field on either side, update both places.
-   On success the order id comes back and cart.html/checkout.html's
-   shared local cart is cleared; on failure the real server error
-   message is shown inline instead of pretending it worked.
+   6. EMAIL VERIFICATION — checkout is blocked until the account's email
+   is verified (server answers code EMAIL_NOT_VERIFIED). The customer can
+   enter the code from their registration email, or ask for a new one,
+   right here; verifying retries the order.
    --------------------------------------------------------------------- */
-els.form.addEventListener("submit", async (event) => {
+const verify = {
+  box:     document.getElementById("verify-box"),
+  email:   document.getElementById("verify-email"),
+  code:    document.getElementById("verify-code"),
+  message: document.getElementById("verify-message")
+};
+
+function showVerifyStep() {
+  verify.box.hidden = false;
+  if (!verify.email.value) verify.email.value = els.form.elements.email.value.trim();
+  els.button.hidden = true;
+  verify.code.focus();
+}
+
+document.getElementById("verify-resend").addEventListener("click", async () => {
+  verify.message.textContent = "";
+  try {
+    const result = await apiFetch("/v1/auth/verify-email/send", {
+      method: "POST", body: JSON.stringify({ email: verify.email.value.trim() })
+    });
+    verify.message.textContent = result.message;
+  } catch (err) {
+    verify.message.textContent = err.message;
+  }
+});
+
+document.getElementById("verify-confirm").addEventListener("click", async () => {
+  verify.message.textContent = "";
+  try {
+    await apiFetch("/v1/auth/verify-email/confirm", {
+      method: "POST",
+      body: JSON.stringify({ email: verify.email.value.trim(), code: verify.code.value.trim() })
+    });
+    verify.box.hidden = true;
+    els.button.hidden = false;
+    placeOrder();
+  } catch (err) {
+    verify.message.textContent = err.message;
+  }
+});
+
+/* ---------------------------------------------------------------------
+   7. SUBMIT HANDLER — the shape of `payload` here is the actual API
+   contract: it must match what POST /api/orders destructures in
+   Backend/routes/orders.js (`{ contact, recipient, address, courier,
+   payment, consent }`). If you add a field on either side, update both
+   places. On success the order is created (stock reserved for 24 hours)
+   and the customer is sent to PayMongo to pay.
+   --------------------------------------------------------------------- */
+els.form.addEventListener("submit", (event) => {
   event.preventDefault();
 
   const bad = validate();
@@ -371,70 +558,136 @@ els.form.addEventListener("submit", async (event) => {
     if (target && target.focus) target.focus();
     return;
   }
+  placeOrder();
+});
 
-  const errorSlot = document.getElementById("order-error");
-  errorSlot.textContent = "";
+async function placeOrder() {
+  els.orderErr.textContent = "";
 
+  const f = els.form.elements;
   const payload = {
     contact: {
-      email: els.form.elements.email.value.trim(),
-      phone: els.form.elements.phone.value.trim()
+      email: f.email.value.trim(),
+      phone: f.phone.value.trim()
     },
     recipient: {
-      firstName: els.form.elements.firstName.value.trim(),
-      lastName:  els.form.elements.lastName.value.trim()
+      firstName: f.firstName.value.trim(),
+      lastName:  f.lastName.value.trim()
     },
     address: {
-      street:       els.form.elements.street.value.trim(),
-      barangay:     els.form.elements.barangay.value.trim(),
-      city:         els.form.elements.city.value.trim(),
-      province:     els.form.elements.province.value.trim() || null,
-      postalCode:   els.form.elements.postalCode.value.trim(),
-      landmark:     els.form.elements.landmark.value.trim() || null,
-      shippingZone: selectedZone
+      street:     f.street.value.trim(),
+      barangay:   f.barangay.value.trim(),
+      city:       f.city.value.trim(),
+      province:   f.province.value.trim() || null,
+      region:     els.region.value,
+      postalCode: f.postalCode.value.trim(),
+      landmark:   f.landmark.value.trim() || null,
+      lat:        pin?.lat ?? null,
+      lng:        pin?.lng ?? null
     },
+    courier: selectedCourier,
     payment: {
-      method: els.form.elements.payment.value
+      method: f.payment.value
     },
     consent: {
-      marketing: els.form.elements.consentMarketing.checked,
+      marketing: f.consentMarketing.checked,
       policyVersion: "2026-01"
     }
   };
 
-  const button = document.getElementById("place-order");
-  button.disabled = true;
-  button.textContent = "Placing order…";
+  els.button.disabled = true;
+  els.button.textContent = "Placing order…";
 
+  let order;
   try {
-    const result = await apiFetch("/orders", { method: "POST", body: JSON.stringify(payload) });
-    const reference = `BGL-${new Date().getFullYear()}-${String(result.orderId).padStart(4, "0")}`;
-    writeCart([]);
-    showConfirmation(reference);
+    order = await apiFetch("/orders", { method: "POST", body: JSON.stringify(payload) });
   } catch (err) {
+    els.button.disabled = false;
+    els.button.textContent = "Place order and pay";
+    if (err.code === "EMAIL_NOT_VERIFIED") {
+      showVerifyStep();
+      return;
+    }
     console.error(err);
-    errorSlot.textContent = err.message || "Checkout failed. Please try again.";
-    button.disabled = false;
-    button.textContent = "Place order";
+    els.orderErr.textContent = err.message || "Checkout failed. Please try again.";
+    return;
   }
-});
+
+  // The order exists and the server cart is empty now; clear the local mirror too.
+  writeCart([]);
+  startPayment(order.orderId);
+}
 
 /* ---------------------------------------------------------------------
-   7. CONFIRMATION — replaces the whole form with a receipt screen.
-   `reference` is a display-only label built from the real orderId
-   the server returned (see the submit handler above), not something
-   the server generates itself.
+   8. PAYMENT — asks the server for a PayMongo checkout page and goes
+   there. Amounts come from the database, never from this page.
    --------------------------------------------------------------------- */
-function showConfirmation(reference) {
+async function startPayment(orderId) {
+  try {
+    const { checkout_url } = await apiFetch("/v1/payments/checkout", {
+      method: "POST", body: JSON.stringify({ order_id: orderId })
+    });
+    window.location.href = checkout_url;
+  } catch (err) {
+    console.error(err);
+    showStatus(orderId, {
+      title: "Order placed — payment not started",
+      text: `${err.message || "We couldn't open the payment page."} Your items are held for 24 hours.`,
+      retry: true
+    });
+  }
+}
+
+/* ---------------------------------------------------------------------
+   9. RETURN FROM PAYMONGO — PayMongo sends the customer back to
+   checkout.html?order=<id>&payment=success|cancelled. The redirect is
+   NOT proof of payment: only the server's webhook marks an order paid,
+   so this polls GET /api/v1/payments/orders/:id for a short while.
+   --------------------------------------------------------------------- */
+const orderRef = (orderId) => `BGL-${new Date().getFullYear()}-${String(orderId).padStart(4, "0")}`;
+
+function showStatus(orderId, { title, text, retry = false }) {
   document.getElementById("checkout-body").innerHTML = `
     <div class="confirm">
-      <h1>Order placed</h1>
-      <p>Bongalink is confirming stock now. Payment instructions arrive by email within the hour.</p>
-      <p class="confirm__ref">${reference}</p>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(text)}</p>
+      <p class="confirm__ref">${orderRef(orderId)}</p>
       <p>Keep this reference. You can use it to track the parcel once the courier picks it up.</p>
+      ${retry ? `<button class="button" id="retry-payment" style="margin-top:22px;width:auto;padding-inline:28px">Pay now</button>` : ""}
       <a class="button button--quiet" href="../Homepage/homepage.html" style="margin-top:22px;display:inline-block;width:auto;padding-inline:28px">Back to the shop</a>
     </div>`;
   window.scrollTo({ top: 0 });
+  document.getElementById("retry-payment")?.addEventListener("click", () => startPayment(orderId));
+}
+
+async function checkPaymentReturn(orderId, result) {
+  showStatus(orderId, { title: "Checking your payment…", text: "This usually takes a few seconds." });
+  for (let attempt = 0; attempt < 10; attempt++) {
+    let status;
+    try {
+      status = await apiFetch(`/v1/payments/orders/${orderId}`);
+    } catch (err) {
+      return showStatus(orderId, { title: "Couldn't check the payment", text: err.message });
+    }
+    if (status.order_status !== "pending_payment") {
+      const paid = ["paid", "packed", "shipped", "delivered"].includes(status.order_status);
+      return showStatus(orderId, paid
+        ? { title: "Payment received", text: "Thank you! We emailed your receipt and will send tracking details once it ships." }
+        : status.payment?.status === "review"
+          ? { title: "Payment under review", text: "We received a payment the shop needs to check. They'll contact you by email." }
+          : { title: `Order ${status.order_status}`, text: "This order is no longer waiting for payment." });
+    }
+    if (result !== "success") break; // cancelled: no point waiting
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  showStatus(orderId, result === "success"
+    ? { title: "Payment is still processing", text: "We haven't received confirmation from PayMongo yet. Refresh this page in a minute, or pay again if it failed.", retry: true }
+    : { title: "Payment cancelled", text: "Your order is saved and your items are held for 24 hours.", retry: true });
+}
+
+const params = new URLSearchParams(window.location.search);
+if (params.get("order")) {
+  checkPaymentReturn(Number(params.get("order")), params.get("payment"));
 }
 </script>
 </body>

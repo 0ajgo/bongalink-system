@@ -62,13 +62,12 @@ registerForm.addEventListener("submit", async event => {
   registerSubmitBtn.disabled = true;
 
   try {
-    await apiFetch("/auth/register", {
+    const result = await apiFetch("/auth/register", {
       method: "POST",
       body: JSON.stringify({ username, email, password })
     });
 
-    showMessage("Account created. Redirecting to login...", "success");
-    setTimeout(() => { window.location.href = "login.html"; }, 800);
+    showVerifyStep(email, result.message);
   } catch (err) {
     showMessage(err.message || "Registration failed.", "error");
   } finally {
@@ -77,9 +76,64 @@ registerForm.addEventListener("submit", async event => {
 });
 
 /* ---------------------------------------------------------------------
-   4. MESSAGE HELPERS
+   4. VERIFY EMAIL — the server emailed a 6-digit code on register.
+   POST /api/v1/auth/verify-email/confirm marks the email verified;
+   /send issues a new code (60-second cooldown, enforced server-side).
+   Checkout is blocked until this succeeds, but the user can also do it
+   later from the checkout page.
+   --------------------------------------------------------------------- */
+const verifyForm = document.getElementById("verifyForm");
+const verifyCode = document.getElementById("verifyCode");
+const verifyMessage = document.getElementById("verifyMessage");
+let verifyEmail = "";
+
+function showVerifyStep(email, message) {
+  verifyEmail = email;
+  registerForm.hidden = true;
+  verifyForm.hidden = false;
+  document.getElementById("verifyIntro").textContent = message;
+  verifyCode.focus();
+}
+
+verifyForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = verifyForm.querySelector(".login-btn");
+  button.disabled = true;
+  try {
+    await apiFetch("/v1/auth/verify-email/confirm", {
+      method: "POST",
+      body: JSON.stringify({ email: verifyEmail, code: verifyCode.value.trim() })
+    });
+    showVerifyMessage("Email verified. Redirecting to login...", "success");
+    setTimeout(() => { window.location.href = "login.html"; }, 800);
+  } catch (err) {
+    showVerifyMessage(err.message || "Verification failed.", "error");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("resendCode").addEventListener("click", async () => {
+  try {
+    const result = await apiFetch("/v1/auth/verify-email/send", {
+      method: "POST",
+      body: JSON.stringify({ email: verifyEmail })
+    });
+    showVerifyMessage(result.message, "success");
+  } catch (err) {
+    showVerifyMessage(err.message || "Couldn't send a new code.", "error");
+  }
+});
+
+/* ---------------------------------------------------------------------
+   5. MESSAGE HELPERS
    --------------------------------------------------------------------- */
 function showMessage(message, type) {
   registerMessage.textContent = message;
   registerMessage.className = `login-message ${type}`;
+}
+
+function showVerifyMessage(message, type) {
+  verifyMessage.textContent = message;
+  verifyMessage.className = `login-message ${type}`;
 }
