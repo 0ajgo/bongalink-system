@@ -28,6 +28,11 @@ the product change log and the ML tables/triggers:
 ```bash
 mysql -u root -p bongalink < database/migrations/003_ml_sync.sql
 ```
+Then apply the migration for email verification, PayMongo payments
+and courier logistics (see "7. Email, payment and logistics APIs"):
+```bash
+mysql -u root -p bongalink < database/migrations/004_api_integrations.sql
+```
 The admin **Inventory & Forecasts** page (`Pages/Admin/inventory.html`)
 reads what the Python ML worker writes. See `ml/worker/README.md` to
 run it. Removing a product now hides it (`is_active = 0`) instead of
@@ -100,3 +105,43 @@ Nothing in the code changes. You only:
 
 That's the entire migration — same schema, same routes, same
 frontend logic.
+
+## 7. Email, payment and logistics APIs
+
+Fill in the new keys in `.env` (listed in `.env.example`):
+
+| Key | Where to get it |
+|---|---|
+| `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Shop Gmail → turn on 2-Step Verification → Security → App passwords |
+| `VERIFICATION_SECRET` | Any long random string: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `PAYMONGO_SECRET_KEY` | PayMongo dashboard → Developers → API keys (`sk_test_...`) |
+| `PAYMONGO_WEBHOOK_SECRET` | PayMongo → Developers → Webhooks → add `https://<public-url>/api/v1/webhooks/paymongo`, event `checkout_session.payment.paid` (`whsk_...`) |
+| `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET` | Lalamove Partner Portal → Developers → Sandbox keys. Webhook URL: `https://<public-url>/api/v1/webhooks/lalamove`. Leave blank to offer J&T/LBC only. |
+| `APP_URL` | Where `Frontend/` is served, e.g. `http://localhost:5500` (PayMongo returns the customer to `APP_URL/Pages/COpage/checkout.html`) |
+| `STORE_*` | The shop's pickup pin, address and phone (Lalamove) |
+
+Webhooks need a public HTTPS URL; for local testing run `ngrok http 4000`.
+
+How an order flows:
+
+1. Register → a 6-digit code is emailed. Checkout is blocked until it's confirmed.
+2. Checkout asks `POST /api/v1/shipping/quote` for J&T / LBC (rate table) and
+   Lalamove (Metro Manila, only with a map pin). `POST /api/orders` recomputes the
+   fee on the server, **reserves** stock (`products.reserved`) and creates the
+   order as `pending_payment`.
+3. The customer pays on PayMongo's page (GCash, QR Ph, online banking). The
+   webhook marks the order `paid` and turns the reservation into a real
+   `stock_quantity` deduction.
+4. Orders unpaid after 24 hours are set to `expired` and their stock is released
+   (`jobs/expireOrders.js`, runs every 5 minutes).
+5. The admin books Lalamove or encodes the J&T/LBC waybill; the customer sees
+   the timeline at `GET /api/v1/orders/:id/tracking`.
+
+The J&T/LBC fees in `shipping_rates` are **placeholders** — replace them with
+the shop's real rates. Products need a real `weight_kg` for accurate fees.
+Island provinces billed at the `ISLAND_PROVINCE` rate are listed in
+`services/shippingRates.js`.
+
+Endpoints are in `postman/bongalink-apis.json`. Run the tests with
+`npm test` — they build a throwaway `bongalink_test` database on the MySQL
+server in `.env` (and drop it afterwards); PayMongo, Lalamove and email are mocked.

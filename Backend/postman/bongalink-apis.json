@@ -1,0 +1,278 @@
+{
+  "info": {
+    "name": "Bongalink — Email, Payment and Logistics APIs",
+    "description": "Every endpoint added by the API integration, plus login/register/place-order to drive them.\n\nSet the collection variables first: baseUrl, and webhookSecret (same value as PAYMONGO_WEBHOOK_SECRET in Backend/.env) for the signed PayMongo webhook request. Logging in stores the token automatically: run 'Login (customer)' and 'Login (admin)' before the other requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "customerToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "email", "value": "customer@example.com" },
+    { "key": "productId", "value": "1" },
+    { "key": "orderId", "value": "" },
+    { "key": "deliveryId", "value": "" },
+    { "key": "checkoutSessionId", "value": "cs_test_replace_me" },
+    { "key": "webhookSecret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Auth (existing routes)",
+      "item": [
+        {
+          "name": "Register (sends verification code)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"customer1\",\n  \"email\": \"{{email}}\",\n  \"password\": \"secret123\"\n}" }
+          }
+        },
+        {
+          "name": "Login (customer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "if (pm.response.code === 200) pm.collectionVariables.set('customerToken', pm.response.json().token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"customer1\",\n  \"password\": \"secret123\"\n}" }
+          }
+        },
+        {
+          "name": "Login (admin)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "if (pm.response.code === 200) pm.collectionVariables.set('adminToken', pm.response.json().token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"YourAdminPassword\",\n  \"role\": \"admin\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Email verification",
+      "item": [
+        {
+          "name": "Send / resend code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/verify-email/send",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\"\n}" },
+            "description": "Same reply whether or not the email exists. 60-second cooldown between codes (429)."
+          }
+        },
+        {
+          "name": "Confirm code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/verify-email/confirm",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"123456\"\n}" },
+            "description": "Code from the email. Expires in 15 minutes; 5 wrong tries max."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Shipping + orders",
+      "item": [
+        {
+          "name": "Shipping quote — NCR with map pin (Lalamove offered)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/shipping/quote",
+            "body": { "mode": "raw", "raw": "{\n  \"items\": [{ \"product_id\": {{productId}}, \"quantity\": 2 }],\n  \"address\": { \"region\": \"NCR\", \"line\": \"123 Street, Pembo, Makati\", \"lat\": 14.548, \"lng\": 121.057 }\n}" }
+          }
+        },
+        {
+          "name": "Shipping quote — Visayas",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/shipping/quote",
+            "body": { "mode": "raw", "raw": "{\n  \"items\": [{ \"product_id\": {{productId}}, \"quantity\": 2 }],\n  \"address\": { \"region\": \"VII\", \"line\": \"Lahug, Cebu City\" }\n}" }
+          }
+        },
+        {
+          "name": "Shipping quote — island province (Palawan)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/shipping/quote",
+            "body": { "mode": "raw", "raw": "{\n  \"items\": [{ \"product_id\": {{productId}}, \"quantity\": 1 }],\n  \"address\": { \"region\": \"IV-B\", \"province\": \"Palawan\", \"line\": \"Puerto Princesa\" }\n}" }
+          }
+        },
+        {
+          "name": "Add to cart (existing route)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/cart",
+            "body": { "mode": "raw", "raw": "{\n  \"productId\": {{productId}},\n  \"quantity\": 1\n}" }
+          }
+        },
+        {
+          "name": "Place order (reserves stock, pending_payment)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "if (pm.response.code === 201) pm.collectionVariables.set('orderId', pm.response.json().orderId);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/orders",
+            "body": { "mode": "raw", "raw": "{\n  \"contact\": { \"email\": \"{{email}}\", \"phone\": \"09171234567\" },\n  \"recipient\": { \"firstName\": \"Juan\", \"lastName\": \"Dela Cruz\" },\n  \"address\": {\n    \"street\": \"123 Street\", \"barangay\": \"Pembo\", \"city\": \"Makati\", \"province\": null,\n    \"postalCode\": \"1218\", \"landmark\": null, \"region\": \"NCR\", \"lat\": null, \"lng\": null\n  },\n  \"courier\": \"JNT\",\n  \"payment\": { \"method\": \"GCASH\" },\n  \"consent\": { \"marketing\": false, \"policyVersion\": \"2026-01\" }\n}" },
+            "description": "Requires a verified email (403 EMAIL_NOT_VERIFIED otherwise). The shipping fee is recomputed on the server."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Payments (PayMongo)",
+      "item": [
+        {
+          "name": "Create checkout session",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/checkout",
+            "body": { "mode": "raw", "raw": "{\n  \"order_id\": {{orderId}}\n}" },
+            "description": "Returns checkout_url (PayMongo hosted page). Copy the session id (cs_...) from PayMongo into checkoutSessionId to replay the webhook below."
+          }
+        },
+        {
+          "name": "Order payment status (return page polls this)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{baseUrl}}/api/v1/payments/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "Admin — payments needing review",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/payments/admin/review"
+          }
+        },
+        {
+          "name": "Webhook — checkout_session.payment.paid (signed)",
+          "event": [{ "listen": "prerequest", "script": { "exec": [
+            "// Signs the raw body like PayMongo does (test mode: te=...).",
+            "const secret = pm.collectionVariables.get('webhookSecret');",
+            "if (!secret) throw new Error('Set the webhookSecret collection variable first');",
+            "const body = pm.variables.replaceIn(pm.request.body.raw);",
+            "const t = Math.floor(Date.now() / 1000);",
+            "const sig = CryptoJS.HmacSHA256(t + '.' + body, secret).toString(CryptoJS.enc.Hex);",
+            "pm.request.body.raw = body;",
+            "pm.request.headers.upsert({ key: 'Paymongo-Signature', value: 't=' + t + ',te=' + sig + ',li=' });"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/webhooks/paymongo",
+            "body": { "mode": "raw", "raw": "{\"data\":{\"id\":\"evt_postman_{{$timestamp}}\",\"type\":\"event\",\"attributes\":{\"type\":\"checkout_session.payment.paid\",\"livemode\":false,\"data\":{\"id\":\"{{checkoutSessionId}}\",\"attributes\":{\"payment_method_used\":\"gcash\",\"payments\":[{\"id\":\"pay_postman\",\"attributes\":{\"amount\":109900}}]}}}}}" },
+            "description": "Set amount to the order's amount_centavos (payments table) or it is flagged 'Amount mismatch' for review. Sending the same event id twice is processed once."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Logistics",
+      "item": [
+        {
+          "name": "Customer — tracking timeline",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/tracking"
+          }
+        },
+        {
+          "name": "Admin — shipments list",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/shipments?status=", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "shipments"],
+                     "query": [{ "key": "status", "value": "", "description": "BOOKED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, FAILED, RETURNED (blank = all booked)" }] }
+          }
+        },
+        {
+          "name": "Admin — encode J&T / LBC waybill",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "if (pm.response.code === 201) pm.collectionVariables.set('deliveryId', pm.response.json().delivery_id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/shipments/{{orderId}}/manual",
+            "body": { "mode": "raw", "raw": "{\n  \"courier\": \"JNT\",\n  \"tracking_number\": \"JT0001234567\",\n  \"fee_actual\": 95\n}" },
+            "description": "Order must be paid or packed."
+          }
+        },
+        {
+          "name": "Admin — book Lalamove rider",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "if (pm.response.code === 201) pm.collectionVariables.set('deliveryId', pm.response.json().delivery_id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/admin/shipments/{{orderId}}/lalamove",
+            "description": "Needs Lalamove keys and an order whose address has a map pin."
+          }
+        },
+        {
+          "name": "Admin — update shipment status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/shipments/{{deliveryId}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_TRANSIT\",\n  \"note\": \"Arrived at J&T hub\"\n}" }
+          }
+        },
+        {
+          "name": "Webhook — Lalamove",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/webhooks/lalamove",
+            "body": { "mode": "raw", "raw": "{\n  \"apiKey\": \"pk_test_xxx\",\n  \"eventType\": \"ORDER_STATUS_CHANGED\",\n  \"data\": { \"order\": { \"orderId\": \"LALAMOVE_ORDER_ID\" } }\n}" },
+            "description": "Only the orderId is used; the real status is re-fetched from Lalamove."
+          }
+        }
+      ]
+    }
+  ]
+}
