@@ -1,56 +1,22 @@
 // Runs the real Frontend/Pages/COpage/checkout.html in jsdom as if PayMongo
 // had just redirected back to it, with GET /api/v1/payments/orders/:id stubbed.
-const fs = require("fs");
-const path = require("path");
-const { JSDOM } = require("jsdom");
+const { openPage } = require("./pageHarness");
 
-const FRONTEND = path.join(__dirname, "..", "..", "Frontend");
-const read = (p) => fs.readFileSync(path.join(FRONTEND, p), "utf8");
-
-// statuses: the successive bodies GET /v1/payments/orders/:id returns.
+// statuses: the successive bodies GET /v1/payments/orders/172 returns.
 async function openReturnPage(query, statuses) {
-  const html = read("Pages/COpage/checkout.html")
-    .replace('<script src="../../JS/api.js"></script>', `<script>${read("JS/api.js")}</script>`)
-    .replace('<script src="../../JS/cart.js"></script>', `<script>${read("JS/cart.js")}</script>`);
-
-  const calls = [];
-  const timers = new Set();
-  const dom = new JSDOM(html, {
-    url: `http://localhost:5500/Frontend/Pages/COpage/checkout.html?${query}`,
-    runScripts: "dangerously",
-    beforeParse(window) {
-      window.sessionStorage.setItem("bongalink_logged_in", "true");
-      window.sessionStorage.setItem("bongalink_token", "test-token");
-      window.scrollTo = () => {};
-      window.console.error = () => {};
-      // Skip the 3 s / 15 s waits; tracked so close() stops the background poller.
-      window.setTimeout = (fn) => {
-        const t = setTimeout(() => { timers.delete(t); fn(); }, 0);
-        timers.add(t);
-        return t;
-      };
-      window.clearTimeout = (t) => { clearTimeout(t); timers.delete(t); };
-      window.fetch = async (url, options = {}) => {
-        calls.push({ url, method: options.method || "GET" });
-        const body = statuses[Math.min(calls.filter(c => c.url.includes("/payments/orders/")).length - 1, statuses.length - 1)];
-        return { ok: true, status: 200, json: async () => body };
-      };
-    }
+  let n = 0;
+  const page = await openPage("Pages/COpage/checkout.html", {
+    query, fastTimers: true,
+    api: async ({ url }) => url.includes("/payments/orders/")
+      ? { body: statuses[Math.min(n++, statuses.length - 1)] }
+      : { body: url === "/cart" ? [] : {} }
   });
-
-  const page = {
-    calls,
-    heading: () => dom.window.document.querySelector(".confirm h1")?.textContent,
-    text: () => dom.window.document.querySelector(".confirm")?.textContent || "",
-    button: () => dom.window.document.getElementById("status-action")?.textContent || null,
-    close: () => {
-      timers.forEach(clearTimeout);
-      timers.clear();
-      dom.window.close();
-    }
-  };
+  page.heading = () => page.$(".result h1")?.textContent;
+  page.text = () => page.$(".result")?.textContent || "";
+  page.button = () => page.$("#status-action")?.textContent.trim() || null;
+  page.statusCalls = () => page.calls.filter(c => c.url.includes("/payments/orders/"));
   page.waitFor = async (heading) => {
-    for (let i = 0; i < 200 && page.heading() !== heading; i++) await new Promise(r => setTimeout(r, 5));
+    await page.until(() => page.heading() === heading);
     expect(page.heading()).toBe(heading);
   };
   return page;
@@ -63,9 +29,11 @@ describe("checkout.html after returning from PayMongo", () => {
   test("paid: polls the status endpoint until the webhook marks the order paid", async () => {
     const page = await openReturnPage("order=172&payment=success", [pending, pending, paid]);
     await page.waitFor("Payment received");
-    expect(page.calls.every(c => c.url.endsWith("/api/v1/payments/orders/172") && c.method === "GET")).toBe(true);
-    expect(page.calls.length).toBe(3);
+    expect(page.statusCalls().every(c => c.url === "/v1/payments/orders/172" && c.method === "GET")).toBe(true);
+    expect(page.statusCalls()).toHaveLength(3);
     expect(page.button()).toBeNull();
+    // the cart isn't loaded on the return page
+    expect(page.calls.some(c => c.url === "/cart")).toBe(false);
     page.close();
   });
 
@@ -76,10 +44,10 @@ describe("checkout.html after returning from PayMongo", () => {
     expect(page.button()).toBe("Check now");
     expect(page.text()).not.toMatch(/Pay now/);
 
-    // It keeps polling in the background, and switches when the payment lands.
-    const before = page.calls.length;
+    // It keeps polling in the background.
+    const before = page.statusCalls().length;
     await new Promise(r => setTimeout(r, 50));
-    expect(page.calls.length).toBeGreaterThan(before);
+    expect(page.statusCalls().length).toBeGreaterThan(before);
     page.close();
   });
 
@@ -87,7 +55,7 @@ describe("checkout.html after returning from PayMongo", () => {
     const page = await openReturnPage("order=172&payment=cancelled", [pending]);
     await page.waitFor("Payment cancelled");
     expect(page.button()).toBe("Pay now");
-    expect(page.calls.length).toBe(1);
+    expect(page.statusCalls()).toHaveLength(1);
     page.close();
   });
 

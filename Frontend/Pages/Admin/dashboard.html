@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — Bongalink admin</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/admin.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- Integrated Dashboard (Sprint 3 "ERP Dashboard"): the owner's view of
+     sales, orders and inventory. Read-only, from existing endpoints:
+       GET /api/admin/ml/dashboard   stock counts, month sales, trend, top products
+       GET /api/v1/admin/orders/to-ship
+       GET /api/admin/ml/status      forecast model status -->
+<main id="main" class="container page">
+  <div class="page-head">
+    <div>
+      <h1>Dashboard</h1>
+      <p>Sales, orders and inventory at a glance.</p>
+    </div>
+    <div class="row">
+      <a class="btn btn--secondary" href="inventory.html"><i data-icon="boxes" data-size="18"></i> Inventory</a>
+      <a class="btn btn--secondary" href="deliveries.html"><i data-icon="truck" data-size="18"></i> Deliveries</a>
+      <a class="btn btn--secondary" href="inventory.html#forecasts"><i data-icon="layout-dashboard" data-size="18"></i> Forecasts</a>
+    </div>
+  </div>
+
+  <div class="stat-grid" aria-live="polite">
+    <a class="card stat" href="deliveries.html" id="statToShip">
+      <span class="stat__label"><i data-icon="truck" data-size="16"></i> Orders to ship</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">Paid, not yet handed to a courier</span>
+    </a>
+    <a class="card stat" href="inventory.html" id="statLow">
+      <span class="stat__label"><i data-icon="triangle-alert" data-size="16"></i> Low stock</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+    <a class="card stat" href="inventory.html" id="statOut">
+      <span class="stat__label"><i data-icon="package-open" data-size="16"></i> Out of stock</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+    <div class="card stat" id="statSales">
+      <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Sales this month</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <a class="card stat" href="inventory.html#forecasts" id="statModel">
+      <span class="stat__label"><i data-icon="cpu" data-size="16"></i> Forecast model</span>
+      <span class="stat__value stat__value--sm"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+  </div>
+
+  <div class="dash-grid">
+    <section class="card" aria-labelledby="trendTitle">
+      <div class="card__header">
+        <h2 id="trendTitle">Sales trend</h2>
+        <div class="row">
+          <div class="segmented" role="group" aria-label="Measure">
+            <button type="button" data-metric="revenue" aria-pressed="true">Revenue</button>
+            <button type="button" data-metric="units" aria-pressed="false">Units</button>
+          </div>
+          <label class="sr-only" for="trendDays">Period</label>
+          <select class="select select--sm" id="trendDays">
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 180 days</option>
+          </select>
+        </div>
+      </div>
+      <div class="card__body">
+        <div class="chart" id="trendChart"></div>
+        <p class="chart-note" id="trendNote"></p>
+        <div id="trendTable"></div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="topTitle">
+      <div class="card__header"><h2 id="topTitle">Top-selling parts</h2><span class="muted" id="topPeriod"></span></div>
+      <div id="topProducts"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink admin</span>
+    <span>Sales count paid, shipped, delivered and completed orders.</span>
+  </div>
+</footer>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/chart.js"></script>
+<script src="../../JS/dashboard.js"></script>
+</body>
+</html>

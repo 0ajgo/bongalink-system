@@ -276,7 +276,8 @@ function showVerifyStep() {
 
 document.getElementById("verify-resend").addEventListener("click", async (event) => {
   verify.message.textContent = "";
-  busy(event.currentTarget, true);
+  const button = event.currentTarget;   // currentTarget is null again after an await
+  busy(button, true);
   try {
     const result = await apiFetch("/v1/auth/verify-email/send", {
       method: "POST", body: JSON.stringify({ email: verify.email.value.trim() })
@@ -285,13 +286,14 @@ document.getElementById("verify-resend").addEventListener("click", async (event)
   } catch (err) {
     verify.message.textContent = err.message;
   } finally {
-    busy(event.currentTarget, false);
+    busy(button, false);
   }
 });
 
 document.getElementById("verify-confirm").addEventListener("click", async (event) => {
   verify.message.textContent = "";
-  busy(event.currentTarget, true);
+  const button = event.currentTarget;   // currentTarget is null again after an await
+  busy(button, true);
   try {
     await apiFetch("/v1/auth/verify-email/confirm", {
       method: "POST",
@@ -303,7 +305,7 @@ document.getElementById("verify-confirm").addEventListener("click", async (event
   } catch (err) {
     verify.message.textContent = err.message;
   } finally {
-    busy(event.currentTarget, false);
+    busy(button, false);
   }
 });
 

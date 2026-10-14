@@ -1,102 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bongalink — Deliveries</title>
-<link rel="stylesheet" href="../../CSS/homepage.css">
-<link rel="stylesheet" href="../../CSS/inventory.css">
-<link rel="stylesheet" href="../../CSS/deliveries.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deliveries — Bongalink admin</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/admin.css">
 </head>
-<body>
+<body class="app">
+<header id="site-header"></header>
 
-<!-- =========================================================
-     TOP NAV — same as inventory.html
-     ========================================================= -->
-<header class="top">
-<div class="brand">
-<a href="../Homepage/homepage.html" class="brand-name">Bongalink</a>
-</div>
-<nav class="tabs">
-<a href="../Homepage/homepage.html" class="nav-link">Product Catalog</a>
-<a href="inventory.html" class="nav-link">Inventory &amp; Forecasts</a>
-<a href="deliveries.html" class="nav-link active">Deliveries</a>
-</nav>
-<!-- Paid orders waiting to be shipped; adminNav.js polls
-     GET /api/v1/admin/orders/to-ship every 30 seconds. -->
-<a href="deliveries.html" class="status-badge" id="to-ship-badge" role="status" aria-live="polite" hidden></a>
-</header>
+<main id="main" class="container page">
+  <div class="page-head">
+    <div>
+      <h1>Deliveries</h1>
+      <p>Ship paid orders and keep customers' tracking timelines up to date (REQ012–REQ016).</p>
+    </div>
+    <button class="btn btn--secondary" id="refreshBtn" type="button"><i data-icon="refresh-cw" data-size="18"></i> Refresh</button>
+  </div>
 
-<main class="inv">
+  <!-- PAID ORDERS TO SHIP — GET /api/v1/admin/orders/awaiting-shipment -->
+  <section class="section" aria-labelledby="awaitingTitle">
+    <div class="section-head">
+      <h2 id="awaitingTitle">Paid orders to ship</h2>
+      <span class="muted" id="awaitingCount"></span>
+    </div>
+    <div id="awaitingList" aria-live="polite"></div>
+    <div class="alert alert--info section-card"><i data-icon="info" data-size="18"></i>
+      <span>J&amp;T and LBC: book the parcel at the branch or in the courier's app, then enter the waybill number — the customer
+      is emailed the tracking details. Lalamove books a rider through its API and is only offered when Lalamove is configured
+      and the customer pinned their address.</span></div>
+  </section>
 
-<!-- Shown instead of the page when not logged in as admin -->
-<section class="inv-locked" id="locked" hidden>
-<h2>Admin account required</h2>
-<p>Log in with an admin account to manage deliveries.</p>
-<a class="btn-primary" href="../Homepage/login.html">Go to login</a>
-</section>
-
-<div id="dashboard" hidden>
-
-<!-- =========================================================
-     PAID ORDERS TO SHIP (REQ012, REQ013) — deliveries.js
-     renders one card per order from
-     GET /api/v1/admin/orders/awaiting-shipment
-     ========================================================= -->
-<section class="panel">
-<div class="panel-head">
-<h2>Paid orders to ship</h2>
-<div class="history-controls">
-<span class="muted" id="awaitingCount"></span>
-<button class="btn-small" id="refreshBtn" type="button">Refresh</button>
-</div>
-</div>
-<div id="awaitingList"></div>
-<p class="footnote">
-J&amp;T and LBC: book the parcel at the branch or in the courier's app, then enter the waybill number here.
-The customer gets an email with the tracking number and link. Lalamove books a rider through the
-Lalamove API; it's only offered when Lalamove is configured and the customer pinned their address on the map.
-</p>
-</section>
-
-<!-- =========================================================
-     OUTGOING DELIVERIES (REQ014–REQ016) — from
-     GET /api/v1/admin/shipments?status=
-     ========================================================= -->
-<section class="panel">
-<div class="panel-head">
-<h2>Outgoing deliveries</h2>
-<div class="history-controls">
-<select id="statusFilter" aria-label="Filter by status">
-<option value="">All statuses</option>
-</select>
-</div>
-</div>
-<div class="table-wrap">
-<table class="inv-table">
-<thead>
-<tr>
-<th>Order</th>
-<th>Ship to</th>
-<th>Items</th>
-<th>Courier &amp; tracking</th>
-<th class="num">Fee (₱)</th>
-<th>Status</th>
-<th>Update status</th>
-</tr>
-</thead>
-<tbody id="shipmentRows"></tbody>
-</table>
-</div>
-</section>
-
-</div>
+  <!-- OUTGOING DELIVERIES — GET /api/v1/admin/shipments?status= -->
+  <section class="card" aria-labelledby="outgoingTitle">
+    <div class="card__header">
+      <h2 id="outgoingTitle">Outgoing deliveries</h2>
+      <label class="sr-only" for="statusFilter">Filter by status</label>
+      <select class="select select--sm" id="statusFilter"><option value="">All statuses</option></select>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Order</th><th>Ship to</th><th>Items</th><th>Courier &amp; tracking</th><th class="num">Fee</th><th>Status</th><th>Update status</th></tr>
+        </thead>
+        <tbody id="shipmentRows"></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
-<div class="toast" id="toast"></div>
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink admin</span>
+    <span>Customers see every status update on My orders.</span>
+  </div>
+</footer>
 
 <script src="../../JS/api.js"></script>
-<script src="../../JS/adminNav.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
 <script src="../../JS/deliveries.js"></script>
 </body>
 </html>

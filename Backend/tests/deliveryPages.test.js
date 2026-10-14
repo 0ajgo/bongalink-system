@@ -36,8 +36,8 @@ function deliveriesApi(state) {
 describe("admin Deliveries page", () => {
   test("non-admins see the locked message and no data is requested", async () => {
     const page = await openPage("Pages/Admin/deliveries.html", { role: "user", api: async () => ({}) });
-    expect(page.$("#locked").hidden).toBe(false);
-    expect(page.$("#dashboard").hidden).toBe(true);
+    expect(page.$("main").textContent).toContain("Admin account required");
+    expect(page.$(".ship-card")).toBeNull();
     expect(page.calls).toEqual([]);
     page.close();
   });
@@ -59,8 +59,10 @@ describe("admin Deliveries page", () => {
     // the courier chosen at checkout is preselected
     expect(card.querySelector("select[name=courier]").value).toBe("LBC");
     // badge next to the nav link
-    expect(page.$("#to-ship-badge").textContent).toBe("1 paid order to ship");
-    expect(page.$("#to-ship-badge").getAttribute("href")).toBe("deliveries.html");
+    const badge = page.$("[data-to-ship]");
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe("1 order to ship");
+    expect(badge.getAttribute("href")).toBe("../Admin/deliveries.html");
     page.close();
   });
 
@@ -101,7 +103,7 @@ describe("admin Deliveries page", () => {
       body: { courier: "JNT", tracking_number: "JT0009988776", fee_actual: 95.5 } });
     expect(page.$("#awaitingList").textContent).toMatch(/No paid orders waiting/);
     expect(page.$("#shipmentRows").textContent).toContain("#41");
-    expect(page.$("#toast").textContent).toMatch(/marked as shipped/);
+    expect(page.$(".toast-region").textContent).toMatch(/marked as shipped/);
     page.close();
   });
 
@@ -173,11 +175,11 @@ describe("customer My Orders page", () => {
 
   test("lists orders with status, items and totals; tracking timeline for shipped orders", async () => {
     const page = await openPage("Pages/COpage/orders.html", { api });
-    const cards = page.$$(".order");
+    const cards = page.$$("[data-order]");
     expect(cards.map(c => c.dataset.order)).toEqual(["45", "44", "43"]);
     expect(cards[0].textContent).toContain("Waiting for payment");
     expect(cards[1].textContent).toContain("2 × Fuser unit");
-    expect(cards[1].textContent).toMatch(/Total\s*₱600\.00/);
+    expect(cards[1].querySelector(".price").textContent).toBe("₱600.00");
 
     // only shipped/delivered orders ask for tracking
     expect(page.calls.filter(c => c.url.includes("/tracking")).map(c => c.url)).toEqual(["/v1/orders/44/tracking"]);
@@ -188,7 +190,7 @@ describe("customer My Orders page", () => {
     expect(t.querySelector("a").href).toBe("https://www.jtexpress.ph/track?waybill=JT0001234567");
     const steps = [...t.querySelectorAll(".timeline li")];
     expect(steps.map(li => li.querySelector(".timeline__status").textContent))
-      .toEqual(["In transit", "Handed to the courier"]);   // newest first
+      .toEqual(["In transit", "Handed to courier"]);   // newest first
     expect(steps[0].classList.contains("is-latest")).toBe(true);
     expect(steps[1].querySelector(".timeline__note").textContent).toBe("Dropped off at J&T Express");
     expect(steps.every(li => li.querySelector(".timeline__time").textContent.trim().length > 0)).toBe(true);
@@ -209,17 +211,62 @@ describe("customer My Orders page", () => {
   });
 });
 
-describe("homepage navigation", () => {
-  const catalogApi = async ({ url }) => ({ body: url === "/cart" ? [] : [] });
+describe("header navigation and account indicator (every page)", () => {
+  const api = async ({ url }) => ({ body: url === "/v1/admin/orders/to-ship" ? { count: 0 } : [] });
+  const navLabels = (page) => page.$$("#site-header .site-header__inner .site-nav a:not([data-to-ship])").map(a => a.textContent.trim());
 
-  test.each([
-    ["user", { ordersLink: false, inventoryLink: true, deliveriesLink: true }],
-    ["admin", { ordersLink: true, inventoryLink: false, deliveriesLink: false }]
-  ])("%s sees the right links", async (role, hidden) => {
-    const page = await openPage("Pages/Homepage/homepage.html", { role, api: catalogApi });
-    for (const [id, isHidden] of Object.entries(hidden)) {
-      expect([id, page.$(`#${id}`).hidden]).toEqual([id, isHidden]);
-    }
+  test("visitors see Log in and Sign up, no account menu", async () => {
+    const page = await openPage("Pages/Homepage/homepage.html", { role: null, api });
+    expect(navLabels(page)).toEqual(["Shop"]);
+    const actions = page.$(".header-actions").textContent;
+    expect(actions).toContain("Log in");
+    expect(actions).toContain("Sign up");
+    expect(page.$(".account")).toBeNull();
+    page.close();
+  });
+
+  test("customers see My orders, the cart and their account with a Customer badge", async () => {
+    const page = await openPage("Pages/Homepage/homepage.html", { role: "user", username: "maria.santos", api });
+    expect(navLabels(page)).toEqual(["Shop", "My orders"]);
+    expect(page.$(".cart-link")).not.toBeNull();
+    expect(page.$(".avatar").textContent).toBe("MA");
+    expect(page.$(".account__name").textContent).toBe("maria.santos");
+    expect(page.$(".account__role").textContent).toBe("Customer");
+    expect(page.$$("#account-menu a").map(a => a.textContent.trim())).toEqual(["My profile", "My orders"]);
+    expect(page.$(".header-actions").textContent).not.toContain("Log in");
+    page.close();
+  });
+
+  test("admins see Dashboard, Inventory and Deliveries, no cart, and an Admin badge", async () => {
+    const page = await openPage("Pages/Homepage/homepage.html", { role: "admin", username: "owner", api });
+    expect(navLabels(page)).toEqual(["Shop", "Dashboard", "Inventory", "Deliveries"]);
+    expect(page.$(".cart-link")).toBeNull();
+    expect(page.$(".account__role").textContent).toBe("Admin");
+    expect(page.$$("#account-menu a").map(a => [a.textContent.trim(), a.getAttribute("href")]))
+      .toEqual([["My profile", "../Account/profile.html"], ["Admin dashboard", "../Admin/dashboard.html"]]);
+    page.close();
+  });
+
+  test("the account menu opens, closes with Escape, and Log out clears the session", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { role: "user", api });
+    const button = page.$(".account__button");
+    button.click();
+    expect(page.$("#account-menu").hidden).toBe(false);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    page.doc.dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "Escape" }));
+    expect(page.$("#account-menu").hidden).toBe(true);
+    page.$("[data-logout]").click();
+    expect(page.window.sessionStorage.getItem("bongalink_token")).toBeNull();
+    page.close();
+  });
+
+  test("mobile menu toggles", async () => {
+    const page = await openPage("Pages/Homepage/homepage.html", { role: "user", api });
+    const toggle = page.$(".menu-toggle");
+    expect(page.$("#mobile-panel").hidden).toBe(true);
+    toggle.click();
+    expect(page.$("#mobile-panel").hidden).toBe(false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     page.close();
   });
 });

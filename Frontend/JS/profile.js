@@ -52,7 +52,8 @@ function renderHead() {
    EMAIL VERIFICATION
    --------------------------------------------------------------------- */
 $("resendCode").addEventListener("click", async (event) => {
-  busy(event.currentTarget, true);
+  const button = event.currentTarget;   // currentTarget is null again after an await
+  busy(button, true);
   $("verifyMessage").textContent = "";
   try {
     const r = await apiFetch("/v1/auth/verify-email/send", { method: "POST", body: JSON.stringify({ email: me.email }) });
@@ -60,7 +61,7 @@ $("resendCode").addEventListener("click", async (event) => {
   } catch (err) {
     $("verifyMessage").textContent = err.message;
   } finally {
-    busy(event.currentTarget, false);
+    busy(button, false);
   }
 });
 

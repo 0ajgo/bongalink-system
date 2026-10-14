@@ -1,6 +1,6 @@
 /* =====================================================================
-   BONGALINK — ADMIN DELIVERIES (deliveries.html)
-   Requires api.js and adminNav.js first.
+   BONGALINK — ADMIN DELIVERIES (Pages/Admin/deliveries.html)
+   Requires api.js, icons.js, cart.js and ui.js.
 
    - Paid orders to ship:  GET  /api/v1/admin/orders/awaiting-shipment
        ship with J&T / LBC: POST /api/v1/admin/shipments/:orderId/manual
@@ -11,16 +11,9 @@
    twice); the checks here are only for instant feedback.
    ===================================================================== */
 
-const STATUS_LABEL = {
-  BOOKED: "Rider booked",
-  PICKED_UP: "Handed to courier",
-  IN_TRANSIT: "In transit",
-  OUT_FOR_DELIVERY: "Out for delivery",
-  DELIVERED: "Delivered",
-  FAILED: "Failed",
-  RETURNED: "Returned"
-};
-const STATUS_TONE = { DELIVERED: "ok", FAILED: "bad", RETURNED: "bad" };
+renderHeader({ active: "deliveries" });
+
+const DELIVERY_STATUSES = ["BOOKED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "RETURNED"];
 // Statuses the admin can set by hand (the first two come from booking).
 const SETTABLE = ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "RETURNED"];
 
@@ -31,48 +24,28 @@ const els = {
   filter: document.getElementById("statusFilter")
 };
 
-/* ---------------------------------------------------------------------
-   HELPERS
-   --------------------------------------------------------------------- */
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
-const peso = (value) => Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const when = (value) => value ? new Date(value).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }) : "—";
-
-function showToast(message) {
-  const toast = document.getElementById("toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 3200);
-}
-
-function itemsList(items) {
-  return `<ul class="ship-items">${items.map(i =>
-    `<li>${Number(i.quantity)} × ${escapeHTML(i.name)}</li>`).join("")}</ul>`;
-}
+const itemsList = (items) =>
+  `<ul class="ship-items">${items.map(i => `<li>${Number(i.quantity)} × ${escapeHTML(i.name)}</li>`).join("")}</ul>`;
 
 function shipTo(o) {
   return `${escapeHTML(o.ship_name)} · ${escapeHTML(o.ship_phone)}<br>
-    ${escapeHTML(o.ship_address)}${o.ship_region ? ` <span class="tag tag-muted">${escapeHTML(o.ship_region)}</span>` : ""}
+    ${escapeHTML(o.ship_address)}${o.ship_region ? ` <span class="badge">${escapeHTML(o.ship_region)}</span>` : ""}
     ${o.ship_landmark ? `<br><span class="muted">${escapeHTML(o.ship_landmark)}</span>` : ""}`;
 }
 
-// Runs an action with its button disabled, then reloads both lists and the badge.
+// Runs an action with its button busy, then reloads both lists and the badge.
 // successMessage is a string, or a function of the action's result.
 async function act(button, work, successMessage) {
   button.disabled = true;
+  button.classList.add("is-loading");
   try {
     const result = await work();
-    showToast(typeof successMessage === "function" ? successMessage(result) : successMessage);
+    toast(typeof successMessage === "function" ? successMessage(result) : successMessage, "success");
     await reloadAll();
   } catch (err) {
-    showToast(err.message || "Something went wrong.");
+    toast(err.message || "Something went wrong.", "error");
     button.disabled = false;
+    button.classList.remove("is-loading");
   }
 }
 
@@ -81,14 +54,13 @@ async function act(button, work, successMessage) {
    --------------------------------------------------------------------- */
 function lalamoveBlock(o) {
   if (o.can_book_lalamove) {
-    return `<span class="or">or</span>
-      <button class="btn-small${o.courier_chosen === "LALAMOVE" ? " primary" : ""}" type="button" data-lalamove="${o.order_id}">
-        Book Lalamove rider</button>`;
+    return `<button class="btn ${o.courier_chosen === "LALAMOVE" ? "btn--primary" : "btn--secondary"}" type="button" data-lalamove="${o.order_id}">
+      ${icon("truck", { size: 18 })} Book Lalamove rider</button>`;
   }
   // Customer picked Lalamove but it can't be booked now: say why instead of hiding silently.
   if (o.courier_chosen === "LALAMOVE") {
     const why = o.has_map_pin ? "Lalamove isn't configured on the server" : "the address has no map pin";
-    return `<span class="muted">Customer chose Lalamove, but ${why}. Ship with J&amp;T or LBC instead.</span>`;
+    return `<p class="muted">Customer chose Lalamove, but ${why}. Ship with J&amp;T or LBC instead.</p>`;
   }
   return "";
 }
@@ -96,27 +68,35 @@ function lalamoveBlock(o) {
 function awaitingCard(o) {
   const preset = ["JNT", "LBC"].includes(o.courier_chosen) ? o.courier_chosen : "JNT";
   return `
-    <article class="ship-card" data-order="${o.order_id}">
-      <div class="ship-card-head">
-        <h3>Order #${o.order_id} <span class="tag tag-busy">${escapeHTML(o.order_status)}</span></h3>
-        <span class="muted">Paid ${when(o.paid_at)} · Total ₱${peso(o.total_amount)}</span>
+    <article class="card ship-card" data-order="${o.order_id}">
+      <div class="card__header">
+        <h3>Order #${o.order_id} ${statusBadge(o.order_status)}</h3>
+        <span class="muted">Paid ${formatDateTime(o.paid_at)} · Total <span class="price">${formatMoney(o.total_amount)}</span></span>
       </div>
-      <div class="ship-grid">
+      <div class="card__body ship-grid">
         <div><h4>Customer</h4>${escapeHTML(o.customer_username)}<br><span class="muted">${escapeHTML(o.customer_email)}</span></div>
         <div><h4>Ship to</h4>${shipTo(o)}</div>
         <div><h4>Items</h4>${itemsList(o.items)}</div>
         <div><h4>Courier chosen</h4>${escapeHTML(o.courier_chosen_label || "—")}<br>
-          <span class="muted">Shipping fee paid: ₱${peso(o.shipping_fee)}</span></div>
+          <span class="muted">Shipping fee paid: ${formatMoney(o.shipping_fee)}</span></div>
       </div>
-      <form class="ship-actions" data-manual="${o.order_id}">
-        <select name="courier" aria-label="Courier">
-          <option value="JNT" ${preset === "JNT" ? "selected" : ""}>J&amp;T Express</option>
-          <option value="LBC" ${preset === "LBC" ? "selected" : ""}>LBC Express</option>
-        </select>
-        <input class="tn" name="tracking" placeholder="Tracking / waybill no." aria-label="Tracking number"
-               required pattern="[A-Za-z0-9\\-]{6,40}" title="6–40 letters, numbers or dashes">
-        <input class="fee" name="fee" type="number" min="0" step="0.01" placeholder="Actual fee (opt.)" aria-label="Actual courier fee">
-        <button class="btn-small primary" type="submit">Mark as shipped</button>
+      <form class="card__footer ship-actions" data-manual="${o.order_id}" novalidate>
+        <div class="field">
+          <label class="label" for="courier-${o.order_id}">Courier</label>
+          <select class="select" id="courier-${o.order_id}" name="courier">
+            <option value="JNT" ${preset === "JNT" ? "selected" : ""}>J&amp;T Express</option>
+            <option value="LBC" ${preset === "LBC" ? "selected" : ""}>LBC Express</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="tracking-${o.order_id}">Tracking / waybill no.</label>
+          <input class="input tn" id="tracking-${o.order_id}" name="tracking" autocomplete="off">
+        </div>
+        <div class="field">
+          <label class="label" for="fee-${o.order_id}">Actual fee <span class="optional">(optional)</span></label>
+          <input class="input fee" id="fee-${o.order_id}" name="fee" type="number" min="0" step="0.01">
+        </div>
+        <button class="btn btn--primary" type="submit">Mark as shipped</button>
         ${lalamoveBlock(o)}
       </form>
     </article>`;
@@ -127,7 +107,8 @@ async function loadAwaiting() {
   els.awaitingCount.textContent = orders.length === 1 ? "1 order" : `${orders.length} orders`;
   els.awaiting.innerHTML = orders.length
     ? orders.map(awaitingCard).join("")
-    : `<p class="empty-note">No paid orders waiting. New ones appear here as soon as PayMongo confirms the payment.</p>`;
+    : `<div class="card">${UIState.empty({ icon: "package-open", title: "No paid orders waiting",
+        text: "New ones appear here as soon as PayMongo confirms the payment." })}</div>`;
 }
 
 els.awaiting.addEventListener("submit", (event) => {
@@ -137,7 +118,8 @@ els.awaiting.addEventListener("submit", (event) => {
   const orderId = form.dataset.manual;
   const tracking = form.elements.tracking.value.trim();
   if (!/^[A-Za-z0-9-]{6,40}$/.test(tracking)) {
-    showToast("Enter the waybill number (6–40 letters, numbers or dashes).");
+    form.elements.tracking.setAttribute("aria-invalid", "true");
+    toast("Enter the waybill number (6–40 letters, numbers or dashes).", "error");
     form.elements.tracking.focus();
     return;
   }
@@ -157,48 +139,48 @@ els.awaiting.addEventListener("click", (event) => {
   act(button,
     () => apiFetch(`/v1/admin/shipments/${orderId}/lalamove`, { method: "POST" }),
     (r) => r.fee_difference
-      ? `Lalamove rider booked for order #${orderId}. The live price differs from what the customer paid by ₱${peso(r.fee_difference)}.`
+      ? `Lalamove rider booked for order #${orderId}. The live price differs from what the customer paid by ${formatMoney(r.fee_difference)}.`
       : `Lalamove rider booked for order #${orderId}.`);
 });
 
 /* ---------------------------------------------------------------------
    OUTGOING DELIVERIES
    --------------------------------------------------------------------- */
-els.filter.innerHTML += Object.entries(STATUS_LABEL)
-  .map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+els.filter.innerHTML += DELIVERY_STATUSES.map(s => `<option value="${s}">${STATUS[s]}</option>`).join("");
 
 function trackingCell(d) {
   const tn = d.tracking_number ? `<br><span class="muted">${escapeHTML(d.tracking_number)}</span>` : "";
   const link = d.tracking_url
-    ? `<br><a class="link" href="${escapeHTML(d.tracking_url)}" target="_blank" rel="noopener">Tracking page</a>` : "";
+    ? `<br><a href="${escapeHTML(d.tracking_url)}" target="_blank" rel="noopener">${icon("external-link", { size: 14 })} Tracking page</a>` : "";
   return `${escapeHTML(d.courier_label)}${tn}${link}`;
 }
 
 function statusForm(d) {
-  if (d.status === "DELIVERED") return `<span class="muted">Done ${when(d.delivered_at)}</span>`;
+  if (d.status === "DELIVERED") return `<span class="muted">Done ${formatDateTime(d.delivered_at)}</span>`;
   return `
-    <form class="status-form" data-delivery="${d.delivery_id}">
-      <select name="status" aria-label="New status">
-        ${SETTABLE.filter(s => s !== d.status).map(s => `<option value="${s}">${STATUS_LABEL[s]}</option>`).join("")}
+    <form class="status-form" data-delivery="${d.delivery_id}" novalidate>
+      <label class="sr-only" for="status-${d.delivery_id}">New status</label>
+      <select class="select" id="status-${d.delivery_id}" name="status">
+        ${SETTABLE.filter(s => s !== d.status).map(s => `<option value="${s}">${STATUS[s]}</option>`).join("")}
       </select>
-      <input name="note" maxlength="255" placeholder="Note (optional)" aria-label="Note">
-      <button class="btn-small" type="submit">Update</button>
+      <label class="sr-only" for="note-${d.delivery_id}">Note</label>
+      <input class="input" id="note-${d.delivery_id}" name="note" maxlength="255" placeholder="Note (optional)">
+      <button class="btn btn--secondary btn--sm" type="submit">Update</button>
     </form>`;
 }
 
 function shipmentRow(d) {
   const fee = d.fee_actual !== null && d.fee_actual !== undefined
-    ? `${peso(d.fee_charged)}<br><span class="muted">actual ${peso(d.fee_actual)}</span>`
-    : peso(d.fee_charged);
+    ? `${formatMoney(d.fee_charged)}<br><span class="muted">actual ${formatMoney(d.fee_actual)}</span>`
+    : formatMoney(d.fee_charged);
   return `
     <tr>
-      <td>#${d.order_id}<br><span class="muted">${escapeHTML(d.customer_username)}</span></td>
+      <td><strong>#${d.order_id}</strong><br><span class="muted">${escapeHTML(d.customer_username)}</span></td>
       <td>${shipTo(d)}</td>
       <td>${itemsList(d.items)}</td>
       <td>${trackingCell(d)}</td>
       <td class="num">${fee}</td>
-      <td><span class="ship-pill ${STATUS_TONE[d.status] || "busy"}">${STATUS_LABEL[d.status] || escapeHTML(d.status)}</span>
-          <br><span class="muted">${when(d.updated_at)}</span></td>
+      <td>${statusBadge(d.status)}<br><span class="muted">${formatDateTime(d.updated_at)}</span></td>
       <td>${statusForm(d)}</td>
     </tr>`;
 }
@@ -208,10 +190,11 @@ async function loadShipments() {
   const rows = await apiFetch(`/v1/admin/shipments${status ? `?status=${encodeURIComponent(status)}` : ""}`);
   els.rows.innerHTML = rows.length
     ? rows.map(shipmentRow).join("")
-    : `<tr><td colspan="7" class="empty-note">No deliveries${status ? ` with status "${STATUS_LABEL[status]}"` : " yet"}.</td></tr>`;
+    : `<tr><td colspan="7">${UIState.empty({ icon: "truck", title: status ? `No deliveries "${STATUS[status]}"` : "No deliveries yet",
+        text: status ? "Try another status." : "Shipped orders appear here." })}</td></tr>`;
 }
 
-els.filter.addEventListener("change", () => loadShipments().catch(err => showToast(err.message)));
+els.filter.addEventListener("change", () => loadShipments().catch(err => toast(err.message, "error")));
 
 els.rows.addEventListener("submit", (event) => {
   const form = event.target.closest("form[data-delivery]");
@@ -222,7 +205,7 @@ els.rows.addEventListener("submit", (event) => {
   const body = { status, note: form.elements.note.value.trim() || undefined };
   act(form.querySelector("button"),
     () => apiFetch(`/v1/admin/shipments/${form.dataset.delivery}/status`, { method: "PATCH", body: JSON.stringify(body) }),
-    `Status updated to "${STATUS_LABEL[status]}".`);
+    `Status updated to "${STATUS[status]}".`);
 });
 
 /* ---------------------------------------------------------------------
@@ -232,19 +215,17 @@ async function reloadAll() {
   await Promise.all([loadAwaiting(), loadShipments(), refreshToShipBadge()]);
 }
 
-document.getElementById("refreshBtn").addEventListener("click", () => reloadAll().catch(err => showToast(err.message)));
-
 async function init() {
-  if (!isAdmin()) {
-    document.getElementById("locked").hidden = false;
-    return;
-  }
-  document.getElementById("dashboard").hidden = false;
+  els.awaiting.innerHTML = `<div class="card"><table class="table"><tbody>${UIState.rowSkeletons(4, 2)}</tbody></table></div>`;
+  els.rows.innerHTML = UIState.rowSkeletons(7, 3);
   try {
     await reloadAll();
   } catch (err) {
-    showToast(err.message || "Could not reach the API.");
+    els.awaiting.innerHTML = `<div class="card">${UIState.error(err.message, "retryDeliveries")}</div>`;
+    els.rows.innerHTML = "";
+    document.getElementById("retryDeliveries").addEventListener("click", init);
   }
 }
 
-init();
+document.getElementById("refreshBtn").addEventListener("click", () => reloadAll().catch(err => toast(err.message, "error")));
+if (requireAdminPage()) init();
