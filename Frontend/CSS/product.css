@@ -32,8 +32,9 @@
 .product__facts dd { margin: 0; }
 .product__buy { display: flex; gap: var(--space-3); align-items: stretch; flex-wrap: wrap; padding: var(--space-4) 0; border-top: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); }
 .product__buy .btn { flex: 1; min-width: 180px; }
-.product__description { white-space: pre-line; color: var(--color-ink-2); line-height: 1.65; }
-.product__description h2 { font-size: var(--text-lg); color: var(--color-ink); margin-bottom: var(--space-2); white-space: normal; }
+.product__description { color: var(--color-ink-2); line-height: 1.65; }
+.product__desc-text { white-space: pre-line; }   /* keep the description's own line breaks */
+.product__description h2 { font-size: var(--text-lg); color: var(--color-ink); margin-bottom: var(--space-2); }
 
 .stepper { display: inline-flex; align-items: center; border: 1px solid var(--color-line-strong); border-radius: var(--radius); background: var(--color-surface); }
 .stepper button { width: 44px; height: 46px; border: 0; background: none; color: var(--color-ink); cursor: pointer; display: grid; place-items: center; border-radius: var(--radius); }

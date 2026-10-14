@@ -108,7 +108,7 @@ function render() {
         </dl>
         <div class="product__description">
           <h2>Description</h2>
-          ${p.description ? escapeHTML(p.description) : `<span class="muted">No description yet. Message the shop to ask about compatibility.</span>`}
+          <p class="product__desc-text">${p.description ? escapeHTML(p.description) : `<span class="muted">No description yet. Message the shop to ask about compatibility.</span>`}</p>
         </div>
       </div>
     </article>`;
