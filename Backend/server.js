@@ -23,6 +23,8 @@ const { router: verifyEmailRoutes } = require("./routes/emailVerification");
 const { router: paymentRoutes, paymongoWebhook } = require("./routes/payments");
 const logisticsRoutes = require("./routes/logistics");
 const accountRoutes = require("./routes/account");
+const geoRoutes = require("./routes/geo");
+const rateRoutes = require("./routes/rates");
 const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
@@ -52,6 +54,8 @@ app.use("/api/admin/ml", mlRoutes);
 // Limit code requests/guesses per IP (on top of the per-code attempt limit).
 app.use("/api/v1/auth/verify-email", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20 }), verifyEmailRoutes);
 app.use("/api/v1/account", accountRoutes);   // profile, password, saved addresses
+app.use("/api/v1/geo", geoRoutes);            // map pin -> region/province/city (Nominatim, server-side)
+app.use("/api/v1/admin/shipping-rates", rateRoutes);
 app.use("/api/v1/payments", paymentRoutes);
 app.use("/api/v1", logisticsRoutes); // /shipping/quote, /orders/:id/tracking, /admin/shipments, /webhooks/lalamove
 

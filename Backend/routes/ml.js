@@ -63,7 +63,7 @@ router.get("/predictions", async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT p.product_id, p.name, c.name AS category, p.price, p.stock_quantity,
-              p.reserved, p.stock_quantity - LEAST(p.reserved, p.stock_quantity) AS available,
+              p.reserved, p.stock_quantity - LEAST(p.reserved, p.stock_quantity) AS available, p.weight_kg,
               mp.predicted_demand_7d, mp.avg_daily_demand, mp.days_until_stockout,
               mp.reorder_recommended, mp.suggested_reorder_qty, mp.forecast_source,
               mp.data_status, mp.history_days, mp.trend_status, mp.trend_direction,

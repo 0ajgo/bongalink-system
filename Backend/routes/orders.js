@@ -39,10 +39,12 @@ const sameCart = (a, b) =>
    Body: { contact: { email, phone }, recipient: { firstName, lastName },
            address: { street, barangay, city, province, postalCode,
                       landmark, region, lat?, lng? },
-           courier: "JNT" | "LBC" | "LALAMOVE",
+           courier: "JNT" | "LBC" | "LALAMOVE", expected_shipping_fee?,
            payment: { method }, consent: { marketing, policyVersion } }
-   The shipping fee is always recomputed here with quoteOptions();
-   any fee the browser sends is ignored.
+   The shipping fee is always recomputed here with quoteOptions(); any fee
+   the browser sends is ignored. With a map pin, the zone comes from where the
+   pin is. expected_shipping_fee is the fee the customer was shown: if the
+   recomputed fee differs, the order is refused (409 SHIPPING_FEE_CHANGED).
    --------------------------------------------------------------------- */
 router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
   const { contact, recipient, address, courier, payment, consent } = req.body || {};
@@ -83,6 +85,7 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     quote = await quoteOptions(quotedItems, {
       region,
       province: address.province,
+      city: address.city,
       line: [address.street, address.barangay, address.city, address.province].filter(Boolean).join(", "),
       lat: pin.lat,
       lng: pin.lng
@@ -98,6 +101,17 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     return res.status(400).json({ error: "That courier isn't available for this address. Please choose another." });
   }
   const shippingFee = option.fee;
+
+  // The fee shown at checkout must be the fee charged. If it changed since the
+  // customer's quote (rate table edited, live Lalamove price moved), stop and say so.
+  const expected = req.body.expected_shipping_fee;
+  if (expected !== undefined && expected !== null && Math.abs(Number(expected) - shippingFee) > 0.004) {
+    return res.status(409).json({
+      error: `The shipping fee for this courier is now ₱${shippingFee.toFixed(2)}. Please review it and place the order again.`,
+      code: "SHIPPING_FEE_CHANGED",
+      shippingFee
+    });
+  }
 
   const connection = await pool.getConnection();
 
@@ -150,7 +164,8 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId, recipientName, contact.phone, address.street, address.barangay,
-        address.city, address.province || null, region, address.postalCode, address.landmark || null,
+        address.city, (quote.location.source === "pin" ? quote.location.province : address.province) || null,
+        quote.location.region, address.postalCode, address.landmark || null,
         pin.lat, pin.lng, quote.zone
       ]
     );

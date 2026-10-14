@@ -59,6 +59,9 @@ async function getQuotation({ pickup, dropoff }) {
     currency: data.priceBreakdown.currency,
     stops: data.stops, // [{ stopId, ... }] pickup first, dropoff second
     expiresAt: data.expiresAt,
+    // Route distance, e.g. { value: "8400", unit: "m" }; null if Lalamove leaves it out.
+    distanceKm: data.distance && Number.isFinite(Number(data.distance.value))
+      ? Number(data.distance.value) / (String(data.distance.unit).toLowerCase() === "km" ? 1 : 1000) : null,
   };
 }
 

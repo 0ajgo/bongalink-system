@@ -7,7 +7,7 @@
      PATCH  /me                    { username?, email?, current_password }
      POST   /password              { current_password, new_password }
      GET    /addresses             saved delivery addresses
-     POST   /addresses             add one   { recipient_name, recipient_phone, street,
+     POST   /addresses             add one   { recipient_name, recipient_phone, street, lat?, lng?,
      PATCH  /addresses/:id         edit one    barangay, city, province?, region,
      DELETE /addresses/:id         delete      postal_code, landmark?, is_default? }
      POST   /addresses/:id/default make it the default
@@ -24,6 +24,7 @@ const ah = require("../lib/asyncHandler");
 const { requireAuth } = require("../middleware/auth");
 const { issueVerificationCode } = require("./emailVerification");
 const { REGIONS, zoneFor } = require("../services/shippingRates");
+const geocode = require("../services/geocode");
 
 router.use(requireAuth);
 
@@ -115,7 +116,7 @@ router.post("/password", ah(async (req, res) => {
 
 /* ---------------------------------------------------------------- addresses */
 const ADDRESS_COLUMNS = `address_id, recipient_name, recipient_phone, street, barangay, city, province,
-                         region, postal_code, landmark, shipping_zone, is_default, created_at`;
+                         region, postal_code, landmark, lat, lng, shipping_zone, is_default, created_at`;
 const NOT_USED_BY_ORDER = "NOT EXISTS (SELECT 1 FROM orders o WHERE o.address_id = a.address_id)";
 
 async function savedAddresses(userId) {
@@ -136,8 +137,10 @@ async function ownSavedAddress(userId, id) {
   return row;
 }
 
-// Returns { values } or { error }.
-function readAddress(body = {}) {
+// Returns { values } or { error }. With a map pin (lat + lng), the region and the
+// shipping zone come from where the pin is; the typed region is the fallback when
+// the map lookup is unavailable.
+async function readAddress(body = {}) {
   const s = (v) => (v === undefined || v === null ? "" : String(v).trim());
   const a = {
     recipient_name: s(body.recipient_name), recipient_phone: s(body.recipient_phone).replace(/[\s-]/g, ""),
@@ -151,7 +154,25 @@ function readAddress(body = {}) {
   if ([a.recipient_name, a.street, a.barangay, a.city, a.province, a.landmark].some(v => v && v.length > 255)) {
     return { error: "One of the fields is too long." };
   }
+  const hasPin = body.lat !== undefined && body.lat !== null && body.lat !== "" &&
+                 body.lng !== undefined && body.lng !== null && body.lng !== "";
+  a.lat = hasPin ? Number(body.lat) : null;
+  a.lng = hasPin ? Number(body.lng) : null;
+  if (hasPin && !(a.lat >= 4 && a.lat <= 22 && a.lng >= 116 && a.lng <= 127)) {
+    return { error: "The map pin is not a valid location in the Philippines." };
+  }
   a.shipping_zone = zoneFor(a.region, a.province);
+  if (hasPin) {
+    try {
+      const g = await geocode.reverse(a.lat, a.lng);
+      a.region = g.region;
+      a.province = g.province || a.province;
+      a.shipping_zone = g.zone;
+    } catch (e) {
+      if (e.status === 400) return { error: e.message };
+      console.warn("Pin lookup failed, using the typed region:", e.message);
+    }
+  }
   return { values: a };
 }
 
@@ -164,7 +185,7 @@ router.get("/addresses", ah(async (req, res) => {
 }));
 
 router.post("/addresses", ah(async (req, res) => {
-  const { values, error } = readAddress(req.body);
+  const { values, error } = await readAddress(req.body);
   if (error) return res.status(400).json({ error });
   const existing = await savedAddresses(req.user.userId);
   if (existing.length >= MAX_ADDRESSES) return res.status(400).json({ error: `You can save up to ${MAX_ADDRESSES} addresses.` });
@@ -172,10 +193,10 @@ router.post("/addresses", ah(async (req, res) => {
   const [r] = await pool.query(
     `INSERT INTO delivery_addresses
        (user_id, recipient_name, recipient_phone, street, barangay, city, province, region,
-        postal_code, landmark, shipping_zone, is_default)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        postal_code, landmark, lat, lng, shipping_zone, is_default)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [req.user.userId, values.recipient_name, values.recipient_phone, values.street, values.barangay, values.city,
-     values.province, values.region, values.postal_code, values.landmark, values.shipping_zone]
+     values.province, values.region, values.postal_code, values.landmark, values.lat, values.lng, values.shipping_zone]
   );
   if (req.body.is_default || existing.length === 0) await setDefault(pool, req.user.userId, r.insertId);
   res.status(201).json((await savedAddresses(req.user.userId)).find(a => a.address_id === r.insertId));
@@ -183,14 +204,14 @@ router.post("/addresses", ah(async (req, res) => {
 
 router.patch("/addresses/:id", ah(async (req, res) => {
   if (!(await ownSavedAddress(req.user.userId, req.params.id))) return res.status(404).json({ error: "Address not found." });
-  const { values, error } = readAddress(req.body);
+  const { values, error } = await readAddress(req.body);
   if (error) return res.status(400).json({ error });
   await pool.query(
     `UPDATE delivery_addresses SET recipient_name = ?, recipient_phone = ?, street = ?, barangay = ?, city = ?,
-            province = ?, region = ?, postal_code = ?, landmark = ?, shipping_zone = ?
+            province = ?, region = ?, postal_code = ?, landmark = ?, lat = ?, lng = ?, shipping_zone = ?
      WHERE address_id = ? AND user_id = ?`,
     [values.recipient_name, values.recipient_phone, values.street, values.barangay, values.city, values.province,
-     values.region, values.postal_code, values.landmark, values.shipping_zone, req.params.id, req.user.userId]
+     values.region, values.postal_code, values.landmark, values.lat, values.lng, values.shipping_zone, req.params.id, req.user.userId]
   );
   if (req.body.is_default) await setDefault(pool, req.user.userId, Number(req.params.id));
   res.json((await savedAddresses(req.user.userId)).find(a => a.address_id === Number(req.params.id)));

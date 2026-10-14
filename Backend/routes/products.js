@@ -89,7 +89,11 @@ router.get("/", async (req, res) => {
    --------------------------------------------------------------------- */
 router.post("/", requireAdmin, upload.single("image"), async (req, res) => {
   try {
-    const { name, category, brand, price, stock, description } = req.body;
+    const { name, category, brand, price, stock, description, weight_kg } = req.body;
+    const weight = weight_kg === undefined || weight_kg === "" ? 0.5 : Number(weight_kg);
+    if (!(weight > 0 && weight <= 999)) {
+      return res.status(400).json({ error: "Weight must be more than 0 and at most 999 kg." });
+    }
 
     if (!name || !category || price === undefined || stock === undefined) {
       return res.status(400).json({ error: "Please complete all required fields." });
@@ -104,9 +108,9 @@ router.post("/", requireAdmin, upload.single("image"), async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO products
-        (name, category_id, brand, price, stock_quantity, image_path, description, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, catRows[0].category_id, brand || null, Number(price), Number(stock), imagePath, description || null, req.user.userId]
+        (name, category_id, brand, price, stock_quantity, weight_kg, image_path, description, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, catRows[0].category_id, brand || null, Number(price), Number(stock), weight, imagePath, description || null, req.user.userId]
     );
 
     res.status(201).json({ productId: result.insertId, message: "Product successfully added." });
@@ -134,7 +138,7 @@ async function asUser(userId, fn) {
 
 /* ---------------------------------------------------------------------
    PATCH /api/products/:id — admin only. JSON body, every field optional:
-   { name, brand, description, category, price, stock }
+   { name, brand, description, category, price, stock, weight_kg }
    --------------------------------------------------------------------- */
 const EDITABLE_TEXT = { name: "name", brand: "brand", description: "description" };
 
@@ -170,6 +174,16 @@ router.patch("/:id", requireAdmin, async (req, res) => {
       }
       sets.push("stock_quantity = ?");
       params.push(stock);
+    }
+
+    // Parcel weight drives the J&T / LBC fee bracket (0.5 kg is the default for unweighed parts).
+    if (body.weight_kg !== undefined) {
+      const weight = Number(body.weight_kg);
+      if (body.weight_kg === "" || !(weight > 0 && weight <= 999)) {
+        return res.status(400).json({ error: "Weight must be more than 0 and at most 999 kg." });
+      }
+      sets.push("weight_kg = ?");
+      params.push(Math.round(weight * 1000) / 1000);
     }
 
     if (body.category !== undefined) {
