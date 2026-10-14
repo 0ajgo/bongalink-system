@@ -11,9 +11,10 @@ const { requireAuth, requireAdmin, requireRole, requireVerifiedEmail } = require
 const toCentavos = (php) => Math.round(Number(php) * 100);
 
 // PayMongo sends the customer back to the checkout page, which polls GET /orders/:id.
-// APP_URL is where the Frontend/ folder is served, e.g. http://localhost:5500
+// APP_URL is the URL of the Frontend/ folder itself: http://localhost:5500/Frontend
+// with VS Code Live Server opened on the repo, http://localhost:5500 with Docker.
 const returnUrl = (orderId, result) =>
-  `${process.env.APP_URL}/Pages/COpage/checkout.html?order=${orderId}&payment=${result}`;
+  `${String(process.env.APP_URL || '').replace(/\/+$/, '')}/Pages/COpage/checkout.html?order=${orderId}&payment=${result}`;
 
 // POST /checkout  { order_id }  -> { checkout_url }
 // Amounts always come from the database, never from the browser.

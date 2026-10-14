@@ -14,7 +14,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFiles": ["<rootDir>/tests/setupEnv.js"],
+    "setupFiles": [
+      "<rootDir>/tests/setupEnv.js"
+    ],
     "globalSetup": "<rootDir>/tests/globalSetup.js",
     "globalTeardown": "<rootDir>/tests/globalTeardown.js",
     "testTimeout": 20000
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "jsdom": "^25.0.1",
     "nodemon": "^3.1.4",
     "supertest": "^7.3.1"
   }

@@ -633,7 +633,7 @@ async function startPayment(orderId) {
     showStatus(orderId, {
       title: "Order placed — payment not started",
       text: `${err.message || "We couldn't open the payment page."} Your items are held for 24 hours.`,
-      retry: true
+      action: { label: "Pay now", onClick: () => startPayment(orderId) }
     });
   }
 }
@@ -642,47 +642,84 @@ async function startPayment(orderId) {
    9. RETURN FROM PAYMONGO — PayMongo sends the customer back to
    checkout.html?order=<id>&payment=success|cancelled. The redirect is
    NOT proof of payment: only the server's webhook marks an order paid,
-   so this polls GET /api/v1/payments/orders/:id for a short while.
+   so this polls GET /api/v1/payments/orders/:id.
+   After "success" the customer may well have paid even if the webhook
+   is late, so a still-pending order NEVER offers "Pay now" here (that
+   could charge them twice); it keeps checking instead.
    --------------------------------------------------------------------- */
 const orderRef = (orderId) => `BGL-${new Date().getFullYear()}-${String(orderId).padStart(4, "0")}`;
+const PAID_STATUSES = ["paid", "packed", "shipped", "delivered"];
+const FAST_CHECKS = 10, FAST_MS = 3000, SLOW_MS = 15000;
 
-function showStatus(orderId, { title, text, retry = false }) {
+// action: { label, onClick } for the main button, or null for none.
+function showStatus(orderId, { title, text, action = null }) {
   document.getElementById("checkout-body").innerHTML = `
     <div class="confirm">
       <h1>${escapeHtml(title)}</h1>
       <p>${escapeHtml(text)}</p>
       <p class="confirm__ref">${orderRef(orderId)}</p>
       <p>Keep this reference. You can use it to track the parcel once the courier picks it up.</p>
-      ${retry ? `<button class="button" id="retry-payment" style="margin-top:22px;width:auto;padding-inline:28px">Pay now</button>` : ""}
+      ${action ? `<button class="button" id="status-action" style="margin-top:22px;width:auto;padding-inline:28px">${escapeHtml(action.label)}</button>` : ""}
       <a class="button button--quiet" href="../Homepage/homepage.html" style="margin-top:22px;display:inline-block;width:auto;padding-inline:28px">Back to the shop</a>
     </div>`;
   window.scrollTo({ top: 0 });
-  document.getElementById("retry-payment")?.addEventListener("click", () => startPayment(orderId));
+  if (action) document.getElementById("status-action").addEventListener("click", action.onClick);
 }
 
-async function checkPaymentReturn(orderId, result) {
-  showStatus(orderId, { title: "Checking your payment…", text: "This usually takes a few seconds." });
-  for (let attempt = 0; attempt < 10; attempt++) {
-    let status;
-    try {
-      status = await apiFetch(`/v1/payments/orders/${orderId}`);
-    } catch (err) {
-      return showStatus(orderId, { title: "Couldn't check the payment", text: err.message });
-    }
-    if (status.order_status !== "pending_payment") {
-      const paid = ["paid", "packed", "shipped", "delivered"].includes(status.order_status);
-      return showStatus(orderId, paid
-        ? { title: "Payment received", text: "Thank you! We emailed your receipt and will send tracking details once it ships." }
-        : status.payment?.status === "review"
-          ? { title: "Payment under review", text: "We received a payment the shop needs to check. They'll contact you by email." }
-          : { title: `Order ${status.order_status}`, text: "This order is no longer waiting for payment." });
-    }
-    if (result !== "success") break; // cancelled: no point waiting
-    await new Promise(r => setTimeout(r, 3000));
+// The final screen for an order that is no longer pending_payment.
+function settledMessage(status) {
+  if (PAID_STATUSES.includes(status.order_status)) {
+    return { title: "Payment received", text: "Thank you! We emailed your receipt and will send tracking details once it ships." };
   }
-  showStatus(orderId, result === "success"
-    ? { title: "Payment is still processing", text: "We haven't received confirmation from PayMongo yet. Refresh this page in a minute, or pay again if it failed.", retry: true }
-    : { title: "Payment cancelled", text: "Your order is saved and your items are held for 24 hours.", retry: true });
+  if (status.payment?.status === "review") {
+    return { title: "Payment under review", text: "We received a payment the shop needs to check. They'll contact you by email." };
+  }
+  if (status.order_status === "expired") {
+    return { title: "Order expired", text: "This order wasn't paid within 24 hours, so the items went back on sale. If you were charged, the shop will contact you by email." };
+  }
+  return { title: `Order ${status.order_status}`, text: "This order is no longer waiting for payment." };
+}
+
+let pollTimer = null;
+
+async function checkPaymentReturn(orderId, result, attempt = 0) {
+  clearTimeout(pollTimer);
+  if (attempt === 0) {
+    showStatus(orderId, { title: "Checking your payment…", text: "This usually takes a few seconds." });
+  }
+
+  let status;
+  try {
+    status = await apiFetch(`/v1/payments/orders/${orderId}`);
+  } catch (err) {
+    return showStatus(orderId, {
+      title: "Couldn't check the payment",
+      text: `${err.message} Your order is saved.`,
+      action: { label: "Check again", onClick: () => checkPaymentReturn(orderId, result) }
+    });
+  }
+
+  if (status.order_status !== "pending_payment") return showStatus(orderId, settledMessage(status));
+
+  if (result !== "success") {
+    return showStatus(orderId, {
+      title: "Payment cancelled",
+      text: "Your order is saved and your items are held for 24 hours. You can pay whenever you're ready.",
+      action: { label: "Pay now", onClick: () => startPayment(orderId) }
+    });
+  }
+
+  // Paid on PayMongo's page, but the shop hasn't been notified yet.
+  if (attempt + 1 >= FAST_CHECKS) {
+    showStatus(orderId, {
+      title: "Waiting for payment confirmation",
+      text: "PayMongo hasn't confirmed your payment to the shop yet. If you completed the payment, please don't pay again. " +
+            "This page keeps checking every 15 seconds, and we'll email your receipt as soon as it's confirmed.",
+      action: { label: "Check now", onClick: () => checkPaymentReturn(orderId, result, attempt + 1) }
+    });
+  }
+  pollTimer = setTimeout(() => checkPaymentReturn(orderId, result, attempt + 1),
+                         attempt + 1 < FAST_CHECKS ? FAST_MS : SLOW_MS);
 }
 
 const params = new URLSearchParams(window.location.search);

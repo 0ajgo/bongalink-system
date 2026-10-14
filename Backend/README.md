@@ -118,7 +118,7 @@ Fill in the new keys in `.env` (listed in `.env.example`):
 | `PAYMONGO_SECRET_KEY` | PayMongo dashboard → Developers → API keys (`sk_test_...`) |
 | `PAYMONGO_WEBHOOK_SECRET` | PayMongo → Developers → Webhooks → add `https://<public-url>/api/v1/webhooks/paymongo`, event `checkout_session.payment.paid` (`whsk_...`) |
 | `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET` | Lalamove Partner Portal → Developers → Sandbox keys. Webhook URL: `https://<public-url>/api/v1/webhooks/lalamove`. Leave blank to offer J&T/LBC only. |
-| `APP_URL` | Where `Frontend/` is served, e.g. `http://localhost:5500` (PayMongo returns the customer to `APP_URL/Pages/COpage/checkout.html`) |
+| `APP_URL` | Full URL of the `Frontend/` folder: `http://localhost:5500/Frontend` with VS Code Live Server opened on the repo, `http://localhost:5500` with Docker. PayMongo returns the customer to `APP_URL/Pages/COpage/checkout.html` — open that address in the browser to check it. |
 | `STORE_*` | The shop's pickup pin, address and phone (Lalamove) |
 
 Webhooks need a public HTTPS URL; for local testing run `ngrok http 4000`.

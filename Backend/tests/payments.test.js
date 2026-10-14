@@ -43,6 +43,22 @@ describe("POST /api/v1/payments/checkout", () => {
     }));
   });
 
+  test("return URLs point at the real checkout page when APP_URL includes the Frontend folder", async () => {
+    const saved = process.env.APP_URL;
+    process.env.APP_URL = "http://localhost:5500/Frontend/"; // Live Server on the repo root; trailing slash tolerated
+    try {
+      paymongo.createCheckoutSession.mockResolvedValueOnce({ id: "cs_test_2", checkoutUrl: "https://x" });
+      const res = await request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
+      expect(res.status).toBe(200);
+      expect(paymongo.createCheckoutSession).toHaveBeenLastCalledWith(expect.objectContaining({
+        successUrl: `http://localhost:5500/Frontend/Pages/COpage/checkout.html?order=${orderId}&payment=success`,
+        cancelUrl: `http://localhost:5500/Frontend/Pages/COpage/checkout.html?order=${orderId}&payment=cancelled`
+      }));
+    } finally {
+      process.env.APP_URL = saved;
+    }
+  });
+
   test("stores a pending payment for the full amount", async () => {
     const [[p]] = await pool.query("SELECT order_id, amount_centavos, status FROM payments");
     expect(p).toEqual({ order_id: orderId, amount_centavos: 109900, status: "pending" });
