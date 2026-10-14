@@ -104,6 +104,93 @@ router.get("/products", async (req, res) => {
 });
 
 /* ---------------------------------------------------------------------
+   GET /api/admin/ml/dashboard?days=30 — read-only numbers for the admin
+   Dashboard page (Pages/Admin/dashboard.html):
+     stock        active products, low (1..LOW_STOCK available) and out
+                  of stock, using AVAILABLE stock (on hand - reserved)
+     month        sales this calendar month: orders, units, item revenue
+     trend        item revenue + units per day for the last `days` days
+                  (oldest first, zero-filled, today excluded like /history)
+     top_products best sellers by units over the same window
+   Sales = orders in SOLD_STATUSES, the same definition the forecasts use.
+   --------------------------------------------------------------------- */
+const LOW_STOCK = 3;   // same threshold as the storefront's "Low stock" badge (Frontend/JS/ui.js)
+
+const dayKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+router.get("/dashboard", async (req, res) => {
+  try {
+    const days = [30, 90, 180].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+
+    const [[stock]] = await pool.query(
+      `SELECT COUNT(*) AS active_products,
+              SUM(available = 0) AS out_of_stock,
+              SUM(available BETWEEN 1 AND ?) AS low_stock
+       FROM (SELECT stock_quantity - LEAST(reserved, stock_quantity) AS available
+             FROM products WHERE is_active = 1) p`,
+      [LOW_STOCK]
+    );
+
+    const [[month]] = await pool.query(
+      `SELECT COUNT(DISTINCT o.order_id) AS orders,
+              COALESCE(SUM(oi.quantity), 0) AS units,
+              COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
+       FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
+       WHERE o.status IN (?) AND o.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
+      [SOLD_STATUSES]
+    );
+
+    const [daily] = await pool.query(
+      `SELECT DATE_FORMAT(DATE(o.created_at), '%Y-%m-%d') AS day,
+              SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
+       FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
+       WHERE o.status IN (?) AND o.created_at >= CURDATE() - INTERVAL ? DAY AND o.created_at < CURDATE()
+       GROUP BY day`,
+      [SOLD_STATUSES, days]
+    );
+    const byDay = new Map(daily.map(r => [r.day, r]));
+    const trend = [];
+    const today = new Date();
+    for (let i = days; i >= 1; i--) {
+      const key = dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
+      const r = byDay.get(key);
+      trend.push({ day: key, units: r ? Number(r.units) : 0, revenue: r ? Number(r.revenue) : 0 });
+    }
+
+    const [top] = await pool.query(
+      `SELECT p.product_id, p.name, c.name AS category,
+              SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
+       FROM orders o
+       JOIN order_items oi ON oi.order_id = o.order_id
+       JOIN products p ON p.product_id = oi.product_id
+       JOIN categories c ON c.category_id = p.category_id
+       WHERE o.status IN (?) AND o.created_at >= CURDATE() - INTERVAL ? DAY AND o.created_at < CURDATE()
+       GROUP BY p.product_id, p.name, c.name
+       ORDER BY units DESC, revenue DESC
+       LIMIT 5`,
+      [SOLD_STATUSES, days]
+    );
+
+    res.json({
+      days,
+      low_stock_threshold: LOW_STOCK,
+      stock: {
+        active_products: Number(stock.active_products),
+        low_stock: Number(stock.low_stock) || 0,
+        out_of_stock: Number(stock.out_of_stock) || 0
+      },
+      month: { orders: Number(month.orders), units: Number(month.units), revenue: Number(month.revenue) },
+      trend,
+      top_products: top.map(t => ({ ...t, units: Number(t.units), revenue: Number(t.revenue) }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load the dashboard." });
+  }
+});
+
+/* ---------------------------------------------------------------------
    GET /api/admin/ml/history/:id?days=84 — units sold per day (oldest
    first, zero-filled), for active and removed products alike.
    --------------------------------------------------------------------- */
