@@ -130,7 +130,7 @@ function renderPredictions() {
             ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}
             <br><span class="muted">${escapeHTML(p.category)}</span></td>
         <td class="num"><input class="input input--sm" type="number" min="0" step="0.01" value="${Number(p.price)}" data-field="price" aria-label="Price of ${escapeHTML(p.name)}"></td>
-        <td class="num"><input class="input input--sm" type="number" min="0" step="1" value="${p.stock_quantity}" data-field="stock" aria-label="Stock on hand of ${escapeHTML(p.name)}"></td>
+        <td class="num"><strong>${p.stock_quantity}</strong>${Number(p.reserved) > 0 ? `<br><span class="muted" title="Held by unpaid orders">${p.reserved} held</span>` : ""}</td>
         <td class="num"><input class="input input--sm" type="number" min="0.01" step="0.01" value="${Number(p.weight_kg)}" data-field="weight" aria-label="Weight in kg of ${escapeHTML(p.name)}">
             ${isDefaultWeight(p) ? `<br><span class="badge badge--warning" title="Still the default weight; enter the real parcel weight">Default</span>` : ""}</td>
         <td class="num">${forecastCell(p)}</td>
@@ -138,8 +138,9 @@ function renderPredictions() {
         <td>${reorderCell(p)}</td>
         <td>${trendCell(p)}</td>
         <td class="actions">
+          <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}">${icon("pencil", { size: 14 })} Edit</button>
           <button class="btn btn--primary btn--sm" type="button" data-save="${p.product_id}" disabled>Save</button>
-          <button class="btn btn--danger btn--sm" type="button" data-remove="${p.product_id}">Remove</button>
+          <button class="btn btn--danger btn--sm" type="button" data-remove="${p.product_id}">Hide</button>
         </td>
       </tr>`;
   }).join("") || `<tr><td colspan="9">${UIState.empty({ icon: "boxes", title: "No active parts", text: "List a product from the Shop page." })}</td></tr>`;
@@ -161,6 +162,9 @@ predRows.addEventListener("click", async event => {
   const save = event.target.closest("[data-save]");
   const remove = event.target.closest("[data-remove]");
   const history = event.target.closest("[data-history]");
+  const editBtn = event.target.closest("[data-edit]");
+
+  if (editBtn) return openEditor(editBtn.dataset.edit);
 
   if (history) {
     historyProduct.value = history.dataset.history;
@@ -172,13 +176,12 @@ predRows.addEventListener("click", async event => {
     const row = save.closest("tr");
     const id = save.dataset.save;
     const original = predictions.find(p => String(p.product_id) === id);
+    // Quick edits: price and weight. Stock only changes through Edit > Adjust stock (with a reason).
     const price = row.querySelector('[data-field="price"]').value;
-    const stock = row.querySelector('[data-field="stock"]').value;
     const weight = row.querySelector('[data-field="weight"]').value;
     const body = {};
     if (Number(weight) !== Number(original.weight_kg)) body.weight_kg = weight === "" ? "" : Number(weight);
     if (Number(price) !== Number(original.price)) body.price = price === "" ? "" : Number(price);
-    if (Number(stock) !== Number(original.stock_quantity)) body.stock = stock === "" ? "" : Number(stock);
     if (Object.keys(body).length === 0) return;
     save.disabled = true;
     save.classList.add("is-loading");
@@ -196,10 +199,10 @@ predRows.addEventListener("click", async event => {
 
   if (remove) {
     const product = predictions.find(p => String(p.product_id) === remove.dataset.remove);
-    if (!confirm(`Remove "${product.name}" from the catalog?\n\nIts order history and sales trend are kept.`)) return;
+    if (!confirm(`Hide "${product.name}" from the shop?\n\nIts order history and sales trend are kept, and you can show it again from Hidden parts.`)) return;
     try {
       await apiFetch(`/products/${product.product_id}`, { method: "DELETE" });
-      toast("Part removed.", "success");
+      toast("Part hidden.", "success");
       editing = false;
       await Promise.all([loadPredictions(), loadEvents(), loadProducts()]);
     } catch (err) {
@@ -223,9 +226,32 @@ async function loadProducts() {
   const products = await apiFetch("/admin/ml/products");
   const current = historyProduct.value;
   historyProduct.innerHTML = products.map(p =>
-    `<option value="${p.product_id}">${escapeHTML(p.name)}${p.is_active ? "" : " (removed)"}</option>`).join("");
+    `<option value="${p.product_id}">${escapeHTML(p.name)}${p.is_active ? "" : " (hidden)"}</option>`).join("");
   if (current && products.some(p => String(p.product_id) === current)) historyProduct.value = current;
+
+  // Hidden parts: open the editor to show them in the shop again.
+  const hidden = products.filter(p => !p.is_active);
+  document.getElementById("hiddenSection").hidden = hidden.length === 0;
+  document.getElementById("hiddenList").innerHTML = hidden.map(p => `
+    <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}">${icon("pencil", { size: 14 })} ${escapeHTML(p.name)}</button>`).join("");
 }
+
+/* ---------------------------------------------------------------------
+   EDIT PART — js/product-editor.js. After any save, refresh the table,
+   hidden parts and change log in place (no page reload).
+   --------------------------------------------------------------------- */
+function openEditor(id) {
+  openProductEditor(id, {
+    onChange: () => {
+      editing = false;
+      return Promise.all([loadPredictions(), loadProducts(), loadEvents()]).catch(() => {});
+    }
+  });
+}
+document.getElementById("hiddenList").addEventListener("click", (event) => {
+  const b = event.target.closest("[data-edit]");
+  if (b) openEditor(b.dataset.edit);
+});
 
 async function loadHistory() {
   const id = historyProduct.value;
@@ -294,6 +320,9 @@ async function init() {
     return;
   }
   if (location.hash === "#forecasts") document.getElementById("forecasts").scrollIntoView();
+  // inventory.html?edit=12 (e.g. "Edit this part" on the product page) opens the editor.
+  const editId = new URLSearchParams(location.search).get("edit");
+  if (/^\d+$/.test(editId || "")) openEditor(editId);
   setInterval(() => loadStatus().catch(() => {}), STATUS_POLL_MS);
 }
 

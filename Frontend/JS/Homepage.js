@@ -10,7 +10,6 @@
 
 renderHeader({ active: "shop", search: false });
 
-const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 const PAGE_SIZE = 24;
 const CATEGORY_ICON = {
   "Printer Parts": "printer", "Printers": "printer", "Laptop Parts": "laptop",
@@ -31,38 +30,9 @@ const els = {
 };
 
 const state = {
-  products: [], categories: [], category: "All", inStockOnly: false, sort: "stock",
+  products: [], categories: [], category: new URLSearchParams(location.search).get("category") || "All", inStockOnly: false, sort: "stock",
   q: new URLSearchParams(location.search).get("q") || "", shown: PAGE_SIZE
 };
-
-/* ---------------------------------------------------------------------
-   PRODUCT CARD — consistent 4:3 image, name (2 lines max), price,
-   stock badge from available stock, Add to cart disabled when out.
-   --------------------------------------------------------------------- */
-function productCard(p) {
-  const available = Number(p.stock) || 0;
-  const media = p.image
-    ? `<img src="${escapeHTML(API_ORIGIN + p.image)}" alt="${escapeHTML(p.name)}" loading="lazy">`
-    : `<span class="product-card__placeholder">${icon("package", { size: 56 })}<span class="sr-only">No photo yet</span></span>`;
-  const remove = isAdmin()
-    ? `<button class="btn btn--secondary btn--sm btn--icon product-card__delete" type="button" data-delete="${p.id}">
-         ${icon("trash-2", { size: 16, label: `Remove ${p.name}` })}</button>` : "";
-  return `
-    <article class="product-card">
-      <div class="product-card__media">${media}${remove}</div>
-      <div class="product-card__body">
-        <div class="product-card__meta"><span class="eyebrow">${escapeHTML(p.category)}</span>${stockBadge(available)}</div>
-        <h3 class="product-card__name" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</h3>
-        ${p.brand ? `<span class="product-card__brand">${escapeHTML(p.brand)}</span>` : ""}
-        <span class="price product-card__price">${formatMoney(p.price)}</span>
-        ${isAdmin() ? "" : `
-        <button class="btn ${available > 0 ? "btn--primary" : ""} btn--block" type="button" data-add="${p.id}"
-                ${available > 0 ? "" : "disabled"}>
-          ${available > 0 ? `${icon("shopping-cart", { size: 18 })} Add to cart` : "Out of stock"}
-        </button>`}
-      </div>
-    </article>`;
-}
 
 /* ---------------------------------------------------------------------
    FILTER + SORT
@@ -112,7 +82,7 @@ function renderCategories() {
 function renderInStock() {
   const available = state.products.filter(p => Number(p.stock) > 0).slice(0, 4);
   document.getElementById("inStockSection").hidden = available.length === 0;
-  document.getElementById("inStockGrid").innerHTML = available.map(productCard).join("");
+  document.getElementById("inStockGrid").innerHTML = available.map(p => productCard(p, { admin: isAdmin() })).join("");
 }
 
 function renderGrid() {
@@ -130,7 +100,7 @@ function renderGrid() {
     })}</div>`;
     return;
   }
-  els.grid.innerHTML = list.slice(0, state.shown).map(productCard).join("");
+  els.grid.innerHTML = list.slice(0, state.shown).map(p => productCard(p, { admin: isAdmin() })).join("");
 }
 
 function renderAll() {
@@ -317,6 +287,6 @@ productForm.addEventListener("submit", async (event) => {
 document.getElementById("openAddBtn").hidden = !isAdmin();
 if (state.q) els.heroQ.value = state.q;
 loadProducts().then(() => {
-  if (state.q) document.getElementById("catalog").scrollIntoView();
+  if (state.q || state.category !== "All") document.getElementById("catalog").scrollIntoView();
 });
 if (isLoggedIn() && !isAdmin()) syncCartFromServer().catch(() => {});

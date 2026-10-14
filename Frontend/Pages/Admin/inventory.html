@@ -14,7 +14,7 @@
   <div class="page-head">
     <div>
       <h1>Inventory &amp; forecasts</h1>
-      <p>Edit stock and prices, see 7-day demand forecasts, and remove parts from the catalog.</p>
+      <p>Edit parts, adjust stock with a reason, see 7-day demand forecasts, and hide parts from the shop.</p>
     </div>
   </div>
 
@@ -55,6 +55,12 @@
     </div>
   </section>
 
+  <!-- HIDDEN PARTS — restore them from the Edit dialog -->
+  <section class="card section-card" id="hiddenSection" aria-labelledby="hiddenTitle" hidden>
+    <div class="card__header"><h2 id="hiddenTitle">Hidden parts</h2><span class="muted">Not shown in the shop; history kept</span></div>
+    <div class="card__body"><div class="hidden-list" id="hiddenList"></div></div>
+  </section>
+
   <!-- SALES HISTORY — includes removed products -->
   <section class="card section-card" aria-labelledby="historyTitle">
     <div class="card__header">
@@ -89,6 +95,106 @@
   </section>
 </main>
 
+<!-- EDIT PART (js/product-editor.js) -->
+<dialog class="modal modal--xl" id="editDialog" aria-labelledby="editTitle">
+  <div class="modal__header">
+    <div class="row"><h2 id="editTitle">Edit part</h2><span class="badge" id="editStatus"></span></div>
+    <div class="row">
+      <a class="btn btn--ghost btn--sm" id="editViewLink" target="_blank" rel="noopener">View in shop <i data-icon="external-link" data-size="14"></i></a>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+  </div>
+  <div class="modal__body" id="editLoading"></div>
+  <div class="modal__body edit-grid" id="editBody" hidden>
+
+    <section class="edit-section" aria-labelledby="detailsTitle">
+      <h3 id="detailsTitle">Details</h3>
+      <form id="editForm" novalidate>
+        <div class="form-grid">
+          <div class="field field--wide"><label class="label" for="eName">Name</label><input class="input" id="eName" name="name" maxlength="150" required></div>
+          <div class="field"><label class="label" for="eBrand">Brand <span class="optional">(optional)</span></label><input class="input" id="eBrand" name="brand" maxlength="100"></div>
+          <div class="field"><label class="label" for="eCategory">Category</label><select class="select" id="eCategory" name="category"></select></div>
+          <div class="field"><label class="label" for="ePrice">Price (₱)</label><input class="input" id="ePrice" name="price" type="number" min="0.01" step="0.01" required></div>
+          <div class="field"><label class="label" for="eWeight">Parcel weight (kg)</label><input class="input" id="eWeight" name="weight_kg" type="number" min="0.01" step="0.01" required>
+            <span class="hint">Packed weight; sets J&amp;T and LBC fees.</span></div>
+          <div class="field field--wide"><label class="label" for="eDescription">Description</label><textarea class="textarea" id="eDescription" name="description" maxlength="5000"></textarea></div>
+          <label class="check field--wide" for="eActive"><input type="checkbox" id="eActive" name="is_active"> Shown in the shop (untick to hide it)</label>
+        </div>
+        <p class="error-text" id="editError" role="alert"></p>
+        <div class="form-actions"><button class="btn btn--primary" type="submit" id="editSave">Save details</button></div>
+      </form>
+    </section>
+
+    <section class="edit-section" aria-labelledby="photosTitle">
+      <h3 id="photosTitle">Photos</h3>
+      <div class="photo-row">
+        <div class="photo-preview" id="coverPreview"></div>
+        <div class="field">
+          <label class="label" for="coverFile">Cover photo <span class="optional">(JPEG, PNG, WebP or GIF, up to 5 MB)</span></label>
+          <input class="input" id="coverFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <button class="btn btn--primary btn--sm" type="button" id="coverUpload" hidden>Save cover photo</button>
+        </div>
+      </div>
+      <span class="label">More photos</span>
+      <div class="photo-tiles" id="gallery"></div>
+      <div class="photo-row">
+        <div class="photo-preview photo-preview--sm" id="galleryNew"></div>
+        <div class="field">
+          <label class="label" for="galleryFile">Add a photo</label>
+          <input class="input" id="galleryFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <button class="btn btn--secondary btn--sm" type="button" id="galleryUpload" hidden>Add photo</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="edit-section" aria-labelledby="stockTitle">
+      <h3 id="stockTitle">Stock</h3>
+      <dl class="stock-stats">
+        <div><dt>On hand</dt><dd id="stockOnHand">—</dd></div>
+        <div><dt>Held by unpaid orders</dt><dd id="stockReserved">—</dd></div>
+        <div><dt>Available to sell</dt><dd id="stockAvailable">—</dd></div>
+      </dl>
+      <form id="stockForm" class="form-grid" novalidate>
+        <div class="field">
+          <label class="label" for="sReason">Reason</label>
+          <select class="select" id="sReason" name="reason" required>
+            <option value="">Choose a reason</option>
+            <option value="restock">Restock (add)</option>
+            <option value="return">Customer return (add)</option>
+            <option value="damaged">Damaged or lost (remove)</option>
+            <option value="correction">Correction (add or remove)</option>
+          </select>
+          <span class="hint" id="reasonHelp"></span>
+        </div>
+        <div class="field" id="directionField" hidden>
+          <label class="label" for="sDirection">Correction</label>
+          <select class="select" id="sDirection" name="direction"><option value="add">Add units</option><option value="remove">Remove units</option></select>
+        </div>
+        <div class="field">
+          <label class="label" for="sQty">Units</label>
+          <input class="input" id="sQty" name="quantity" type="number" min="1" step="1" required>
+        </div>
+        <div class="field field--wide">
+          <label class="label" for="sNote">Note <span class="optional">(optional, e.g. supplier receipt no.)</span></label>
+          <input class="input" id="sNote" name="note" maxlength="255">
+        </div>
+        <p class="error-text field--wide" id="stockError" role="alert"></p>
+        <div class="form-actions field--wide"><button class="btn btn--primary" type="submit" id="stockSave">Adjust stock</button></div>
+      </form>
+    </section>
+
+    <section class="edit-section edit-section--wide" aria-labelledby="historyTitleEdit">
+      <h3 id="historyTitleEdit">History</h3>
+      <div class="table-wrap history-wrap">
+        <table class="table table--compact">
+          <thead><tr><th>When</th><th>Who</th><th>Field</th><th>Old</th><th>New</th><th>Reason</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</dialog>
+
 <footer class="site-footer">
   <div class="container site-footer__inner">
     <span>Bongalink admin</span>
@@ -101,6 +207,7 @@
 <script src="../../JS/cart.js"></script>
 <script src="../../JS/ui.js"></script>
 <script src="../../JS/chart.js"></script>
+<script src="../../JS/product-editor.js"></script>
 <script src="../../JS/inventory.js"></script>
 </body>
 </html>

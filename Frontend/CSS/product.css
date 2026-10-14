@@ -1,0 +1,53 @@
+/* Product page: breadcrumb, gallery + details, larger photo view. */
+.product-topbar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-5); }
+.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); color: var(--color-ink-3); }
+.breadcrumb li + li::before { content: "›"; margin-right: var(--space-1); color: var(--color-line-strong); }
+.breadcrumb [aria-current] { color: var(--color-ink); font-weight: var(--weight-medium); }
+
+.product { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-7); align-items: start; }
+@media (max-width: 960px) { .product { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); } }
+
+.gallery__main {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; padding: var(--space-4);
+  background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius); box-shadow: var(--shadow);
+  cursor: zoom-in; color: var(--color-line-strong);
+}
+.gallery__main:disabled { cursor: default; }
+.gallery__main img { width: 100%; height: 100%; object-fit: contain; }
+.gallery__thumbs { display: flex; gap: var(--space-2); margin-top: var(--space-3); overflow-x: auto; padding-bottom: var(--space-1); }
+.gallery__thumb {
+  flex: 0 0 72px; aspect-ratio: 4 / 3; padding: 2px; background: var(--color-surface);
+  border: 2px solid var(--color-line); border-radius: var(--radius); cursor: pointer;
+}
+.gallery__thumb img { width: 100%; height: 100%; object-fit: contain; }
+.gallery__thumb[aria-current="true"] { border-color: var(--color-primary); }
+
+.product__info { display: grid; gap: var(--space-4); }
+.product__info h1 { font-size: var(--text-3xl); }
+.product__brand { color: var(--color-ink-2); }
+.product__price { font-size: var(--text-4xl); font-weight: var(--weight-bold); line-height: 1; }
+.product__stock { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-sm); color: var(--color-ink-2); }
+.product__facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; font-size: var(--text-sm); }
+.product__facts dt { color: var(--color-ink-3); }
+.product__facts dd { margin: 0; }
+.product__buy { display: flex; gap: var(--space-3); align-items: stretch; flex-wrap: wrap; padding: var(--space-4) 0; border-top: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); }
+.product__buy .btn { flex: 1; min-width: 180px; }
+.product__description { white-space: pre-line; color: var(--color-ink-2); line-height: 1.65; }
+.product__description h2 { font-size: var(--text-lg); color: var(--color-ink); margin-bottom: var(--space-2); white-space: normal; }
+
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--color-line-strong); border-radius: var(--radius); background: var(--color-surface); }
+.stepper button { width: 44px; height: 46px; border: 0; background: none; color: var(--color-ink); cursor: pointer; display: grid; place-items: center; border-radius: var(--radius); }
+.stepper button:disabled { color: var(--color-line-strong); cursor: not-allowed; }
+.stepper input { width: 52px; height: 46px; border: 0; text-align: center; font: inherit; font-weight: var(--weight-semibold); background: none; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.related { margin-top: var(--space-8); }
+
+/* Larger photo view */
+.modal--wide { width: min(960px, calc(100vw - 32px)); }
+.photo-viewer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.photo-viewer img { width: 100%; max-height: 70vh; object-fit: contain; }
+.flip { transform: scaleX(-1); }
+
+/* Loading skeleton for the product */
+.product-skeleton .skeleton--media { border-radius: var(--radius); }

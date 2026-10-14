@@ -55,6 +55,39 @@ function stockBadge(available) {
   return `<span class="badge badge--success">In stock</span>`;
 }
 
+/* --- Product card (catalog, related products) ------------------------
+   Consistent 4:3 image, name (2 lines max), price, stock badge from
+   AVAILABLE stock, Add to cart disabled when out. Image and name link to
+   the product page. Admins get a remove button instead of Add to cart. */
+const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
+const imageUrl = (p) => (p ? API_ORIGIN + p : "");
+const productUrl = (id) => `${UI_ROOT}Homepage/product.html?id=${encodeURIComponent(id)}`;
+
+function productCard(p, { admin = false } = {}) {
+  const available = Number(p.stock) || 0;
+  const media = p.image
+    ? `<img src="${escapeHTML(imageUrl(p.image))}" alt="${escapeHTML(p.name)}" loading="lazy">`
+    : `<span class="product-card__placeholder">${icon("package", { size: 56 })}<span class="sr-only">No photo yet</span></span>`;
+  const remove = admin
+    ? `<button class="btn btn--secondary btn--sm btn--icon product-card__delete" type="button" data-delete="${p.id}">
+         ${icon("trash-2", { size: 16, label: `Remove ${p.name}` })}</button>` : "";
+  return `
+    <article class="product-card">
+      <div class="product-card__media"><a href="${productUrl(p.id)}" tabindex="-1" aria-hidden="true">${media}</a>${remove}</div>
+      <div class="product-card__body">
+        <div class="product-card__meta"><span class="eyebrow">${escapeHTML(p.category)}</span>${stockBadge(available)}</div>
+        <h3 class="product-card__name" title="${escapeHTML(p.name)}"><a href="${productUrl(p.id)}">${escapeHTML(p.name)}</a></h3>
+        ${p.brand ? `<span class="product-card__brand">${escapeHTML(p.brand)}</span>` : ""}
+        <span class="price product-card__price">${formatMoney(p.price)}</span>
+        ${admin ? "" : `
+        <button class="btn ${available > 0 ? "btn--primary" : ""} btn--block" type="button" data-add="${p.id}"
+                ${available > 0 ? "" : "disabled"}>
+          ${available > 0 ? `${icon("shopping-cart", { size: 18 })} Add to cart` : "Out of stock"}
+        </button>`}
+      </div>
+    </article>`;
+}
+
 /* --- List / table states --------------------------------------------- */
 const UIState = {
   empty: ({ icon: name = "package-open", title, text = "", action = "" }) => `

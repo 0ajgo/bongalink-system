@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product — Bongalink</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/product.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- Product page (REQ08): product.html?id=<product_id>, filled by
+     js/product.js from GET /api/products/:id. Shareable and bookmarkable. -->
+<main id="main" class="container page">
+  <div class="product-topbar">
+    <nav aria-label="Breadcrumb"><ol class="breadcrumb" id="breadcrumb">
+      <li><a href="homepage.html">Home</a></li>
+    </ol></nav>
+    <a class="btn btn--ghost btn--sm" href="homepage.html#catalog"><i data-icon="store" data-size="16"></i> Back to shop</a>
+  </div>
+
+  <div id="productView" aria-live="polite" aria-busy="true"></div>
+
+  <section class="section related" id="relatedSection" aria-labelledby="relatedTitle" hidden>
+    <div class="section-head"><h2 id="relatedTitle">More in this category</h2></div>
+    <div class="product-grid" id="relatedGrid"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts and repair since 2008.</span>
+    <span>GCash and bank transfer · J&amp;T, LBC and Lalamove delivery</span>
+  </div>
+</footer>
+
+<!-- Larger photo view -->
+<dialog class="modal modal--wide" id="photoDialog" aria-labelledby="photoDialogTitle">
+  <div class="modal__header">
+    <h2 id="photoDialogTitle">Photo</h2>
+    <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+  </div>
+  <div class="modal__body photo-viewer">
+    <button class="btn btn--secondary btn--icon" type="button" id="photoPrev"><i data-icon="chevron-right" data-label="Previous photo" class="flip"></i></button>
+    <img id="photoLarge" alt="">
+    <button class="btn btn--secondary btn--icon" type="button" id="photoNext"><i data-icon="chevron-right" data-label="Next photo"></i></button>
+  </div>
+</dialog>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/product.js"></script>
+</body>
+</html>
