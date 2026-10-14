@@ -43,7 +43,7 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: "100kb" }));
 
 // Serves uploaded product images at /uploads/<filename>
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(process.env.UPLOAD_DIR || path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);

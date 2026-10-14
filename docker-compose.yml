@@ -25,6 +25,7 @@ services:
       - ./Backend/database/bongalink_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./Backend/database/migrations/003_ml_sync.sql:/docker-entrypoint-initdb.d/03_ml_sync.sql:ro
       - ./Backend/database/migrations/004_api_integrations.sql:/docker-entrypoint-initdb.d/04_api_integrations.sql:ro
+      - ./Backend/database/migrations/005_product_history.sql:/docker-entrypoint-initdb.d/05_product_history.sql:ro
     ports:
       - "3307:3306"            # 3307 on the host so it doesn't clash with a local MySQL
     healthcheck:

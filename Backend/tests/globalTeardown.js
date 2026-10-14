@@ -10,4 +10,5 @@ module.exports = async () => {
   });
   await connection.query("DROP DATABASE IF EXISTS bongalink_test");
   await connection.end();
+  require("fs").rmSync(process.env.UPLOAD_DIR, { recursive: true, force: true });
 };

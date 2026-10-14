@@ -18,8 +18,12 @@ Object.assign(process.env, {
   STORE_ADDRESS: "Test shop",
   STORE_PHONE: "09170000000",
   TRACKING_URL_JNT: "https://www.jtexpress.ph/track?waybill={tn}",
-  TRACKING_URL_LBC: ""
+  TRACKING_URL_LBC: "",
+  // Uploaded photos go to a throwaway folder, never Backend/uploads.
+  UPLOAD_DIR: path.join(require("os").tmpdir(), "bongalink-test-uploads")
 });
+
+require("fs").mkdirSync(process.env.UPLOAD_DIR, { recursive: true });
 
 require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 

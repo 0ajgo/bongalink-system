@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const TABLES = [
-  "shipment_events", "payment_events", "payments", "inventory_movements", "email_verifications",
+  "product_changes", "product_images", "shipment_events", "payment_events", "payments", "inventory_movements", "email_verifications",
   "deliveries", "consent_records", "order_items", "orders", "delivery_addresses",
   "cart_items", "carts", "ml_events", "products", "categories", "users"
 ];
