@@ -1,0 +1,32 @@
+/* Login / register / verify: form on the left, why-Bongalink panel on the right. */
+.auth { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: calc(100vh - var(--header-h)); }
+.auth__main { display: flex; align-items: center; justify-content: center; padding: var(--space-7) var(--space-5); }
+.auth__card { width: 100%; max-width: 420px; }
+.auth__card h1 { font-size: var(--text-3xl); }
+.auth__lead { color: var(--color-ink-2); margin: var(--space-2) 0 var(--space-5); }
+.auth__row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-5); font-size: var(--text-sm); }
+.auth__alt { margin-top: var(--space-5); text-align: center; font-size: var(--text-sm); color: var(--color-ink-2); }
+.auth__card .alert { margin-bottom: var(--space-4); }
+
+.password-field { position: relative; }
+.password-field .input { padding-right: 72px; }
+.password-field .btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+
+.code-input { font-size: var(--text-2xl); letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; }
+
+.auth__aside {
+  display: flex; flex-direction: column; justify-content: center; gap: var(--space-6);
+  padding: var(--space-7); background: var(--color-primary); color: #fff;
+}
+.auth__aside h2 { color: #fff; font-size: var(--text-2xl); max-width: 20ch; }
+.auth__aside p { color: #d6e1f1; max-width: 46ch; }
+.auth__points { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.auth__points li { display: flex; gap: var(--space-3); align-items: flex-start; color: #e8eef7; }
+.auth__points .icon { color: #9ed3b0; margin-top: 2px; }
+.auth__points strong { display: block; color: #fff; }
+
+@media (max-width: 960px) {
+  .auth { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .auth__aside { padding: var(--space-6) var(--space-5); }
+  .auth__main { padding: var(--space-6) var(--space-4); }
+}

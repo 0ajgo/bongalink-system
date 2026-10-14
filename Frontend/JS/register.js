@@ -1,139 +1,97 @@
 /* =====================================================================
-   BONGALINK — REGISTER SCRIPT (backend-connected)
-   File: register.js
-   Requires api.js to be loaded first.
-   Powers: register.html — POST /api/auth/register, which INSERTs
-   directly into the real `users` table (role: "user").
+   BONGALINK — REGISTER + VERIFY EMAIL (register.html)
+   Requires api.js, icons.js, cart.js and ui.js.
+   1. POST /api/auth/register creates a "user" account and emails a code.
+   2. POST /api/v1/auth/verify-email/confirm { email, code } verifies it;
+      /send issues a new code (60-second cooldown, enforced server-side).
+   Checkout is blocked until the email is verified.
    ===================================================================== */
 
-/* ---------------------------------------------------------------------
-   1. DOM REFERENCES
-   --------------------------------------------------------------------- */
+renderHeader({ search: false });
+
 const registerForm = document.getElementById("registerForm");
-const regUsername = document.getElementById("regUsername");
-const regEmail = document.getElementById("regEmail");
-const regPassword = document.getElementById("regPassword");
-const regConfirmPassword = document.getElementById("regConfirmPassword");
-const registerMessage = document.getElementById("registerMessage");
-const registerSubmitBtn = registerForm.querySelector(".login-btn");
+const verifyForm = document.getElementById("verifyForm");
+let verifyEmail = "";
 
-const toggleRegPassword = document.getElementById("toggleRegPassword");
-const toggleRegConfirmPassword = document.getElementById("toggleRegConfirmPassword");
+function showAlert(id, message, type) {
+  const el = document.getElementById(id);
+  el.hidden = false;
+  el.className = `alert alert--${type}`;
+  el.innerHTML = `${icon({ error: "circle-alert", success: "check" }[type] || "info", { size: 18 })}<span>${escapeHTML(message)}</span>`;
+}
 
-/* ---------------------------------------------------------------------
-   2. SHOW / HIDE PASSWORD (both fields)
-   --------------------------------------------------------------------- */
-function wireToggle(button, input) {
+function busy(button, on) {
+  button.disabled = on;
+  button.classList.toggle("is-loading", on);
+}
+
+document.querySelectorAll("[data-toggle]").forEach(button => {
   button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.toggle);
     const show = input.type === "password";
     input.type = show ? "text" : "password";
     button.textContent = show ? "Hide" : "Show";
   });
-}
-wireToggle(toggleRegPassword, regPassword);
-wireToggle(toggleRegConfirmPassword, regConfirmPassword);
+});
 
-/* ---------------------------------------------------------------------
-   3. REGISTER SUBMIT — POST /api/auth/register
-   Server re-checks uniqueness and password rules — the checks below
-   are just for instant feedback before hitting the network.
-   --------------------------------------------------------------------- */
-registerForm.addEventListener("submit", async event => {
+registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const username = document.getElementById("regUsername").value.trim();
+  const email = document.getElementById("regEmail").value.trim();
+  const password = document.getElementById("regPassword").value;
+  const confirmPassword = document.getElementById("regConfirmPassword").value;
 
-  const username = regUsername.value.trim();
-  const email = regEmail.value.trim();
-  const password = regPassword.value;
-  const confirmPassword = regConfirmPassword.value;
+  if (!username || !email || !password || !confirmPassword) return showAlert("registerMessage", "Please fill in all fields.", "error");
+  if (password !== confirmPassword) return showAlert("registerMessage", "Passwords do not match.", "error");
+  if (password.length < 6) return showAlert("registerMessage", "Password must be at least 6 characters.", "error");
 
-  if (!username || !email || !password || !confirmPassword) {
-    showMessage("Please fill in all fields.", "error");
-    return;
-  }
-  if (password !== confirmPassword) {
-    showMessage("Passwords do not match.", "error");
-    return;
-  }
-  if (password.length < 6) {
-    showMessage("Password must be at least 6 characters.", "error");
-    return;
-  }
-
-  registerSubmitBtn.disabled = true;
-
+  const button = document.getElementById("registerSubmit");
+  busy(button, true);
   try {
-    const result = await apiFetch("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ username, email, password })
-    });
-
-    showVerifyStep(email, result.message);
+    const result = await apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ username, email, password }) });
+    showVerifyStep(email, result);
   } catch (err) {
-    showMessage(err.message || "Registration failed.", "error");
+    showAlert("registerMessage", err.message || "Registration failed.", "error");
   } finally {
-    registerSubmitBtn.disabled = false;
+    busy(button, false);
   }
 });
 
-/* ---------------------------------------------------------------------
-   4. VERIFY EMAIL — the server emailed a 6-digit code on register.
-   POST /api/v1/auth/verify-email/confirm marks the email verified;
-   /send issues a new code (60-second cooldown, enforced server-side).
-   Checkout is blocked until this succeeds, but the user can also do it
-   later from the checkout page.
-   --------------------------------------------------------------------- */
-const verifyForm = document.getElementById("verifyForm");
-const verifyCode = document.getElementById("verifyCode");
-const verifyMessage = document.getElementById("verifyMessage");
-let verifyEmail = "";
-
-function showVerifyStep(email, message) {
+function showVerifyStep(email, result) {
   verifyEmail = email;
-  registerForm.hidden = true;
-  verifyForm.hidden = false;
-  document.getElementById("verifyIntro").textContent = message;
-  verifyCode.focus();
+  document.getElementById("registerStep").hidden = true;
+  document.getElementById("verifyStep").hidden = false;
+  document.getElementById("verifyIntro").textContent = result.emailSent === false
+    ? `Your account is ready, but we couldn't send the code to ${email}. Use "Send a new code" below.`
+    : `We sent a 6-digit code to ${email}. It expires in 15 minutes.`;
+  document.getElementById("verifyCode").focus();
 }
 
-verifyForm.addEventListener("submit", async event => {
+verifyForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = verifyForm.querySelector(".login-btn");
-  button.disabled = true;
+  const button = document.getElementById("verifySubmit");
+  busy(button, true);
   try {
     await apiFetch("/v1/auth/verify-email/confirm", {
-      method: "POST",
-      body: JSON.stringify({ email: verifyEmail, code: verifyCode.value.trim() })
+      method: "POST", body: JSON.stringify({ email: verifyEmail, code: document.getElementById("verifyCode").value.trim() })
     });
-    showVerifyMessage("Email verified. Redirecting to login...", "success");
+    showAlert("verifyMessage", "Email verified. Taking you to log in…", "success");
     setTimeout(() => { window.location.href = "login.html"; }, 800);
   } catch (err) {
-    showVerifyMessage(err.message || "Verification failed.", "error");
-  } finally {
-    button.disabled = false;
+    showAlert("verifyMessage", err.message || "Verification failed.", "error");
+    busy(button, false);
   }
 });
 
-document.getElementById("resendCode").addEventListener("click", async () => {
+document.getElementById("resendCode").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  busy(button, true);
   try {
-    const result = await apiFetch("/v1/auth/verify-email/send", {
-      method: "POST",
-      body: JSON.stringify({ email: verifyEmail })
-    });
-    showVerifyMessage(result.message, "success");
+    const result = await apiFetch("/v1/auth/verify-email/send", { method: "POST", body: JSON.stringify({ email: verifyEmail }) });
+    showAlert("verifyMessage", result.message, "success");
   } catch (err) {
-    showVerifyMessage(err.message || "Couldn't send a new code.", "error");
+    showAlert("verifyMessage", err.message || "Couldn't send a new code.", "error");
+  } finally {
+    busy(button, false);
   }
 });
-
-/* ---------------------------------------------------------------------
-   5. MESSAGE HELPERS
-   --------------------------------------------------------------------- */
-function showMessage(message, type) {
-  registerMessage.textContent = message;
-  registerMessage.className = `login-message ${type}`;
-}
-
-function showVerifyMessage(message, type) {
-  verifyMessage.textContent = message;
-  verifyMessage.className = `login-message ${type}`;
-}

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My profile — Bongalink</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/shop.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- REQ05, REQ06, REQ09 — js/profile.js, using /api/v1/account/* -->
+<main id="main" class="container page">
+
+  <!-- HEADER CARD -->
+  <section class="card" aria-labelledby="profileName">
+    <div class="card__body">
+      <div class="profile-head" id="profileHead" aria-busy="true">
+        <span class="skeleton avatar avatar--lg"></span>
+        <div><span class="skeleton skeleton--title"></span><span class="skeleton skeleton--text skeleton--short"></span></div>
+      </div>
+      <!-- Shown when the email isn't verified yet -->
+      <div class="verify-box" id="verifyPanel" hidden>
+        <div class="alert alert--warning"><i data-icon="mail" data-size="18"></i>
+          <span>Verify your email to check out. We'll send a 6-digit code to <strong id="verifyEmailLabel"></strong>.</span></div>
+        <form class="form-grid" id="verifyForm" novalidate>
+          <div class="field">
+            <label class="label" for="verifyCode">6-digit code</label>
+            <input class="input" id="verifyCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+          </div>
+          <div class="field">
+            <span class="label" aria-hidden="true">&nbsp;</span>
+            <div class="row">
+              <button class="btn btn--primary" type="submit" id="verifySubmit">Verify</button>
+              <button class="btn btn--secondary" type="button" id="resendCode">Resend code</button>
+            </div>
+          </div>
+        </form>
+        <p class="error-text" id="verifyMessage" role="alert"></p>
+      </div>
+    </div>
+  </section>
+
+  <div class="profile-grid">
+
+    <!-- PERSONAL INFO -->
+    <section class="card" aria-labelledby="infoTitle">
+      <div class="card__header"><h2 id="infoTitle">Personal info</h2></div>
+      <form class="card__body" id="infoForm" novalidate>
+        <div class="field">
+          <label class="label" for="infoUsername">Username</label>
+          <input class="input" id="infoUsername" autocomplete="username" required>
+          <span class="hint">3–50 letters, numbers, dots, dashes or underscores. You log in with it.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="infoEmail">Email</label>
+          <input class="input" id="infoEmail" type="email" autocomplete="email" required>
+        </div>
+        <div class="field" id="infoPasswordField" hidden>
+          <label class="label" for="infoPassword">Current password</label>
+          <input class="input" id="infoPassword" type="password" autocomplete="current-password">
+          <span class="hint">Needed to change your email. We'll send a code to the new address.</span>
+        </div>
+        <p class="error-text" id="infoError" role="alert"></p>
+        <div class="form-actions"><button class="btn btn--primary" type="submit" id="infoSubmit">Save changes</button></div>
+      </form>
+    </section>
+
+    <!-- CHANGE PASSWORD -->
+    <section class="card" aria-labelledby="passwordTitle">
+      <div class="card__header"><h2 id="passwordTitle">Change password</h2></div>
+      <form class="card__body" id="passwordForm" novalidate>
+        <div class="field">
+          <label class="label" for="currentPassword">Current password</label>
+          <input class="input" id="currentPassword" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="field">
+          <label class="label" for="newPassword">New password</label>
+          <input class="input" id="newPassword" type="password" autocomplete="new-password" minlength="6" required>
+          <span class="hint">At least 6 characters.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="confirmPassword">Confirm new password</label>
+          <input class="input" id="confirmPassword" type="password" autocomplete="new-password" required>
+        </div>
+        <p class="error-text" id="passwordError" role="alert"></p>
+        <div class="form-actions"><button class="btn btn--primary" type="submit" id="passwordSubmit">Change password</button></div>
+      </form>
+    </section>
+
+    <!-- SAVED ADDRESSES -->
+    <section class="card card--wide" aria-labelledby="addressTitle">
+      <div class="card__header">
+        <h2 id="addressTitle">Saved addresses</h2>
+        <button class="btn btn--secondary btn--sm" type="button" id="addAddress"><i data-icon="plus" data-size="16"></i> Add address</button>
+      </div>
+      <div class="card__body">
+        <p class="muted">Your default address fills in automatically at checkout.</p>
+        <div class="address-list" id="addressList" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- RECENT ORDERS (customers only) -->
+    <section class="card card--wide" aria-labelledby="ordersTitle" id="ordersSection" hidden>
+      <div class="card__header">
+        <h2 id="ordersTitle">Recent orders</h2>
+        <a class="btn btn--ghost btn--sm" href="../COpage/orders.html">All orders <i data-icon="chevron-right" data-size="16"></i></a>
+      </div>
+      <div class="card__body"><div class="order-list" id="recentOrders"></div></div>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts and repair since 2008.</span>
+    <span>GCash and bank transfer · J&amp;T, LBC and Lalamove delivery</span>
+  </div>
+</footer>
+
+<!-- Add / edit address -->
+<dialog class="modal" id="addressDialog" aria-labelledby="addressDialogTitle">
+  <form id="addressForm" novalidate>
+    <div class="modal__header">
+      <h2 id="addressDialogTitle">Add address</h2>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+    <div class="modal__body form-grid">
+      <div class="field field--wide">
+        <label class="label" for="aName">Recipient name</label>
+        <input class="input" id="aName" name="recipient_name" autocomplete="name" required>
+      </div>
+      <div class="field field--wide">
+        <label class="label" for="aPhone">Mobile number</label>
+        <input class="input" id="aPhone" name="recipient_phone" type="tel" inputmode="tel" placeholder="09XX XXX XXXX" autocomplete="tel" required>
+      </div>
+      <div class="field field--wide">
+        <label class="label" for="aStreet">House or unit number and street</label>
+        <input class="input" id="aStreet" name="street" autocomplete="address-line1" required>
+      </div>
+      <div class="field">
+        <label class="label" for="aBarangay">Barangay</label>
+        <input class="input" id="aBarangay" name="barangay" required>
+      </div>
+      <div class="field">
+        <label class="label" for="aCity">City or municipality</label>
+        <input class="input" id="aCity" name="city" autocomplete="address-level2" required>
+      </div>
+      <div class="field">
+        <label class="label" for="aRegion">Region</label>
+        <select class="select" id="aRegion" name="region" required></select>
+      </div>
+      <div class="field">
+        <label class="label" for="aProvince">Province <span class="optional">(blank for Metro Manila)</span></label>
+        <input class="input" id="aProvince" name="province" autocomplete="address-level1">
+      </div>
+      <div class="field">
+        <label class="label" for="aPostal">Postal code</label>
+        <input class="input" id="aPostal" name="postal_code" inputmode="numeric" maxlength="4" autocomplete="postal-code" required>
+      </div>
+      <div class="field field--wide">
+        <label class="label" for="aLandmark">Landmark <span class="optional">(optional)</span></label>
+        <input class="input" id="aLandmark" name="landmark">
+      </div>
+      <label class="check field--wide" for="aDefault"><input type="checkbox" id="aDefault" name="is_default"> Use as my default address</label>
+      <p class="error-text field--wide" id="addressError" role="alert"></p>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="addressSubmit">Save address</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/orders.js"></script>
+<script src="../../JS/profile.js"></script>
+</body>
+</html>

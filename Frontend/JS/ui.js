@@ -109,7 +109,7 @@ const initials = (name) => (String(name).match(/[A-Za-z0-9]/g) || ["?"]).slice(0
 const ROLE_LABEL = { admin: "Admin", user: "Customer" };
 
 /* --- Header ----------------------------------------------------------- */
-// active: "shop" | "orders" | "inventory" | "deliveries" | "profile"
+// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries"
 // search: true to show the search box (submits to the catalog)
 function renderHeader({ active = "", search = true } = {}) {
   const root = document.getElementById("site-header");
@@ -119,12 +119,14 @@ function renderHeader({ active = "", search = true } = {}) {
     { key: "shop", href: `${UI_ROOT}Homepage/homepage.html`, label: "Shop", icon: "store" },
     ...(session.loggedIn && !admin ? [{ key: "orders", href: `${UI_ROOT}COpage/orders.html`, label: "My orders", icon: "clipboard-list" }] : []),
     ...(admin ? [
+      { key: "dashboard", href: `${UI_ROOT}Admin/dashboard.html`, label: "Dashboard", icon: "layout-dashboard" },
       { key: "inventory", href: `${UI_ROOT}Admin/inventory.html`, label: "Inventory", icon: "boxes" },
       { key: "deliveries", href: `${UI_ROOT}Admin/deliveries.html`, label: "Deliveries", icon: "truck" }
     ] : [])
   ];
+  const toShip = admin ? `<a class="badge badge--warning to-ship" href="${UI_ROOT}Admin/deliveries.html" data-to-ship hidden></a>` : "";
   const nav = `<nav class="site-nav" aria-label="Main">${links.map(l =>
-    `<a href="${l.href}"${l.key === active ? ' aria-current="page"' : ""}>${icon(l.icon, { size: 18 })}${l.label}</a>`).join("")}</nav>`;
+    `<a href="${l.href}"${l.key === active ? ' aria-current="page"' : ""}>${icon(l.icon, { size: 18 })}${l.label}</a>`).join("")}${toShip}</nav>`;
 
   const searchBox = search ? `
     <form class="header-search input-icon" role="search" action="${UI_ROOT}Homepage/homepage.html">
@@ -155,7 +157,7 @@ function renderHeader({ active = "", search = true } = {}) {
         </div>
         <a href="${UI_ROOT}Account/profile.html">${icon("circle-user", { size: 18 })}My profile</a>
         ${admin
-          ? `<a href="${UI_ROOT}Admin/inventory.html">${icon("layout-dashboard", { size: 18 })}Admin dashboard</a>`
+          ? `<a href="${UI_ROOT}Admin/dashboard.html">${icon("layout-dashboard", { size: 18 })}Admin dashboard</a>`
           : `<a href="${UI_ROOT}COpage/orders.html">${icon("clipboard-list", { size: 18 })}My orders</a>`}
         <hr>
         <button type="button" data-logout>${icon("log-out", { size: 18 })}Log out</button>
@@ -209,6 +211,9 @@ function renderHeader({ active = "", search = true } = {}) {
     });
   }
 
+  if (admin) startToShipBadge();
+  else if (typeof readCart === "function") paintHeaderCartCount(countOf(readCart()));
+
   // Keep the search term visible after searching
   const q = new URLSearchParams(location.search).get("q");
   if (q) root.querySelectorAll('input[name="q"]').forEach(i => { i.value = q; });
@@ -220,4 +225,47 @@ function paintHeaderCartCount(count) {
     el.textContent = count;
     el.hidden = !count;
   });
+}
+
+/* --- Admin: paid orders waiting to ship -------------------------------
+   Header badge linking to Deliveries. The shop also gets an email per
+   payment (ADMIN_ALERT_EMAIL); this is the on-screen alert. Polls
+   GET /api/v1/admin/orders/to-ship every 30 seconds. */
+const TO_SHIP_POLL_MS = 30000;
+const BASE_TITLE = document.title;
+
+async function refreshToShipBadge() {
+  const { count } = await apiFetch("/v1/admin/orders/to-ship");
+  document.querySelectorAll("[data-to-ship]").forEach(el => {
+    el.hidden = count === 0;
+    el.textContent = count === 1 ? "1 order to ship" : `${count} orders to ship`;
+  });
+  // Count in the tab title too, so it shows while the admin is on another tab.
+  document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
+  return count;
+}
+
+function startToShipBadge() {
+  if (startToShipBadge.timer) return;
+  refreshToShipBadge().catch(() => {});
+  startToShipBadge.timer = setInterval(() => refreshToShipBadge().catch(() => {}), TO_SHIP_POLL_MS);
+}
+
+/* --- Admin pages: show the "admin required" panel instead of the page -- */
+function requireAdminPage() {
+  if (session.loggedIn && session.role === "admin") return true;
+  const main = document.querySelector("main");
+  main.innerHTML = `<div class="container page">
+    <div class="card">${UIState.empty({ icon: "lock", title: "Admin account required",
+      text: "Log in with the shop's admin account to see this page.",
+      action: `<a class="btn btn--primary" href="${UI_ROOT}Homepage/login.html">Go to login</a>` })}</div></div>`;
+  return false;
+}
+
+/* --- Customer pages: send visitors to login and come back afterwards --- */
+function requireLoginPage() {
+  if (session.loggedIn) return true;
+  const back = encodeURIComponent(location.pathname.split("/Pages/")[1] + location.search);
+  window.location.href = `${UI_ROOT}Homepage/login.html?next=${back}`;
+  return false;
 }

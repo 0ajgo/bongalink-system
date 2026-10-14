@@ -4,213 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your cart — Bongalink</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../CSS/store.css">
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/shop.css">
 </head>
-<body>
+<body class="app">
+<header id="site-header"></header>
 
-<p class="notice-bar">Nationwide delivery through J&amp;T Express and LBC. Orders confirmed before 2:00 PM ship the same day.</p>
-
-<!-- =========================================================
-     HEADER — nav is static/decorative (all links go back to the
-     catalog); the cart-pill count is filled in by paintCartCount()
-     down in the script, same helper Homepage.js uses.
-     ========================================================= -->
-<header class="masthead">
-  <div class="shell masthead__inner">
-    <a class="wordmark" href="../Homepage/homepage.html">Bongalink <span>est. 2008</span></a>
-    <nav class="masthead__nav" aria-label="Product categories">
-      <a href="../Homepage/homepage.html">Printer parts</a>
-      <a href="../Homepage/homepage.html">Laptop parts</a>
-      <a href="../Homepage/homepage.html">Desktop components</a>
-    </nav>
-    <a class="cart-pill" href="cart.html">Cart <b data-cart-count>0</b></a>
-  </div>
-</header>
-
-<!-- =========================================================
-     MAIN — #cart-body starts empty; render() (in the script
-     below) fills it with either the empty-state message or the
-     lines + order-summary layout, and re-runs after every
-     quantity change or removal.
-     ========================================================= -->
-<main class="shell page">
-
-  <div class="page__head">
+<!-- The cart lives on the server (/api/cart), the same cart POST /api/orders
+     turns into an order. js/cart-page.js renders it and changes it through
+     cartApi (js/cart.js). -->
+<main id="main" class="container page">
+  <div class="page-head">
     <div>
       <h1>Your cart</h1>
-      <p>Check your items and quantities before you enter delivery details. Stock is confirmed against the warehouse when you place the order.</p>
+      <p>Check quantities before checkout. Stock is confirmed again when you place the order.</p>
     </div>
-    <a class="back-link" href="../Homepage/homepage.html">Keep shopping</a>
+    <a class="btn btn--ghost" href="../Homepage/homepage.html"><i data-icon="store" data-size="18"></i> Keep shopping</a>
   </div>
-
-  <div id="cart-body"></div>
-
+  <div id="cart-body" aria-live="polite"></div>
 </main>
 
-<footer class="footer">
-  <div class="shell footer__inner">
-    <span>Bongalink — computer, laptop and printer parts since 2008.</span>
-    <span>Questions? Ask the shop assistant, bottom right.</span>
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts and repair since 2008.</span>
+    <span>GCash and bank transfer · J&amp;T, LBC and Lalamove delivery</span>
   </div>
 </footer>
 
-<!-- cart.js supplies readCart()/writeCart()/money()/subtotalOf()/countOf()/
-     stockState()/paintCartCount() — this page just reads/writes that
-     shared cart and renders it; see Frontend/JS/cart.js for the storage
-     and calculation logic itself. -->
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>
-<script>
-/* ---------------------------------------------------------------------
-   1. STATE
-   `cart` is the in-memory working copy for this page load. Every
-   mutation (quantity change, remove) updates this array, persists it
-   with writeCart(), then calls render() again to redraw from it.
-   --------------------------------------------------------------------- */
-let cart = readCart();
-
-const body = document.getElementById("cart-body");
-
-/* ---------------------------------------------------------------------
-   2. RENDER — draws the whole #cart-body: either the empty state, or
-   the line-items table + order summary aside. Re-run after every
-   change instead of patching the DOM in place, since the cart is small.
-   --------------------------------------------------------------------- */
-function render() {
-  paintCartCount(cart);
-
-  if (cart.length === 0) {
-    body.innerHTML = `
-      <div class="empty">
-        <h2>Nothing in your cart yet</h2>
-        <p>Browse refurbished and brand-new parts for printers, laptops and desktops. Every refurbished unit is bench-tested before it is listed.</p>
-        <a class="button" href="../Homepage/homepage.html">Browse parts</a>
-      </div>`;
-    return;
-  }
-
-  const subtotal = subtotalOf(cart);
-  const blocked = cart.some(item => item.stockOnHand <= 0);
-
-  body.innerHTML = `
-    <div class="layout">
-      <section class="lines" aria-label="Items in your cart">
-        <div class="lines__head">
-          <span>Product</span><span>Quantity</span><span>Total</span>
-        </div>
-        ${cart.map(lineMarkup).join("")}
-      </section>
-
-      <aside class="summary" aria-label="Order summary">
-        <h2>Order summary</h2>
-        <div class="summary__row"><span>Items (${countOf(cart)})</span><strong class="money">${money(subtotal)}</strong></div>
-        <div class="summary__row"><span>Shipping</span><span>Calculated at checkout</span></div>
-        <div class="summary__total">
-          <span>Estimated total</span>
-          <b class="money">${money(subtotal)}</b>
-        </div>
-        ${blocked
-          ? `<button class="button" disabled>Proceed to checkout</button>
-             <p class="summary__note" style="color:var(--no-stock)">Remove the out-of-stock item to continue.</p>`
-          : `<a class="button" href="checkout.html">Proceed to checkout</a>`}
-        <p class="summary__note">Pay by bank transfer or GCash on the next step. Shipping is added once you choose a delivery region.</p>
-      </aside>
-    </div>`;
-
-  wireEvents();
-}
-
-/* ---------------------------------------------------------------------
-   3. LINE MARKUP — one cart row. `index` is the item's position in the
-   `cart` array (not a database id) — the stepper/remove buttons below
-   use it as a `data-*` attribute so wireEvents() can find the right
-   item again after a click.
-   --------------------------------------------------------------------- */
-function lineMarkup(item, index) {
-  const stock = stockState(item);
-  const atMax = item.quantity >= item.stockOnHand;
-
-  return `
-    <article class="line">
-      <div class="line__product">
-        <img class="line__thumb" src="${item.image}" alt="">
-        <div>
-          <h3 class="line__name">${item.name}</h3>
-          <p class="sku" style="margin:0">${item.productId}</p>
-          <p class="line__meta">
-            <span class="tag">${item.condition}</span>
-            <span class="tag">${item.variant}</span>
-          </p>
-          <p class="stock stock--${stock.level}" style="margin:8px 0 0">${stock.text}</p>
-        </div>
-      </div>
-
-      <div class="line__qty">
-        <div class="stepper">
-          <button type="button" data-step="-1" data-index="${index}" ${item.quantity <= 1 ? "disabled" : ""} aria-label="Reduce quantity of ${item.name}">&minus;</button>
-          <input type="number" min="1" max="${Math.max(item.stockOnHand, 1)}" value="${item.quantity}"
-                 data-qty="${index}" aria-label="Quantity of ${item.name}">
-          <button type="button" data-step="1" data-index="${index}" ${atMax ? "disabled" : ""} aria-label="Increase quantity of ${item.name}">+</button>
-        </div>
-        ${atMax && item.stockOnHand > 0 ? `<span class="field__hint">Stock limit reached</span>` : ""}
-        <button type="button" class="link-button" data-remove="${index}">Remove</button>
-      </div>
-
-      <div class="line__total">
-        <span class="money">${money(item.unitPrice * item.quantity)}</span>
-        <span class="line__unit money">${money(item.unitPrice)} each</span>
-      </div>
-    </article>`;
-}
-
-/* ---------------------------------------------------------------------
-   4. WIRE EVENTS — attaches click/change handlers to the just-rendered
-   DOM. Must be called again after every render(), since innerHTML
-   replacement throws away any previously attached listeners.
-   --------------------------------------------------------------------- */
-function wireEvents() {
-  body.querySelectorAll("[data-step]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const i = Number(btn.dataset.index);
-      setQuantity(i, cart[i].quantity + Number(btn.dataset.step));
-    });
-  });
-
-  body.querySelectorAll("[data-qty]").forEach(input => {
-    input.addEventListener("change", () => {
-      setQuantity(Number(input.dataset.qty), Number(input.value));
-    });
-  });
-
-  body.querySelectorAll("[data-remove]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      cart.splice(Number(btn.dataset.remove), 1);
-      writeCart(cart);
-      render();
-    });
-  });
-}
-
-/* ---------------------------------------------------------------------
-   5. SET QUANTITY — clamps to [1, stockOnHand] so typing a huge number
-   or spamming the "+" button can never oversell what's in stock. The
-   stockOnHand snapshot is only as fresh as the last time this item was
-   added on the homepage — the server re-checks real stock at checkout.
-   --------------------------------------------------------------------- */
-function setQuantity(index, requested) {
-  const item = cart[index];
-  const capped = Math.min(Math.max(requested || 1, 1), Math.max(item.stockOnHand, 1));
-  item.quantity = capped;
-  writeCart(cart);
-  render();
-}
-
-/* ---------------------------------------------------------------------
-   6. INITIAL PAINT
-   --------------------------------------------------------------------- */
-render();
-</script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/cart-page.js"></script>
 </body>
 </html>

@@ -1,16 +1,18 @@
 /* ==========================================================================
-   Bongalink — cart state + shipping calculation
-   Backs cart.html / checkout.html. Items are written here by Homepage.js
-   (see its "LOCAL CART MIRROR" section) whenever a logged-in shopper adds
-   or removes a product, so this localStorage copy always matches what the
-   catalog page shows. Shipping fees come from the server at checkout.
+   Bongalink — cart (requires api.js; ui.js optional for the header count)
+
+   The SERVER cart (GET/POST/DELETE /api/cart) is the source of truth:
+   POST /api/orders builds the order from it. Every change goes through
+   the API and then refreshes a local copy (localStorage) that cart.html
+   and checkout.html render from, so what the customer sees is always
+   what will be ordered.
    ========================================================================== */
 
 const CART_KEY = "bongalink.cart";
 
-/* PSGC regions for the checkout address form. Shipping fees are NOT
-   kept here: checkout.html asks POST /api/v1/shipping/quote, and the
-   server recomputes the fee again when the order is placed (REQ015). */
+/* PSGC regions for address forms. Shipping fees are NOT kept here:
+   checkout asks POST /api/v1/shipping/quote, and the server recomputes
+   the fee again when the order is placed (REQ015). */
 const PSGC_REGIONS = [
   { code: "NCR",   label: "NCR — Metro Manila" },
   { code: "CAR",   label: "CAR — Cordillera Administrative Region" },
@@ -32,16 +34,10 @@ const PSGC_REGIONS = [
   { code: "BARMM", label: "BARMM — Bangsamoro" }
 ];
 
-const peso = new Intl.NumberFormat("en-PH", {
-  style: "currency",
-  currency: "PHP",
-  minimumFractionDigits: 2
-});
-
+const peso = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
 const money = (value) => peso.format(value);
 
-/* --- Storage ----------------------------------------------------------- */
-
+/* --- Local copy -------------------------------------------------------- */
 function readCart() {
   try {
     const stored = localStorage.getItem(CART_KEY);
@@ -58,27 +54,58 @@ function writeCart(items) {
   } catch (err) {
     console.warn("Cart could not be saved.", err);
   }
+  paintCartCount(items);
 }
 
-/* --- Derived values ---------------------------------------------------- */
-
-const subtotalOf = (items) =>
-  items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-
-const countOf = (items) =>
-  items.reduce((sum, item) => sum + item.quantity, 0);
-
-/* Stock label drives the colour signal in the UI. This is the guard against
-   the "ghost stock" problem: quantity can never exceed stockOnHand. */
-function stockState(item) {
-  if (item.stockOnHand <= 0) return { level: "none", text: "Out of stock" };
-  if (item.stockOnHand <= 3) return { level: "low", text: `Only ${item.stockOnHand} left in stock` };
-  return { level: "ok", text: "In stock" };
-}
-
-/* --- Shared header badge ----------------------------------------------- */
+const subtotalOf = (items) => items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+const countOf = (items) => items.reduce((sum, item) => sum + item.quantity, 0);
 
 function paintCartCount(items) {
-  const badge = document.querySelector("[data-cart-count]");
-  if (badge) badge.textContent = countOf(items);
+  if (typeof paintHeaderCartCount === "function") paintHeaderCartCount(countOf(items));
 }
+
+/* --- Server cart -------------------------------------------------------
+   GET /api/cart rows: { id, quantity, name, price, image, stock }
+   where stock is AVAILABLE stock (on hand minus unpaid reservations). */
+const CART_API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
+
+function fromServerRow(row) {
+  return {
+    productId: String(row.id),
+    name: row.name,
+    unitPrice: Number(row.price),
+    quantity: Number(row.quantity),
+    stockOnHand: Number(row.stock),
+    image: row.image ? CART_API_ORIGIN + row.image : ""
+  };
+}
+
+// Replaces the local copy with the server cart. Logged-out visitors have no cart.
+async function syncCartFromServer() {
+  if (!isLoggedIn()) {
+    writeCart([]);
+    return [];
+  }
+  const items = (await apiFetch("/cart")).map(fromServerRow);
+  writeCart(items);
+  return items;
+}
+
+const cartApi = {
+  async add(productId, quantity = 1) {
+    await apiFetch("/cart", { method: "POST", body: JSON.stringify({ productId, quantity }) });
+    return syncCartFromServer();
+  },
+  async remove(productId) {
+    await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
+    return syncCartFromServer();
+  },
+  // The API has add/remove only, so a new quantity is "remove, then add N".
+  async setQuantity(productId, quantity) {
+    await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
+    if (quantity > 0) {
+      await apiFetch("/cart", { method: "POST", body: JSON.stringify({ productId, quantity }) });
+    }
+    return syncCartFromServer();
+  }
+};

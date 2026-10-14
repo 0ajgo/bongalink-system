@@ -1,56 +1,41 @@
 /* =====================================================================
-   BONGALINK — LOGIN SCRIPT (backend-connected)
-   File: login.js
-   Requires api.js to be loaded first (see login.html <script> order).
-   Powers: login.html (role switch, password visibility toggle,
-           credential check against the real `users` table, session).
+   BONGALINK — LOGIN (login.html)
+   Requires api.js, icons.js, cart.js and ui.js.
+   POST /api/auth/login { username, password }. The server takes the role
+   from the account, so customers and the admin share one form. On
+   success the JWT, role and username go to sessionStorage (api.js sends
+   the token with every request).
    ===================================================================== */
 
-/* ---------------------------------------------------------------------
-   1. DOM REFERENCES
-   --------------------------------------------------------------------- */
+renderHeader({ search: false });
+
 const loginForm = document.getElementById("loginForm");
-const userRoleBtn = document.getElementById("userRoleBtn");
-const adminRoleBtn = document.getElementById("adminRoleBtn");
 const passwordInput = document.getElementById("password");
 const togglePassword = document.getElementById("togglePassword");
 const loginMessage = document.getElementById("loginMessage");
-const forgotPassword = document.getElementById("forgotPassword");
-const loginSubmitBtn = loginForm.querySelector(".login-btn");
+const loginSubmitBtn = document.getElementById("loginSubmit");
 
-let selectedRole = "user";
-
-/* ---------------------------------------------------------------------
-   2. ROLE SWITCH (User / Admin tabs)
-   --------------------------------------------------------------------- */
-function setRole(role) {
-  selectedRole = role;
-  userRoleBtn.classList.toggle("active", role === "user");
-  adminRoleBtn.classList.toggle("active", role === "admin");
-  clearMessage();
+// Only same-site pages under Pages/ (set by requireLoginPage() in ui.js).
+function nextPage(role) {
+  const next = new URLSearchParams(location.search).get("next") || "";
+  if (/^[A-Za-z]+\/[A-Za-z0-9_-]+\.html(\?[\w=&%-]*)?$/.test(next)) return `../${next}`;
+  return role === "admin" ? "../Admin/dashboard.html" : "homepage.html";
 }
 
-userRoleBtn.addEventListener("click", () => setRole("user"));
-adminRoleBtn.addEventListener("click", () => setRole("admin"));
+function showMessage(message, type) {
+  loginMessage.hidden = false;
+  loginMessage.className = `alert alert--${type}`;
+  loginMessage.innerHTML = `${icon(type === "error" ? "circle-alert" : "check", { size: 18 })}<span>${escapeHTML(message)}</span>`;
+}
 
-/* ---------------------------------------------------------------------
-   3. SHOW / HIDE PASSWORD
-   --------------------------------------------------------------------- */
 togglePassword.addEventListener("click", () => {
   const show = passwordInput.type === "password";
   passwordInput.type = show ? "text" : "password";
   togglePassword.textContent = show ? "Hide" : "Show";
 });
 
-/* ---------------------------------------------------------------------
-   4. LOGIN SUBMIT — POST /api/auth/login
-   On success: stores the JWT + role + username in sessionStorage.
-   Homepage.js reads bongalink_role to gate admin-only features and
-   sends the token on every request via api.js's apiFetch().
-   --------------------------------------------------------------------- */
-loginForm.addEventListener("submit", async event => {
+loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-
   const username = document.getElementById("username").value.trim();
   const password = passwordInput.value;
   const remember = document.getElementById("rememberMe").checked;
@@ -61,50 +46,27 @@ loginForm.addEventListener("submit", async event => {
   }
 
   loginSubmitBtn.disabled = true;
-
+  loginSubmitBtn.classList.add("is-loading");
   try {
-    const data = await apiFetch("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password, role: selectedRole })
-    });
+    const data = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
 
     sessionStorage.setItem("bongalink_token", data.token);
     sessionStorage.setItem("bongalink_logged_in", "true");
     sessionStorage.setItem("bongalink_role", data.user.role);
     sessionStorage.setItem("bongalink_username", data.user.username);
+    if (remember) localStorage.setItem("bongalink_remember", "true");
+    else localStorage.removeItem("bongalink_remember");
 
-    if (remember) {
-      localStorage.setItem("bongalink_remember", "true");
-    } else {
-      localStorage.removeItem("bongalink_remember");
-    }
-
-    showMessage("Login successful. Redirecting...", "success");
-    setTimeout(() => { window.location.href = "homepage.html"; }, 700);
+    showMessage("Logged in. Taking you there…", "success");
+    window.location.href = nextPage(data.user.role);
   } catch (err) {
     showMessage(err.message || "Invalid username or password.", "error");
-  } finally {
     loginSubmitBtn.disabled = false;
+    loginSubmitBtn.classList.remove("is-loading");
   }
 });
 
-/* ---------------------------------------------------------------------
-   5. FORGOT PASSWORD (placeholder until a real email flow exists)
-   --------------------------------------------------------------------- */
-forgotPassword.addEventListener("click", event => {
+document.getElementById("forgotPassword").addEventListener("click", (event) => {
   event.preventDefault();
-  showMessage("Password recovery will be connected later.", "error");
+  showMessage("Password reset by email isn't available yet. Please message the shop and we'll reset it for you.", "info");
 });
-
-/* ---------------------------------------------------------------------
-   6. MESSAGE HELPERS
-   --------------------------------------------------------------------- */
-function showMessage(message, type) {
-  loginMessage.textContent = message;
-  loginMessage.className = `login-message ${type}`;
-}
-
-function clearMessage() {
-  loginMessage.textContent = "";
-  loginMessage.className = "login-message";
-}

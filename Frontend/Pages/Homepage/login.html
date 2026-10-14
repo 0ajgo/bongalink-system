@@ -1,100 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bongalink — Login</title>
-<link rel="stylesheet" href="../../CSS/login.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in — Bongalink</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/auth.css">
 </head>
-<body>
+<body class="app">
+<header id="site-header"></header>
 
-<!-- =========================================================
-     BACKGROUND — full-bleed looping video + dark overlay so the
-     white login card stays readable on top of it
-     ========================================================= -->
-<video class="background-video" autoplay muted loop playsinline>
-<source src="../../Images/Bongalink.mp4" type="video/mp4">
-</video>
-<div class="video-overlay"></div>
+<div class="auth">
+  <main class="auth__main" id="main">
+    <div class="auth__card">
+      <h1>Log in</h1>
+      <p class="auth__lead">Welcome back. Customers and the shop admin use the same form.</p>
 
-<main class="login-page">
-<div class="login-card">
+      <div class="alert" id="loginMessage" role="alert" hidden></div>
 
-<div class="brand">
-<a href="homepage.html">Bongalink</a>
+      <!-- POST /api/auth/login (js/login.js). The server reads the role
+           from the account itself, so there is no User/Admin switch. -->
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label class="label" for="username">Username</label>
+          <input class="input" id="username" type="text" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label class="label" for="password">Password</label>
+          <div class="password-field">
+            <input class="input" id="password" type="password" autocomplete="current-password" required>
+            <button class="btn btn--ghost btn--sm" type="button" id="togglePassword" aria-controls="password">Show</button>
+          </div>
+        </div>
+        <div class="auth__row">
+          <label class="check" for="rememberMe"><input type="checkbox" id="rememberMe"> Remember me</label>
+          <a href="#" id="forgotPassword">Forgot password?</a>
+        </div>
+        <button class="btn btn--primary btn--lg btn--block" type="submit" id="loginSubmit">Log in</button>
+      </form>
+
+      <p class="auth__alt">New to Bongalink? <a href="register.html">Create an account</a></p>
+      <p class="auth__alt"><a href="homepage.html">Browse the shop as a guest</a></p>
+    </div>
+  </main>
+
+  <aside class="auth__aside" aria-label="Why Bongalink">
+    <h2>Parts for printers, laptops and PCs since 2008.</h2>
+    <ul class="auth__points">
+      <li><i data-icon="shield-check"></i><span><strong>Checked before it ships</strong>Every part is tested at the shop.</span></li>
+      <li><i data-icon="truck"></i><span><strong>Nationwide delivery</strong>J&amp;T and LBC everywhere, Lalamove same-day in Metro Manila.</span></li>
+      <li><i data-icon="credit-card"></i><span><strong>Pay your way</strong>GCash, QR Ph and online banking through PayMongo.</span></li>
+    </ul>
+  </aside>
 </div>
 
-<div class="login-header">
-<h1>Welcome</h1>
-<p>Login to continue to Bongalink.</p>
-</div>
-
-<!-- =========================================================
-     ROLE SWITCH — just sets which tab is highlighted and which
-     "role" value gets sent with the login request (see js/login.js,
-     section 2 for the tab toggle and section 4 for the submit).
-     The server re-checks the account's real role either way, so
-     this can't be used to fake admin access.
-     ========================================================= -->
-<div class="role-switch">
-<button type="button" class="role-btn active" id="userRoleBtn">User</button>
-<button type="button" class="role-btn" id="adminRoleBtn">Admin</button>
-</div>
-
-<!-- =========================================================
-     LOGIN FORM — submit handled in js/login.js section 4
-     (POST /api/auth/login, then stores the JWT in sessionStorage)
-     ========================================================= -->
-<form id="loginForm">
-
-<div class="field">
-<label for="username">Username</label>
-<input id="username" type="text" placeholder="Enter your username" autocomplete="username" required>
-</div>
-
-<div class="field">
-<label for="password">Password</label>
-<div class="password-box">
-<input id="password" type="password" placeholder="Enter your password" autocomplete="current-password" required>
-<button type="button" id="togglePassword">Show</button>
-</div>
-</div>
-
-<div class="login-options">
-<label class="remember">
-<input type="checkbox" id="rememberMe">
-<span>Remember me</span>
-</label>
-<a href="#" id="forgotPassword">Forgot password?</a>
-</div>
-
-<p id="loginMessage" class="login-message"></p>
-
-<button type="submit" class="login-btn">Login</button>
-
-</form>
-
-<!-- =========================================================
-     GUEST / REGISTER LINKS — no auth needed, plain navigation
-     ========================================================= -->
-<div class="divider">
-<span>or</span>
-</div>
-
-<a href="homepage.html" class="catalog-btn">
-Browse Catalog as Guest
-</a>
-
-<p class="register-text">
-Don't have an account?
-<a href="register.html">Create an account</a>
-</p>
-
-</div>
-</main>
-
-<!-- api.js must load first: login.js depends on apiFetch() and API_BASE_URL -->
 <script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
 <script src="../../JS/login.js"></script>
 </body>
 </html>

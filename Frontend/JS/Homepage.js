@@ -1,545 +1,321 @@
 /* =====================================================================
-   BONGALINK — HOMEPAGE / PRODUCT CATALOG SCRIPT (backend-connected)
-   File: Homepage.js
-   Requires api.js to be loaded first (see homepage.html <script> order).
-   Powers: homepage.html (catalog grid, category sidebar, search,
-           shopping cart, and the admin "List a Product" flow)
-
-   Every array that used to live in localStorage now comes from the
-   API, which reads/writes the real MySQL tables:
-     products  -> GET/POST/DELETE /api/products
-     categories-> GET /api/categories
-     cart      -> GET/POST/DELETE /api/cart
-     checkout  -> POST /api/orders
+   BONGALINK — HOMEPAGE + CATALOG (homepage.html)
+   Requires api.js, icons.js, cart.js and ui.js.
+     products   -> GET /api/products (stock = AVAILABLE stock), and for the
+                   admin POST /api/products (multipart) / DELETE /api/products/:id
+     categories -> GET /api/categories
+     cart       -> cartApi in cart.js (server cart, mirrored locally)
+   Search comes from the hero box or the header (?q=).
    ===================================================================== */
 
-/* ---------------------------------------------------------------------
-   1. DOM REFERENCES
-   --------------------------------------------------------------------- */
-const grid = document.getElementById("grid");
-const gridTitle = document.getElementById("gridTitle");
-const gridCount = document.getElementById("gridCount");
-const catList = document.getElementById("catList");
-const searchInput = document.getElementById("searchInput");
+renderHeader({ active: "shop", search: false });
 
-const cartLines = document.getElementById("cartLines");
-const cartBadge = document.getElementById("cartBadge");
-const subtotal = document.getElementById("subtotal");
-const total = document.getElementById("total");
-const checkoutBtn = document.getElementById("checkoutBtn");
-
-const openAddBtn = document.getElementById("openAddBtn");
-
-// "Admin login required" modal (shown when a non-admin tries to list/delete)
-const adminLoginOverlay = document.getElementById("adminLoginOverlay");
-const closeAdminLogin = document.getElementById("closeAdminLogin");
-const cancelAdminLogin = document.getElementById("cancelAdminLogin");
-
-// "List a Product" modal
-const productOverlay = document.getElementById("productOverlay");
-const closeProductModal = document.getElementById("closeProductModal");
-const cancelProduct = document.getElementById("cancelProduct");
-const productForm = document.getElementById("productForm");
-const productImage = document.getElementById("productImage");
-const imagePreview = document.getElementById("imagePreview");
-
-const toast = document.getElementById("toast");
-
-/* ---------------------------------------------------------------------
-   2. STATE
-   Populated from the API on load (see section 13, loadCatalog()).
-   --------------------------------------------------------------------- */
-let products = [];
-let categories = [];
-let cart = [];
-
-let currentCategory = "All";
-let selectedImageFile = null; // the actual File object, sent as multipart/form-data
-
-// The API is served from a different port than the static frontend
-// (see api.js), so image paths like "/uploads/x.jpg" need the API's
-// origin prepended to resolve correctly.
 const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
-function resolveImageUrl(imagePath) {
-  return imagePath ? `${API_ORIGIN}${imagePath}` : "";
+const PAGE_SIZE = 24;
+const CATEGORY_ICON = {
+  "Printer Parts": "printer", "Printers": "printer", "Laptop Parts": "laptop",
+  "Computer Parts": "cpu", "Accessories": "hard-drive", "Electronics": "monitor"
+};
+
+const els = {
+  grid: document.getElementById("grid"),
+  count: document.getElementById("resultCount"),
+  label: document.getElementById("resultsLabel"),
+  list: document.getElementById("categoryList"),
+  chips: document.getElementById("categoryChips"),
+  tiles: document.getElementById("categoryTiles"),
+  inStock: document.getElementById("inStockOnly"),
+  sort: document.getElementById("sort"),
+  more: document.getElementById("moreWrap"),
+  heroQ: document.getElementById("heroQ")
+};
+
+const state = {
+  products: [], categories: [], category: "All", inStockOnly: false, sort: "stock",
+  q: new URLSearchParams(location.search).get("q") || "", shown: PAGE_SIZE
+};
+
+/* ---------------------------------------------------------------------
+   PRODUCT CARD — consistent 4:3 image, name (2 lines max), price,
+   stock badge from available stock, Add to cart disabled when out.
+   --------------------------------------------------------------------- */
+function productCard(p) {
+  const available = Number(p.stock) || 0;
+  const media = p.image
+    ? `<img src="${escapeHTML(API_ORIGIN + p.image)}" alt="${escapeHTML(p.name)}" loading="lazy">`
+    : `<span class="product-card__placeholder">${icon("package", { size: 56 })}<span class="sr-only">No photo yet</span></span>`;
+  const remove = isAdmin()
+    ? `<button class="btn btn--secondary btn--sm btn--icon product-card__delete" type="button" data-delete="${p.id}">
+         ${icon("trash-2", { size: 16, label: `Remove ${p.name}` })}</button>` : "";
+  return `
+    <article class="product-card">
+      <div class="product-card__media">${media}${remove}</div>
+      <div class="product-card__body">
+        <div class="product-card__meta"><span class="eyebrow">${escapeHTML(p.category)}</span>${stockBadge(available)}</div>
+        <h3 class="product-card__name" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</h3>
+        ${p.brand ? `<span class="product-card__brand">${escapeHTML(p.brand)}</span>` : ""}
+        <span class="price product-card__price">${formatMoney(p.price)}</span>
+        ${isAdmin() ? "" : `
+        <button class="btn ${available > 0 ? "btn--primary" : ""} btn--block" type="button" data-add="${p.id}"
+                ${available > 0 ? "" : "disabled"}>
+          ${available > 0 ? `${icon("shopping-cart", { size: 18 })} Add to cart` : "Out of stock"}
+        </button>`}
+      </div>
+    </article>`;
 }
 
 /* ---------------------------------------------------------------------
-   3. AUTH HELPERS — isLoggedIn() / isAdmin() now live in api.js, since
-      checkout.html needs them too.
+   FILTER + SORT
    --------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------
-   4. FORMAT / ESCAPE HELPERS
-   --------------------------------------------------------------------- */
-function formatPrice(value) {
-  return "₱" + Number(value).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function getStockClass(stock) {
-  if (stock <= 0) return "stock-out";
-  if (stock <= 5) return "stock-low";
-  return "stock-ok";
-}
-
-function getStockText(stock) {
-  if (stock <= 0) return "Out of Stock";
-  if (stock <= 5) return "Low Stock";
-  return "Available";
+function visibleProducts() {
+  const q = state.q.trim().toLowerCase();
+  const list = state.products.filter(p =>
+    (state.category === "All" || p.category === state.category) &&
+    (!state.inStockOnly || Number(p.stock) > 0) &&
+    (!q || [p.name, p.brand, p.category, p.description].some(v => String(v || "").toLowerCase().includes(q))));
+  const by = {
+    stock: (a, b) => (Number(b.stock) > 0) - (Number(a.stock) > 0) || new Date(b.created_at) - new Date(a.created_at),
+    newest: (a, b) => new Date(b.created_at) - new Date(a.created_at),
+    "price-asc": (a, b) => a.price - b.price,
+    "price-desc": (a, b) => b.price - a.price,
+    name: (a, b) => a.name.localeCompare(b.name)
+  }[state.sort];
+  return list.sort(by);
 }
 
 /* ---------------------------------------------------------------------
-   5. RENDER — CATEGORY SIDEBAR (#catList)
+   RENDER
    --------------------------------------------------------------------- */
+function categoryCounts() {
+  const counts = state.products.reduce((m, p) => (m[p.category] = (m[p.category] || 0) + 1, m), {});
+  // Every category the shop has, even empty ones, in a stable order (most parts first).
+  const names = new Set([...state.categories.map(c => c.name), ...Object.keys(counts)]);
+  return [...names].map(name => [name, counts[name] || 0]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
 function renderCategories() {
-  const categoryCounts = {};
-  products.forEach(product => {
-    categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1;
-  });
-
-  catList.innerHTML = "";
-
-  const allItem = document.createElement("div");
-  allItem.className = "cat" + (currentCategory === "All" ? " active" : "");
-  allItem.innerHTML = `<span>All Products</span><span class="n">${products.length}</span>`;
-  allItem.addEventListener("click", () => {
-    currentCategory = "All";
-    renderCategories();
-    renderProducts();
-  });
-  catList.appendChild(allItem);
-
-  categories.forEach(category => {
-    const count = categoryCounts[category.name] || 0;
-    const item = document.createElement("div");
-    item.className = "cat" + (currentCategory === category.name ? " active" : "");
-    item.innerHTML = `<span>${escapeHTML(category.name)}</span><span class="n">${count}</span>`;
-    item.addEventListener("click", () => {
-      currentCategory = category.name;
-      renderCategories();
-      renderProducts();
-    });
-    catList.appendChild(item);
-  });
+  const cats = categoryCounts();
+  const all = [["All", state.products.length], ...cats];
+  const label = (name) => name === "All" ? "All parts" : escapeHTML(name);
+  els.list.innerHTML = all.map(([name, n]) => `
+    <li><button type="button" data-category="${escapeHTML(name)}" aria-pressed="${name === state.category}">
+      <span>${label(name)}</span><span class="muted">${n}</span></button></li>`).join("");
+  els.chips.innerHTML = all.map(([name]) => `
+    <button class="chip" type="button" data-category="${escapeHTML(name)}" aria-pressed="${name === state.category}">${label(name)}</button>`).join("");
+  els.tiles.innerHTML = cats.filter(([, n]) => n > 0).map(([name, n]) => `
+    <button class="category-tile" type="button" data-category="${escapeHTML(name)}" data-scroll>
+      ${icon(CATEGORY_ICON[name] || "package", { size: 24 })}
+      <span><strong>${escapeHTML(name)}</strong><span>${n} part${n === 1 ? "" : "s"}</span></span>
+    </button>`).join("");
 }
 
-/* ---------------------------------------------------------------------
-   6. RENDER — PRODUCT GRID (#grid)
-   Category/search filtering is also applied server-side (see
-   loadProducts()), but we keep this client-side filter too so typing
-   in the search box feels instant without a round trip per keystroke.
-   --------------------------------------------------------------------- */
-function renderProducts() {
-  const search = (searchInput.value || "").trim().toLowerCase();
+function renderInStock() {
+  const available = state.products.filter(p => Number(p.stock) > 0).slice(0, 4);
+  document.getElementById("inStockSection").hidden = available.length === 0;
+  document.getElementById("inStockGrid").innerHTML = available.map(productCard).join("");
+}
 
-  const filtered = products.filter(product => {
-    const matchesCategory = currentCategory === "All" || product.category === currentCategory;
-    const searchableText = [
-      product.name, product.category, product.brand || "", product.description || ""
-    ].join(" ").toLowerCase();
-    return matchesCategory && searchableText.includes(search);
-  });
-
-  grid.innerHTML = "";
-  gridTitle.textContent = currentCategory === "All" ? "All Available Products" : currentCategory;
-  gridCount.textContent = filtered.length + " product" + (filtered.length === 1 ? "" : "s");
-
-  if (filtered.length === 0) {
-    grid.innerHTML = `
-      <div class="empty-grid">
-        <strong>No products available</strong>
-        <span>${products.length === 0 ? "No products have been listed yet." : "No products match your search."}</span>
-      </div>`;
+function renderGrid() {
+  const list = visibleProducts();
+  els.label.textContent = state.q ? `Results for “${state.q}”` : state.category === "All" ? "All parts" : state.category;
+  els.count.textContent = `(${list.length})`;
+  els.grid.setAttribute("aria-busy", "false");
+  els.more.hidden = list.length <= state.shown;
+  if (!list.length) {
+    els.grid.innerHTML = `<div class="grid-span-all card">${UIState.empty({
+      icon: "search", title: state.products.length ? "No parts match" : "No parts listed yet",
+      text: state.q ? `Nothing found for “${state.q}”. Try a model number or a shorter search.`
+                    : state.products.length ? "Try another category or turn off “In stock only”." : "Check back soon.",
+      action: state.products.length ? `<button class="btn btn--secondary" type="button" data-reset>Show all parts</button>` : ""
+    })}</div>`;
     return;
   }
+  els.grid.innerHTML = list.slice(0, state.shown).map(productCard).join("");
+}
 
-  filtered.forEach(product => {
-    const card = document.createElement("article");
-    card.className = "card";
-
-    const stock = Number(product.stock) || 0;
-    const imageHTML = product.image
-      ? `<img src="${resolveImageUrl(product.image)}" alt="${escapeHTML(product.name)}">`
-      : `<span class="glyph">📦</span>`;
-
-    card.innerHTML = `
-      <div class="thumb">
-        ${imageHTML}
-        ${isAdmin() ? `<button class="del" title="Delete product" data-delete="${product.id}">×</button>` : ""}
-      </div>
-      <div class="card-body">
-        <div class="meta-row">
-          <span class="cat-label">${escapeHTML(product.category)}</span>
-          <span class="stock-pill ${getStockClass(stock)}">${getStockText(stock)}</span>
-        </div>
-        <h3 class="card-title">${escapeHTML(product.name)}</h3>
-        ${product.brand ? `<div class="card-brand">${escapeHTML(product.brand)}</div>` : ""}
-        ${product.description ? `<p class="card-description">${escapeHTML(product.description)}</p>` : ""}
-        <p class="card-price">${formatPrice(product.price)}</p>
-        <button class="add-btn" data-add="${product.id}" ${stock <= 0 ? "disabled" : ""}>
-          ${stock <= 0 ? "Out of Stock" : "Add to Cart"}
-        </button>
-      </div>`;
-
-    grid.appendChild(card);
-  });
+function renderAll() {
+  renderCategories();
+  renderInStock();
+  renderGrid();
 }
 
 /* ---------------------------------------------------------------------
-   7. RENDER — SHOPPING CART SIDEBAR
+   LOAD
    --------------------------------------------------------------------- */
-function renderCart() {
-  cartLines.innerHTML = "";
-
-  if (cart.length === 0) {
-    cartLines.innerHTML = `<div class="cart-empty">Your cart is empty.</div>`;
-    cartBadge.textContent = "0";
-    subtotal.textContent = "₱0.00";
-    total.textContent = "₱0.00";
-    checkoutBtn.disabled = true;
-    return;
+async function loadProducts() {
+  els.grid.setAttribute("aria-busy", "true");
+  els.grid.innerHTML = UIState.productSkeletons(8);
+  els.tiles.innerHTML = "";
+  try {
+    const [products, categories] = await Promise.all([apiFetch("/products"), apiFetch("/categories").catch(() => [])]);
+    state.products = products.map(p => ({ ...p, price: Number(p.price) }));
+    state.categories = categories;
+    renderAll();
+  } catch (err) {
+    els.grid.setAttribute("aria-busy", "false");
+    els.grid.innerHTML = `<div class="grid-span-all card">${UIState.error(err.message, "retryProducts")}</div>`;
+    document.getElementById("retryProducts").addEventListener("click", loadProducts);
   }
-
-  let itemCount = 0;
-  let cartTotal = 0;
-
-  cart.forEach(item => {
-    itemCount += item.quantity;
-    cartTotal += Number(item.price) * item.quantity;
-
-    const line = document.createElement("div");
-    line.className = "cart-line";
-    const thumb = item.image ? `<img src="${resolveImageUrl(item.image)}" alt="">` : "📦";
-
-    line.innerHTML = `
-      <div class="cart-thumb">${thumb}</div>
-      <div class="info">
-        <div class="t">${escapeHTML(item.name)}</div>
-        <div class="q">Qty: ${item.quantity}</div>
-      </div>
-      <div class="p">${formatPrice(Number(item.price) * item.quantity)}</div>
-      <button class="rm" data-remove="${item.id}" title="Remove">×</button>`;
-
-    cartLines.appendChild(line);
-  });
-
-  cartBadge.textContent = itemCount;
-  subtotal.textContent = formatPrice(cartTotal);
-  total.textContent = formatPrice(cartTotal);
-  checkoutBtn.disabled = itemCount === 0;
 }
 
 /* ---------------------------------------------------------------------
-   8. CART ACTIONS — now real API calls against carts/cart_items
+   CART + ADMIN ACTIONS
    --------------------------------------------------------------------- */
-async function loadCart() {
+async function addToCart(id, button) {
   if (!isLoggedIn()) {
-    cart = [];
-    renderCart();
+    toast("Log in to add parts to your cart.", "info");
+    setTimeout(() => { window.location.href = "login.html?next=Homepage/homepage.html"; }, 900);
     return;
   }
+  button.disabled = true;
+  button.classList.add("is-loading");
   try {
-    cart = await apiFetch("/cart");
+    await cartApi.add(id, 1);
+    const product = state.products.find(p => String(p.id) === String(id));
+    toast(`${product ? product.name : "Part"} added to your cart.`, "success");
   } catch (err) {
-    cart = [];
+    toast(err.message || "Could not add to cart.", "error");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-loading");
   }
-  renderCart();
-}
-
-async function addToCart(id) {
-  if (!isLoggedIn()) {
-    showToast("Please login to add items to your cart.");
-    setTimeout(() => { window.location.href = "login.html"; }, 700);
-    return;
-  }
-
-  try {
-    await apiFetch("/cart", {
-      method: "POST",
-      body: JSON.stringify({ productId: id, quantity: 1 })
-    });
-    await loadCart();
-    const product = products.find(p => String(p.id) === String(id));
-    if (product) mirrorAddToLocalCart(product);
-    showToast("Product added to cart.");
-  } catch (err) {
-    showToast(err.message || "Could not add to cart.");
-  }
-}
-
-async function removeFromCart(id) {
-  try {
-    await apiFetch(`/cart/${id}`, { method: "DELETE" });
-    await loadCart();
-    mirrorRemoveFromLocalCart(id);
-  } catch (err) {
-    showToast(err.message || "Could not remove item.");
-  }
-}
-
-/* ---------------------------------------------------------------------
-   8b. LOCAL CART MIRROR
-   cart.html / checkout.html are the canonical review-and-checkout pages
-   and read a plain localStorage cart (see cart.js) rather than calling
-   the API, so every add/remove above is mirrored into that same
-   storage. The products table has no condition/variant columns, so
-   those two display fields borrow brand/category instead.
-   --------------------------------------------------------------------- */
-function toLocalCartItem(product, quantity) {
-  return {
-    productId: String(product.id),
-    name: product.name,
-    condition: product.brand || "Standard",
-    variant: product.category,
-    unitPrice: Number(product.price),
-    quantity,
-    stockOnHand: Number(product.stock),
-    image: resolveImageUrl(product.image)
-  };
-}
-
-function mirrorAddToLocalCart(product) {
-  const localCart = readCart();
-  const existing = localCart.find(item => item.productId === String(product.id));
-  if (existing) {
-    existing.quantity = Math.min(existing.quantity + 1, Number(product.stock));
-    existing.stockOnHand = Number(product.stock);
-  } else {
-    localCart.push(toLocalCartItem(product, 1));
-  }
-  writeCart(localCart);
-  paintCartCount(localCart);
-}
-
-function mirrorRemoveFromLocalCart(id) {
-  const localCart = readCart().filter(item => item.productId !== String(id));
-  writeCart(localCart);
-  paintCartCount(localCart);
-}
-
-/* ---------------------------------------------------------------------
-   9. TOAST NOTIFICATIONS
-   --------------------------------------------------------------------- */
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2200);
-}
-
-/* ---------------------------------------------------------------------
-   10. ADMIN GATE MODAL ("Admin Login Required")
-   --------------------------------------------------------------------- */
-function openAdminLogin() {
-  adminLoginOverlay.classList.add("open");
-}
-function closeAdminAccess() {
-  adminLoginOverlay.classList.remove("open");
-}
-
-/* ---------------------------------------------------------------------
-   11. "LIST A PRODUCT" MODAL + FORM
-   Submitting this form POSTs multipart/form-data (because of the
-   image file) straight to /api/products, which the server-side
-   requireAdmin middleware gates — the real enforcement now lives on
-   the server, not just in this file.
-   --------------------------------------------------------------------- */
-function openProductModal() {
-  if (!isAdmin()) return openAdminLogin();
-  productOverlay.classList.add("open");
-}
-
-function closeProduct() {
-  productOverlay.classList.remove("open");
-  productForm.reset();
-  selectedImageFile = null;
-  imagePreview.innerHTML = "No image selected";
 }
 
 async function deleteProduct(id) {
-  if (!isAdmin()) return openAdminLogin();
-
-  const product = products.find(p => p.id === id);
-  if (!product) return;
-  if (!confirm(`Delete "${product.name}" from the catalog?`)) return;
-
+  const product = state.products.find(p => String(p.id) === String(id));
+  if (!product || !confirm(`Remove "${product.name}" from the catalog?\n\nIts order history and sales trend are kept.`)) return;
   try {
     await apiFetch(`/products/${id}`, { method: "DELETE" });
+    toast("Product removed.", "success");
     await loadProducts();
-    await loadCart(); // in case the deleted product was in the cart
-    showToast("Product deleted.");
   } catch (err) {
-    showToast(err.message || "Could not delete product.");
+    toast(err.message || "Could not remove the product.", "error");
   }
 }
 
-// Live preview for the image file picked in the "List a Product" form
-productImage.addEventListener("change", function () {
-  const file = this.files[0];
-
-  if (!file) {
-    selectedImageFile = null;
-    imagePreview.innerHTML = "No image selected";
+document.addEventListener("click", (event) => {
+  const cat = event.target.closest("[data-category]");
+  if (cat) {
+    Object.assign(state, { category: cat.dataset.category, shown: PAGE_SIZE });
+    renderCategories();
+    renderGrid();
+    if (cat.hasAttribute("data-scroll")) document.getElementById("catalog").scrollIntoView({ behavior: "smooth" });
     return;
   }
+  const add = event.target.closest("[data-add]");
+  if (add) return addToCart(add.dataset.add, add);
+  const del = event.target.closest("[data-delete]");
+  if (del) return deleteProduct(del.dataset.delete);
+  if (event.target.closest("[data-reset]")) {
+    Object.assign(state, { category: "All", inStockOnly: false, q: "", shown: PAGE_SIZE });
+    els.inStock.checked = false;
+    els.heroQ.value = "";
+    history.replaceState(null, "", location.pathname);
+    renderCategories();
+    renderGrid();
+  }
+});
+
+els.inStock.addEventListener("change", () => { state.inStockOnly = els.inStock.checked; state.shown = PAGE_SIZE; renderGrid(); });
+els.sort.addEventListener("change", () => { state.sort = els.sort.value; renderGrid(); });
+document.getElementById("showMore").addEventListener("click", () => { state.shown += PAGE_SIZE; renderGrid(); });
+document.getElementById("showInStock").addEventListener("click", () => {
+  state.inStockOnly = els.inStock.checked = true;
+  state.category = "All";
+  renderCategories();
+  renderGrid();
+  document.getElementById("catalog").scrollIntoView({ behavior: "smooth" });
+});
+
+document.getElementById("heroSearch").addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.q = els.heroQ.value.trim();
+  state.category = "All";
+  state.shown = PAGE_SIZE;
+  history.replaceState(null, "", state.q ? `?q=${encodeURIComponent(state.q)}` : location.pathname);
+  renderCategories();
+  renderGrid();
+  document.getElementById("catalog").scrollIntoView({ behavior: "smooth" });
+});
+
+/* ---------------------------------------------------------------------
+   ADMIN: LIST A PRODUCT (POST /api/products, multipart for the photo;
+   the server's requireAdmin is the real gate)
+   --------------------------------------------------------------------- */
+const dialog = document.getElementById("productDialog");
+const productForm = document.getElementById("productForm");
+const productImage = document.getElementById("productImage");
+const imagePreview = document.getElementById("imagePreview");
+const productError = document.getElementById("productError");
+
+function openProductDialog() {
+  document.getElementById("productCategory").innerHTML =
+    `<option value="">Choose a category</option>` +
+    state.categories.map(c => `<option>${escapeHTML(c.name)}</option>`).join("");
+  productError.textContent = "";
+  dialog.showModal();
+}
+
+function closeProductDialog() {
+  dialog.close();
+  productForm.reset();
+  imagePreview.textContent = "No photo selected";
+}
+
+dialog.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeProductDialog));
+document.getElementById("openAddBtn").addEventListener("click", openProductDialog);
+
+productImage.addEventListener("change", () => {
+  const file = productImage.files[0];
+  if (!file) { imagePreview.textContent = "No photo selected"; return; }
   if (!file.type.startsWith("image/")) {
-    showToast("Please select an image file.");
-    this.value = "";
+    productError.textContent = "Please choose an image file.";
+    productImage.value = "";
     return;
   }
-
-  selectedImageFile = file;
   const reader = new FileReader();
-  reader.onload = event => {
-    imagePreview.innerHTML = `<img src="${event.target.result}" alt="Product preview">`;
-  };
+  reader.onload = (e) => { imagePreview.innerHTML = `<img src="${e.target.result}" alt="Preview of the selected photo">`; };
   reader.readAsDataURL(file);
 });
 
-// Submit handler — builds multipart/form-data and POSTs to /api/products
-productForm.addEventListener("submit", async function (event) {
+productForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-
-  if (!isAdmin()) {
-    closeProduct();
-    openAdminLogin();
+  const value = (id) => document.getElementById(id).value.trim();
+  if (!value("productName") || !value("productCategory") || value("productPrice") === "" || value("productStock") === "") {
+    productError.textContent = "Please complete the name, category, price and stock.";
     return;
   }
+  const form = new FormData();
+  form.append("name", value("productName"));
+  form.append("category", value("productCategory"));
+  form.append("brand", value("productBrand"));
+  form.append("price", value("productPrice"));
+  form.append("stock", value("productStock"));
+  form.append("description", value("productDescription"));
+  if (productImage.files[0]) form.append("image", productImage.files[0]);
 
-  const name = document.getElementById("productName").value.trim();
-  const category = document.getElementById("productCategory").value;
-  const brand = document.getElementById("productBrand").value.trim();
-  const price = document.getElementById("productPrice").value;
-  const stock = document.getElementById("productStock").value;
-  const description = document.getElementById("productDescription").value.trim();
-
-  if (!name || !category || price === "" || stock === "") {
-    showToast("Please complete all required fields.");
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("name", name);
-  formData.append("category", category);
-  formData.append("brand", brand);
-  formData.append("price", price);
-  formData.append("stock", stock);
-  formData.append("description", description);
-  if (selectedImageFile) formData.append("image", selectedImageFile);
-
+  const submit = document.getElementById("productSubmit");
+  submit.disabled = true;
+  submit.classList.add("is-loading");
   try {
-    await apiFetch("/products", { method: "POST", body: formData });
+    await apiFetch("/products", { method: "POST", body: form });
+    closeProductDialog();
+    toast("Product listed.", "success");
     await loadProducts();
-    closeProduct();
-    showToast("Product successfully added.");
   } catch (err) {
-    showToast(err.message || "Failed to add product.");
+    productError.textContent = err.message || "Failed to list the product.";
+  } finally {
+    submit.disabled = false;
+    submit.classList.remove("is-loading");
   }
 });
 
 /* ---------------------------------------------------------------------
-   12. EVENT LISTENERS (delegated where possible)
+   INIT
    --------------------------------------------------------------------- */
-grid.addEventListener("click", event => {
-  const addButton = event.target.closest("[data-add]");
-  if (addButton) return addToCart(addButton.dataset.add);
-
-  const deleteButton = event.target.closest("[data-delete]");
-  if (deleteButton) deleteProduct(deleteButton.dataset.delete);
+document.getElementById("openAddBtn").hidden = !isAdmin();
+if (state.q) els.heroQ.value = state.q;
+loadProducts().then(() => {
+  if (state.q) document.getElementById("catalog").scrollIntoView();
 });
-
-cartLines.addEventListener("click", event => {
-  const removeButton = event.target.closest("[data-remove]");
-  if (removeButton) removeFromCart(removeButton.dataset.remove);
-});
-
-searchInput.addEventListener("input", renderProducts);
-
-openAddBtn.addEventListener("click", () => {
-  isAdmin() ? openProductModal() : openAdminLogin();
-});
-
-closeAdminLogin.addEventListener("click", closeAdminAccess);
-cancelAdminLogin.addEventListener("click", closeAdminAccess);
-closeProductModal.addEventListener("click", closeProduct);
-cancelProduct.addEventListener("click", closeProduct);
-
-adminLoginOverlay.addEventListener("click", event => {
-  if (event.target === adminLoginOverlay) closeAdminAccess();
-});
-productOverlay.addEventListener("click", event => {
-  if (event.target === productOverlay) closeProduct();
-});
-
-document.addEventListener("keydown", event => {
-  if (event.key === "Escape") {
-    closeAdminAccess();
-    closeProduct();
-  }
-});
-
-// Checkout — hands off to checkout.html, which collects delivery/payment
-// details and is the canonical place an order actually gets placed.
-checkoutBtn.addEventListener("click", () => {
-  if (cart.length === 0) return;
-
-  if (!isLoggedIn()) {
-    showToast("Please login before checking out.");
-    setTimeout(() => { window.location.href = "login.html"; }, 700);
-    return;
-  }
-
-  window.location.href = "../COpage/checkout.html";
-});
-
-document.getElementById("aboutLink").addEventListener("click", event => {
-  event.preventDefault();
-  showToast("Bongalink Product Catalog");
-});
-
-/* ---------------------------------------------------------------------
-   13. LOAD DATA FROM THE API + INITIAL RENDER
-   --------------------------------------------------------------------- */
-async function loadProducts() {
-  try {
-    products = await apiFetch("/products");
-  } catch (err) {
-    products = [];
-    showToast("Could not load products. Is the API running?");
-  }
-  renderCategories();
-  renderProducts();
-}
-
-async function loadCategories() {
-  try {
-    categories = await apiFetch("/categories");
-  } catch (err) {
-    categories = [];
-  }
-}
-
-async function loadCatalog() {
-  // UI hint only: the dashboard's API routes enforce requireAdmin themselves.
-  document.getElementById("inventoryLink").hidden = !isAdmin();
-  document.getElementById("deliveriesLink").hidden = !isAdmin();
-  document.getElementById("ordersLink").hidden = !isLoggedIn() || isAdmin();
-  await loadCategories();
-  await loadProducts();
-  await loadCart();
-  paintCartCount(readCart());
-}
-
-loadCatalog();
+if (isLoggedIn() && !isAdmin()) syncCartFromServer().catch(() => {});

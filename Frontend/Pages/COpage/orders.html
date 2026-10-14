@@ -4,71 +4,36 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My orders — Bongalink</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../CSS/store.css">
-<style>
-  [hidden] { display: none !important; }
-  .order { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 16px; }
-  .order__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .order__ref { font-family: "IBM Plex Mono", monospace; font-size: var(--step-1); }
-  .order__meta { color: var(--ink-soft); font-size: var(--step--1); margin: 4px 0 12px; }
-  .order__items { margin: 0 0 12px; padding-left: 18px; font-size: var(--step-0); }
-  .order__total { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 10px; font-size: var(--step--1); color: var(--ink-soft); }
-  .order__total b { color: var(--ink); font-size: var(--step-0); }
-  .order .button { width: auto; display: inline-block; padding-inline: 24px; margin-top: 14px; }
-  .status { font-size: 0.75rem; font-weight: 600; border-radius: 3px; padding: 2px 8px; background: var(--action-tint); color: var(--action); white-space: nowrap; }
-  .status--ok { background: #e7f3ec; color: var(--in-stock); }
-  .status--bad { background: #f9e9e8; color: var(--no-stock); }
-  .status--muted { background: var(--paper); color: var(--ink-soft); }
-  .tracking { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
-  .tracking h3 { font-size: var(--step-0); margin: 0 0 4px; }
-  .tracking__id { font-size: var(--step--1); color: var(--ink-soft); margin: 0 0 12px; }
-  .tracking__id a { color: var(--action); }
-  .timeline { list-style: none; margin: 0; padding: 0 0 0 4px; }
-  .timeline li { position: relative; padding: 0 0 14px 22px; border-left: 2px solid var(--line); margin-left: 5px; }
-  .timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
-  .timeline li::before { content: ""; position: absolute; left: -7px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); border: 2px solid var(--surface); }
-  .timeline li.is-latest::before { background: var(--action); }
-  .timeline__status { font-weight: 500; }
-  .timeline__time { color: var(--ink-soft); font-size: var(--step--1); }
-  .timeline__note { font-size: var(--step--1); color: var(--ink-soft); }
-</style>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/shop.css">
 </head>
-<body>
+<body class="app">
+<header id="site-header"></header>
 
-<header class="masthead">
-  <div class="shell masthead__inner">
-    <a class="wordmark" href="../Homepage/homepage.html">Bongalink <span>est. 2008</span></a>
-    <a class="back-link" href="../Homepage/homepage.html">Back to the shop</a>
-  </div>
-</header>
-
-<!-- =========================================================
-     MAIN — the script below fills #orders from GET /api/orders,
-     and the tracking timeline of every shipped order from
-     GET /api/v1/orders/:id/tracking (REQ014).
-     ========================================================= -->
-<main class="shell page">
-  <div class="page__head">
+<!-- js/orders.js fills #orders from GET /api/orders, and the tracking
+     timeline of every shipped order from GET /api/v1/orders/:id/tracking (REQ014). -->
+<main id="main" class="container page">
+  <div class="page-head">
     <div>
       <h1>My orders</h1>
       <p>Payment status and delivery tracking for every order you've placed.</p>
     </div>
   </div>
-  <p class="field__error" id="orders-error"></p>
-  <div id="orders"><p class="summary__note">Loading your orders…</p></div>
+  <div class="alert alert--error" id="orders-error" role="alert" hidden></div>
+  <div class="order-list" id="orders" aria-live="polite"></div>
 </main>
 
-<footer class="footer">
-  <div class="shell footer__inner">
-    <span>Bongalink — computer, laptop and printer parts since 2008.</span>
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts and repair since 2008.</span>
     <span>Questions about a delivery? Reply to your shipping email.</span>
   </div>
 </footer>
 
 <script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
 <script src="../../JS/orders.js"></script>
 </body>
 </html>

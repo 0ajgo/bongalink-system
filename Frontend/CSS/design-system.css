@@ -125,7 +125,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- 3. LAYOUT */
 .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--space-5); }
-.page { padding: var(--space-6) 0 var(--space-8); }
+.page { padding-top: var(--space-6); padding-bottom: var(--space-8); }   /* block only: keeps .container side padding */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5); }
 .page-head p { color: var(--color-ink-2); margin-top: var(--space-1); }
 .section { margin-bottom: var(--space-7); }
@@ -143,7 +143,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 @media (max-width: 640px) {
   .container { padding: 0 var(--space-4); }
-  .page { padding: var(--space-5) 0 var(--space-7); }
+  .page { padding-top: var(--space-5); padding-bottom: var(--space-7); }
   h1 { font-size: var(--text-2xl); }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
@@ -487,3 +487,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* Only hide; never set display, so flex/grid elements keep their own layout. */
 @media (max-width: 960px) { .hide-mobile { display: none !important; } }
 @media (min-width: 961px) { .show-mobile { display: none !important; } }
+
+/* Admin "orders to ship" badge inside the header nav */
+.site-nav a.to-ship { min-height: 0; padding: 2px 10px; margin-left: var(--space-2); border-radius: var(--radius-full); color: var(--color-warning); background: var(--color-warning-tint); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+.site-nav a.to-ship:hover { background: #f8e2bd; color: var(--color-warning); }
+@media (max-width: 960px) { .site-nav a.to-ship { align-self: flex-start; margin: var(--space-2) var(--space-3); } }

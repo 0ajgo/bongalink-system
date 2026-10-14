@@ -1,232 +1,164 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bongalink — Product Catalog</title>
-<link rel="stylesheet" href="../../CSS/homepage.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bongalink — Computer, laptop and printer parts</title>
+<meta name="description" content="Bongalink: computer, laptop and printer parts and repair since 2008. Pay with GCash or bank transfer, delivered nationwide by J&T, LBC and Lalamove.">
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/home.css">
 </head>
-<body>
+<body class="app">
+<a class="skip-link btn btn--primary" href="#catalog">Skip to products</a>
+<header id="site-header"></header>
 
-<!-- =========================================================
-     TOP NAV — brand logo + Catalog / Login / About links
-     ========================================================= -->
-<header class="top">
-<div class="brand">
-<a href="homepage.html" class="brand-name">Bongalink</a>
-</div>
+<main id="main">
 
-<nav class="tabs">
-<a href="homepage.html" class="nav-link active">Product Catalog</a>
-<a href="login.html" class="nav-link">Login / Register</a>
-<a href="#" class="nav-link" id="aboutLink">About</a>
-<a href="../COpage/cart.html" class="nav-link">Cart <span class="cart-badge" data-cart-count>0</span></a>
-<a href="../COpage/orders.html" class="nav-link" id="ordersLink" hidden>My Orders</a>
-<a href="../Admin/inventory.html" class="nav-link" id="inventoryLink" hidden>Inventory &amp; Forecasts</a>
-<a href="../Admin/deliveries.html" class="nav-link" id="deliveriesLink" hidden>Deliveries</a>
-</nav>
-</header>
+  <!-- =========================================================
+       HERO — search submits to this page (?q=), handled in Homepage.js
+       ========================================================= -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero__inner">
+        <p class="eyebrow">Since 2008 · Metro Manila</p>
+        <h1>Computer, laptop and printer parts — and the repairs to go with them.</h1>
+        <p class="hero__lead">Printheads, keyboards, batteries, RAM, SSDs and more, tested at our shop and delivered anywhere in the Philippines.</p>
+        <form class="hero__search" role="search" id="heroSearch">
+          <div class="input-icon">
+            <i data-icon="search"></i>
+            <label class="sr-only" for="heroQ">Search parts</label>
+            <input class="input" id="heroQ" name="q" type="search" placeholder="Try “L3110 printhead” or “laptop battery”" autocomplete="off">
+          </div>
+          <button class="btn btn--primary btn--lg" type="submit">Search</button>
+        </form>
+        <div class="row hero__actions">
+          <a class="btn btn--primary btn--lg" href="#catalog">Shop now</a>
+          <a class="btn btn--secondary btn--lg" href="#categories">Browse categories</a>
+        </div>
+      </div>
+    </div>
+  </section>
 
-<!-- =========================================================
-     HERO — page title + product search box (#searchInput)
-     ========================================================= -->
-<section class="hero">
-<div>
-<h1>Bongalink</h1>
-<p>Product Catalog</p>
-</div>
+  <!-- TRUST STRIP -->
+  <section class="trust" aria-label="Why shop with Bongalink">
+    <div class="container trust-strip">
+      <div class="trust-item"><i data-icon="credit-card"></i><div><strong>GCash and bank transfer</strong><span>Pay securely through PayMongo: GCash, QR Ph or online banking.</span></div></div>
+      <div class="trust-item"><i data-icon="truck"></i><div><strong>Nationwide delivery</strong><span>J&amp;T and LBC anywhere in the country, Lalamove same-day in Metro Manila.</span></div></div>
+      <div class="trust-item"><i data-icon="headset"></i><div><strong>24/7 chat support</strong><span>Ask about compatibility, stock or your order any time.</span></div></div>
+    </div>
+  </section>
 
-<div class="search">
-<input id="searchInput" type="text" placeholder="Search products, brands, or categories...">
-</div>
-</section>
+  <div class="container page">
 
-<div class="layout">
+    <!-- CATEGORY SHORTCUTS — built from GET /api/categories + product counts -->
+    <section class="section" id="categories" aria-labelledby="categories-title">
+      <div class="section-head"><h2 id="categories-title">Shop by category</h2></div>
+      <div class="category-tiles" id="categoryTiles"></div>
+    </section>
 
-<!-- =========================================================
-     SIDEBAR — category filter list (#catList) + admin
-     "List a Product" trigger button (#openAddBtn)
-     ========================================================= -->
-<aside class="sidebar">
-<h3>Categories</h3>
-<div id="catList"></div>
+    <!-- IN STOCK NOW — shown only when something is available -->
+    <section class="section" id="inStockSection" aria-labelledby="in-stock-title" hidden>
+      <div class="section-head">
+        <h2 id="in-stock-title">In stock now</h2>
+        <button class="btn btn--ghost" type="button" id="showInStock">See all in stock <i data-icon="chevron-right" data-size="16"></i></button>
+      </div>
+      <div class="product-grid" id="inStockGrid"></div>
+    </section>
 
-<button class="add-listing-btn" id="openAddBtn">
-+ List a Product
-</button>
-</aside>
+    <!-- CATALOG -->
+    <section class="section" id="catalog" aria-labelledby="results-title">
+      <div class="layout-sidebar">
+        <aside class="hide-mobile catalog-aside" aria-label="Categories">
+          <p class="eyebrow catalog-aside__title">Categories</p>
+          <ul class="filter-list" id="categoryList"></ul>
+          <button class="btn btn--secondary btn--block" type="button" id="openAddBtn" hidden><i data-icon="plus" data-size="18"></i> List a product</button>
+        </aside>
 
-<!-- =========================================================
-     MAIN — product grid (#grid), filtered by category + search
-     ========================================================= -->
-<main>
-
-<div class="grid-head">
-<h2 id="gridTitle">All Available Products</h2>
-<span class="count" id="gridCount"></span>
-</div>
-
-<div class="grid" id="grid"></div>
-
+        <div>
+          <div class="chips show-mobile catalog-chips" id="categoryChips" aria-label="Categories"></div>
+          <div class="catalog-toolbar">
+            <h2 id="results-title" class="catalog-toolbar__title"><span id="resultsLabel">All parts</span> <span class="muted" id="resultCount"></span></h2>
+            <div class="row">
+              <label class="check" for="inStockOnly"><input type="checkbox" id="inStockOnly"> In stock only</label>
+              <label class="sr-only" for="sort">Sort by</label>
+              <select class="select catalog-toolbar__sort" id="sort">
+                <option value="stock">In stock first</option>
+                <option value="newest">Newest</option>
+                <option value="price-asc">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
+                <option value="name">Name A–Z</option>
+              </select>
+            </div>
+          </div>
+          <div class="product-grid" id="grid" aria-live="polite" aria-busy="true"></div>
+          <div class="catalog-more" id="moreWrap" hidden>
+            <button class="btn btn--secondary" type="button" id="showMore">Show more parts</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
 </main>
 
-<!-- =========================================================
-     CART SIDEBAR — line items (#cartLines), totals, checkout
-     ========================================================= -->
-<aside class="cart">
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts and repair since 2008.</span>
+    <span>GCash and bank transfer · J&amp;T, LBC and Lalamove delivery</span>
+  </div>
+</footer>
 
-<div class="cart-head">
-<h3>Shopping Cart</h3>
-<span class="cart-badge" id="cartBadge">0</span>
-</div>
+<!-- ADMIN: "List a product" — POST /api/products (multipart, requireAdmin) -->
+<dialog class="modal" id="productDialog" aria-labelledby="productDialogTitle">
+  <form id="productForm" novalidate>
+    <div class="modal__header">
+      <h2 id="productDialogTitle">List a product</h2>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+    <div class="modal__body">
+      <div class="form-grid">
+        <div class="field field--wide">
+          <label class="label" for="productName">Product name</label>
+          <input class="input" id="productName" required>
+        </div>
+        <div class="field">
+          <label class="label" for="productCategory">Category</label>
+          <select class="select" id="productCategory" required></select>
+        </div>
+        <div class="field">
+          <label class="label" for="productBrand">Brand <span class="optional">(optional)</span></label>
+          <input class="input" id="productBrand">
+        </div>
+        <div class="field">
+          <label class="label" for="productPrice">Price (₱)</label>
+          <input class="input" id="productPrice" type="number" min="0" step="0.01" required>
+        </div>
+        <div class="field">
+          <label class="label" for="productStock">Stock on hand</label>
+          <input class="input" id="productStock" type="number" min="0" step="1" required>
+        </div>
+        <div class="field field--wide">
+          <label class="label" for="productDescription">Description <span class="optional">(optional)</span></label>
+          <textarea class="textarea" id="productDescription"></textarea>
+        </div>
+        <div class="field field--wide">
+          <label class="label" for="productImage">Photo <span class="optional">(optional, up to 5 MB)</span></label>
+          <input class="input" id="productImage" type="file" accept="image/*">
+          <div class="image-preview" id="imagePreview">No photo selected</div>
+        </div>
+      </div>
+      <p class="error-text" id="productError" role="alert"></p>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="productSubmit">List product</button>
+    </div>
+  </form>
+</dialog>
 
-<div id="cartLines"></div>
-
-<div class="totals">
-
-<div class="trow">
-<span>Subtotal</span>
-<span id="subtotal">₱0.00</span>
-</div>
-
-<div class="trow">
-<span>Est. Delivery</span>
-<span>Free</span>
-</div>
-
-<div class="trow total">
-<span>Total</span>
-<span id="total">₱0.00</span>
-</div>
-
-</div>
-
-<button class="checkout-btn" id="checkoutBtn" disabled>
-Proceed to Checkout
-</button>
-
-</aside>
-
-</div>
-
-<!-- =========================================================
-     MODAL — "Admin Login Required"
-     Shown when a non-admin clicks "+ List a Product" or a
-     product's delete (×) button.
-     ========================================================= -->
-<div class="overlay" id="adminLoginOverlay">
-<div class="modal-wrap">
-<div class="modal admin-access-modal">
-
-<button class="close-x" id="closeAdminLogin">×</button>
-
-<div class="admin-icon">🔒</div>
-
-<h2>Admin Login Required</h2>
-
-<p class="sub">
-Only an administrator can add products to the Bongalink catalog.
-Please login with an admin account to continue.
-</p>
-
-<div class="modal-actions">
-<button class="btn-ghost" id="cancelAdminLogin">Cancel</button>
-<a href="login.html" class="btn-primary admin-login-link">Admin Login</a>
-</div>
-
-</div>
-</div>
-</div>
-
-<!-- =========================================================
-     MODAL — "List a Product" (admin only)
-     Submitting #productForm adds a new item straight into the
-     inventory (see js/Homepage.js, section 11, and the
-     `products` table in database/bongalink_schema.sql).
-     ========================================================= -->
-<div class="overlay" id="productOverlay">
-<div class="modal-wrap">
-<div class="modal">
-
-<button class="close-x" id="closeProductModal">×</button>
-
-<h2>List a Product</h2>
-<p class="sub">Add a new product to the Bongalink catalog.</p>
-
-<form id="productForm">
-
-<div class="field">
-<label for="productName">Product Name</label>
-<input id="productName" type="text" placeholder="Enter product name" required>
-</div>
-
-<div class="row2">
-
-<div class="field">
-<label for="productCategory">Category</label>
-<select id="productCategory" required>
-<option value="">Select category</option>
-<option value="Printer Parts">Printer Parts</option>
-<option value="Computer Parts">Computer Parts</option>
-<option value="Laptop Parts">Laptop Parts</option>
-<option value="Accessories">Accessories</option>
-<option value="Electronics">Electronics</option>
-<option value="Other">Other</option>
-</select>
-</div>
-
-<div class="field">
-<label for="productBrand">Brand</label>
-<input id="productBrand" type="text" placeholder="e.g. Epson">
-</div>
-
-</div>
-
-<div class="row2">
-
-<div class="field">
-<label for="productPrice">Price</label>
-<input id="productPrice" type="number" min="0" step="0.01" placeholder="0.00" required>
-</div>
-
-<div class="field">
-<label for="productStock">Stock Quantity</label>
-<input id="productStock" type="number" min="0" step="1" placeholder="0" required>
-</div>
-
-</div>
-
-<div class="field">
-<label for="productImage">Product Image</label>
-<input id="productImage" type="file" accept="image/*">
-<div class="image-preview" id="imagePreview">No image selected</div>
-</div>
-
-<div class="field">
-<label for="productDescription">Description</label>
-<textarea id="productDescription" placeholder="Enter product description"></textarea>
-</div>
-
-<div class="modal-actions">
-<button type="button" class="btn-ghost" id="cancelProduct">Cancel</button>
-<button type="submit" class="btn-primary">Add Product</button>
-</div>
-
-</form>
-
-</div>
-</div>
-</div>
-
-<!-- Toast notification (bottom-center, used for all quick feedback messages) -->
-<div class="toast" id="toast"></div>
-
-<!-- api.js must load first: Homepage.js depends on apiFetch() and API_BASE_URL.
-     cart.js must load before Homepage.js too: it mirrors added/removed items
-     into the localStorage cart that cart.html and checkout.html read. -->
 <script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
 <script src="../../JS/Homepage.js"></script>
-
 </body>
 </html>
