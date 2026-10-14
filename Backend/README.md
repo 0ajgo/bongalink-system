@@ -123,6 +123,17 @@ Fill in the new keys in `.env` (listed in `.env.example`):
 
 Webhooks need a public HTTPS URL; for local testing run `ngrok http 4000`.
 
+On startup the server prints one status line per service (names only, never values):
+
+```
+Integrations (from .env; restart after changing it):
+  Lalamove: enabled (sandbox; areas NCR, Bulacan, Cavite, Laguna, Rizal)
+  PayMongo: incomplete, not set: PAYMONGO_WEBHOOK_SECRET
+  Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)
+```
+
+`.env` is only read at startup: **restart the backend after changing it.**
+
 How an order flows:
 
 1. Register → a 6-digit code is emailed. Checkout is blocked until it's confirmed.

@@ -28,6 +28,7 @@ const rateRoutes = require("./routes/rates");
 const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
+const { statusLines } = require("./lib/integrationStatus");
 
 const app = express();
 
@@ -77,15 +78,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Something went wrong." });
 });
 
-// Names only — never print the values.
-const INTEGRATION_ENV = [
-  "VERIFICATION_SECRET", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "ADMIN_ALERT_EMAIL", "APP_URL",
-  "PAYMONGO_SECRET_KEY", "PAYMONGO_WEBHOOK_SECRET"
-];
-
 if (require.main === module) {
-  const missing = INTEGRATION_ENV.filter(name => !process.env[name]);
-  if (missing.length) console.warn(`Not set in .env (related features will fail): ${missing.join(", ")}`);
+  // Which outside services are on. Names only, never values (lib/integrationStatus.js).
+  console.log("Integrations (from .env; restart after changing it):");
+  statusLines().forEach((line) => console.log(`  ${line}`));
 
   const PORT = process.env.PORT || 4000;
   app.listen(PORT, () => {
