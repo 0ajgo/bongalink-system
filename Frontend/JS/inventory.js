@@ -10,7 +10,6 @@
    ===================================================================== */
 
 const STATUS_POLL_MS = 5000;
-const TO_SHIP_POLL_MS = 30000;
 
 const statusBadge = document.getElementById("statusBadge");
 const predRows = document.getElementById("predRows");
@@ -361,22 +360,6 @@ async function loadEvents() {
 }
 
 /* ---------------------------------------------------------------------
-   ORDERS TO SHIP — header badge with the number of paid orders that
-   haven't shipped yet. The shop also gets an email for each payment
-   (ADMIN_ALERT_EMAIL); this badge is the on-screen alert.
-   --------------------------------------------------------------------- */
-async function loadToShip() {
-  const badge = document.getElementById("to-ship-badge");
-  const { count } = await apiFetch("/v1/admin/orders/to-ship");
-  badge.hidden = false;
-  badge.className = `status-badge ${count > 0 ? "busy" : ""}`;
-  badge.textContent = count === 1 ? "1 paid order to ship" : `${count} paid orders to ship`;
-  // Count in the tab title too, so it shows while the admin is on another tab.
-  document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
-}
-const BASE_TITLE = document.title;
-
-/* ---------------------------------------------------------------------
    INIT
    --------------------------------------------------------------------- */
 async function init() {
@@ -393,8 +376,6 @@ async function init() {
     showToast(err.message || "Could not reach the API.");
   }
   setInterval(() => loadStatus().catch(() => {}), STATUS_POLL_MS);
-  loadToShip().catch(() => {});
-  setInterval(() => loadToShip().catch(() => {}), TO_SHIP_POLL_MS);
 }
 
 init();

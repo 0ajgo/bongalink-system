@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bongalink — Deliveries</title>
+<link rel="stylesheet" href="../../CSS/homepage.css">
+<link rel="stylesheet" href="../../CSS/inventory.css">
+<link rel="stylesheet" href="../../CSS/deliveries.css">
+</head>
+<body>
+
+<!-- =========================================================
+     TOP NAV — same as inventory.html
+     ========================================================= -->
+<header class="top">
+<div class="brand">
+<a href="../Homepage/homepage.html" class="brand-name">Bongalink</a>
+</div>
+<nav class="tabs">
+<a href="../Homepage/homepage.html" class="nav-link">Product Catalog</a>
+<a href="inventory.html" class="nav-link">Inventory &amp; Forecasts</a>
+<a href="deliveries.html" class="nav-link active">Deliveries</a>
+</nav>
+<!-- Paid orders waiting to be shipped; adminNav.js polls
+     GET /api/v1/admin/orders/to-ship every 30 seconds. -->
+<a href="deliveries.html" class="status-badge" id="to-ship-badge" role="status" aria-live="polite" hidden></a>
+</header>
+
+<main class="inv">
+
+<!-- Shown instead of the page when not logged in as admin -->
+<section class="inv-locked" id="locked" hidden>
+<h2>Admin account required</h2>
+<p>Log in with an admin account to manage deliveries.</p>
+<a class="btn-primary" href="../Homepage/login.html">Go to login</a>
+</section>
+
+<div id="dashboard" hidden>
+
+<!-- =========================================================
+     PAID ORDERS TO SHIP (REQ012, REQ013) — deliveries.js
+     renders one card per order from
+     GET /api/v1/admin/orders/awaiting-shipment
+     ========================================================= -->
+<section class="panel">
+<div class="panel-head">
+<h2>Paid orders to ship</h2>
+<div class="history-controls">
+<span class="muted" id="awaitingCount"></span>
+<button class="btn-small" id="refreshBtn" type="button">Refresh</button>
+</div>
+</div>
+<div id="awaitingList"></div>
+<p class="footnote">
+J&amp;T and LBC: book the parcel at the branch or in the courier's app, then enter the waybill number here.
+The customer gets an email with the tracking number and link. Lalamove books a rider through the
+Lalamove API; it's only offered when Lalamove is configured and the customer pinned their address on the map.
+</p>
+</section>
+
+<!-- =========================================================
+     OUTGOING DELIVERIES (REQ014–REQ016) — from
+     GET /api/v1/admin/shipments?status=
+     ========================================================= -->
+<section class="panel">
+<div class="panel-head">
+<h2>Outgoing deliveries</h2>
+<div class="history-controls">
+<select id="statusFilter" aria-label="Filter by status">
+<option value="">All statuses</option>
+</select>
+</div>
+</div>
+<div class="table-wrap">
+<table class="inv-table">
+<thead>
+<tr>
+<th>Order</th>
+<th>Ship to</th>
+<th>Items</th>
+<th>Courier &amp; tracking</th>
+<th class="num">Fee (₱)</th>
+<th>Status</th>
+<th>Update status</th>
+</tr>
+</thead>
+<tbody id="shipmentRows"></tbody>
+</table>
+</div>
+</section>
+
+</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/adminNav.js"></script>
+<script src="../../JS/deliveries.js"></script>
+</body>
+</html>

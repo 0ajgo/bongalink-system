@@ -19,10 +19,11 @@
 <nav class="tabs">
 <a href="../Homepage/homepage.html" class="nav-link">Product Catalog</a>
 <a href="inventory.html" class="nav-link active">Inventory &amp; Forecasts</a>
+<a href="deliveries.html" class="nav-link">Deliveries</a>
 </nav>
-<!-- Paid orders waiting to be shipped; inventory.js polls
+<!-- Paid orders waiting to be shipped; adminNav.js polls
      GET /api/v1/admin/orders/to-ship every 30 seconds. -->
-<span class="status-badge" id="to-ship-badge" role="status" aria-live="polite" hidden></span>
+<a href="deliveries.html" class="status-badge" id="to-ship-badge" role="status" aria-live="polite" hidden></a>
 </header>
 
 <main class="inv">
@@ -128,6 +129,7 @@ about 10 seconds of your last change.
 <div class="toast" id="toast"></div>
 
 <script src="../../JS/api.js"></script>
+<script src="../../JS/adminNav.js"></script>
 <script src="../../JS/inventory.js"></script>
 </body>
 </html>

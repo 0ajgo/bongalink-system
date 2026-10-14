@@ -660,6 +660,7 @@ function showStatus(orderId, { title, text, action = null }) {
       <p class="confirm__ref">${orderRef(orderId)}</p>
       <p>Keep this reference. You can use it to track the parcel once the courier picks it up.</p>
       ${action ? `<button class="button" id="status-action" style="margin-top:22px;width:auto;padding-inline:28px">${escapeHtml(action.label)}</button>` : ""}
+      <a class="button button--quiet" href="orders.html" style="margin-top:22px;display:inline-block;width:auto;padding-inline:28px">My orders</a>
       <a class="button button--quiet" href="../Homepage/homepage.html" style="margin-top:22px;display:inline-block;width:auto;padding-inline:28px">Back to the shop</a>
     </div>`;
   window.scrollTo({ top: 0 });

@@ -90,6 +90,12 @@ border-bottom:2px solid transparent;
 transition:color .15s ease,border-color .15s ease
 }
 
+/* display:flex above would otherwise beat the hidden attribute
+   (role-based links: My Orders, Inventory, Deliveries) */
+.nav-link[hidden]{
+display:none
+}
+
 .nav-link:hover{
 color:var(--ink)
 }
