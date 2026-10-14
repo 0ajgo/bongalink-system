@@ -85,3 +85,24 @@ a.stat:hover { text-decoration: none; border-color: var(--color-primary); }
   .photo-preview { flex-basis: auto; width: 100%; max-width: 240px; }
   .stock-stats { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------- Inventory table: pinned Part column, quick edits, row menu ---------- */
+.table--sticky-first th:first-child,
+.table--sticky-first td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); min-width: 150px; max-width: 220px; }
+.table--sticky-first th:first-child { background: var(--color-surface-2); }
+.table--sticky-first tbody tr:hover td:first-child { background: var(--color-surface-2); }
+.table-wrap.is-scrolled .table--sticky-first th:first-child,
+.table-wrap.is-scrolled .table--sticky-first td:first-child { box-shadow: 1px 0 0 var(--color-line), 6px 0 8px -6px rgba(27, 36, 48, .18); }
+
+.quick-edit { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.quick-edit__state { font-size: var(--text-xs); color: var(--color-ink-3); min-height: 0; max-width: 140px; text-align: right; white-space: normal; }
+.quick-edit__state:empty { display: none; }
+.quick-edit__state--ok { color: var(--color-success); }
+.quick-edit__state--error { color: var(--color-error); }
+.quick-edit .input[aria-invalid="true"] { border-color: var(--color-error); }
+.quick-edit + .badge { margin-top: 2px; }
+
+.row-menu { position: fixed; right: auto; top: 0; left: 0; min-width: 200px; }
+.row-menu .menu__header strong { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
+/* Narrower screens: Edit becomes icon-only (keeps its aria-label and tooltip) so every column fits. */
+@media (max-width: 1240px) { .table .actions .btn-label { display: none; } }

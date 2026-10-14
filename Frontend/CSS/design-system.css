@@ -544,3 +544,4 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .product-card__media > a { display: grid; place-items: center; width: 100%; height: 100%; color: inherit; }
 .product-card__name a { color: inherit; }
 .product-card__name a:hover { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+.label .required { font-weight: var(--weight-regular); color: var(--color-error); font-size: var(--text-xs); }

@@ -116,34 +116,40 @@ const isDefaultWeight = (p) => Number(p.weight_kg) === DEFAULT_WEIGHT;
 function renderPredictions() {
   if (editing) return;
   document.getElementById("productCount").textContent = `${predictions.length} active parts`;
+  renderWeightNotice();
+  predRows.innerHTML = predictions.map(p => {
+    const stale = p.computed_at && Number(p.predicted_for_stock) !== Number(p.stock_quantity);
+    const label = escapeHTML(p.name);
+    return `
+      <tr data-id="${p.product_id}">
+        <td class="col-part"><button class="link-button" type="button" data-history="${p.product_id}" title="Show sales history">${label}</button>
+            ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}
+            <br><span class="muted">${escapeHTML(p.category)}</span></td>
+        <td class="num">${quickInput(p, "price", Number(p.price), { min: 0.01, step: 0.01, label: `Price of ${label}` })}</td>
+        <td class="num"><strong>${p.stock_quantity}</strong>${Number(p.reserved) > 0 ? `<br><span class="muted" title="Held by unpaid orders">${p.reserved} held</span>` : ""}</td>
+        <td class="num">${quickInput(p, "weight", Number(p.weight_kg), { min: 0.01, step: 0.01, label: `Weight in kg of ${label}` })}
+            ${isDefaultWeight(p) ? `<span class="badge badge--warning" data-default-badge title="Still the default weight; enter the real parcel weight">Default</span>` : ""}</td>
+        <td class="num">${forecastCell(p)}</td>
+        <td class="num">${daysCell(p)}</td>
+        <td>${reorderCell(p)}</td>
+        <td>${trendCell(p)}</td>
+        <td class="actions">
+          <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}" aria-label="Edit ${label}" title="Edit">${icon("pencil", { size: 14 })}<span class="btn-label">Edit</span></button>
+          <button class="btn btn--ghost btn--sm btn--icon" type="button" data-more="${p.product_id}"
+                  aria-haspopup="menu" aria-expanded="false" title="More actions">${icon("ellipsis-vertical", { size: 16, label: `More actions for ${p.name}` })}</button>
+        </td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="9">${UIState.empty({ icon: "boxes", title: "No active parts", text: "List a product from the Shop page." })}</td></tr>`;
+  updateScrollShadow();
+}
+
+function renderWeightNotice() {
   const unweighed = predictions.filter(isDefaultWeight).length;
   const notice = document.getElementById("weightNotice");
   notice.hidden = unweighed === 0;
   notice.innerHTML = unweighed ? `<div class="alert alert--warning">${icon("triangle-alert", { size: 18 })}
     <span>${unweighed} part${unweighed === 1 ? " still uses" : "s still use"} the default 0.5 kg weight. Enter real
     weights so J&amp;T and LBC fees match what the couriers charge.</span></div>` : "";
-  predRows.innerHTML = predictions.map(p => {
-    const stale = p.computed_at && Number(p.predicted_for_stock) !== Number(p.stock_quantity);
-    return `
-      <tr data-id="${p.product_id}">
-        <td><button class="link-button" type="button" data-history="${p.product_id}">${escapeHTML(p.name)}</button>
-            ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}
-            <br><span class="muted">${escapeHTML(p.category)}</span></td>
-        <td class="num"><input class="input input--sm" type="number" min="0" step="0.01" value="${Number(p.price)}" data-field="price" aria-label="Price of ${escapeHTML(p.name)}"></td>
-        <td class="num"><strong>${p.stock_quantity}</strong>${Number(p.reserved) > 0 ? `<br><span class="muted" title="Held by unpaid orders">${p.reserved} held</span>` : ""}</td>
-        <td class="num"><input class="input input--sm" type="number" min="0.01" step="0.01" value="${Number(p.weight_kg)}" data-field="weight" aria-label="Weight in kg of ${escapeHTML(p.name)}">
-            ${isDefaultWeight(p) ? `<br><span class="badge badge--warning" title="Still the default weight; enter the real parcel weight">Default</span>` : ""}</td>
-        <td class="num">${forecastCell(p)}</td>
-        <td class="num">${daysCell(p)}</td>
-        <td>${reorderCell(p)}</td>
-        <td>${trendCell(p)}</td>
-        <td class="actions">
-          <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}">${icon("pencil", { size: 14 })} Edit</button>
-          <button class="btn btn--primary btn--sm" type="button" data-save="${p.product_id}" disabled>Save</button>
-          <button class="btn btn--danger btn--sm" type="button" data-remove="${p.product_id}">Hide</button>
-        </td>
-      </tr>`;
-  }).join("") || `<tr><td colspan="9">${UIState.empty({ icon: "boxes", title: "No active parts", text: "List a product from the Shop page." })}</td></tr>`;
 }
 
 async function loadPredictions() {
@@ -151,54 +157,144 @@ async function loadPredictions() {
   renderPredictions();
 }
 
-predRows.addEventListener("input", event => {
-  const row = event.target.closest("tr");
-  if (!row || !event.target.dataset.field) return;
-  editing = true;
-  row.querySelector("[data-save]").disabled = false;
+/* ---------------------------------------------------------------------
+   QUICK EDITS (price, weight) — saved automatically when the field loses
+   focus or on Enter; Escape puts the old value back. Each field shows
+   Saving… / Saved, and on an error the old value comes back with the
+   reason. Stock only changes through Edit > Adjust stock (with a reason).
+   --------------------------------------------------------------------- */
+const QUICK = {
+  price: { api: "price", key: "price", name: "Price", show: (v) => formatMoney(v) },
+  weight: { api: "weight_kg", key: "weight_kg", name: "Weight", show: (v) => `${v} kg` }
+};
+let pendingSaves = 0;
+
+function quickInput(p, field, value, { min, step, label }) {
+  return `<div class="quick-edit">
+      <input class="input input--sm" type="number" min="${min}" step="${step}" value="${value}" data-field="${field}"
+             data-id="${p.product_id}" data-original="${value}" aria-label="${label}" aria-describedby="qs-${field}-${p.product_id}">
+      <span class="quick-edit__state" id="qs-${field}-${p.product_id}" role="status"></span>
+    </div>`;
+}
+
+function setQuickState(input, text, tone = "") {
+  const state = document.getElementById(input.getAttribute("aria-describedby"));
+  state.className = `quick-edit__state${tone ? ` quick-edit__state--${tone}` : ""}`;
+  state.innerHTML = text;
+  clearTimeout(state.timer);
+  if (tone === "ok") state.timer = setTimeout(() => { state.innerHTML = ""; }, 2500);
+}
+
+async function saveQuickEdit(input) {
+  const q = QUICK[input.dataset.field];
+  const original = Number(input.dataset.original);
+  const value = Number(input.value);
+  if (input.value !== "" && value === original) return;
+  input.removeAttribute("aria-invalid");
+  if (input.value === "" || !(value > 0)) {
+    input.value = original;
+    input.setAttribute("aria-invalid", "true");
+    return setQuickState(input, `${q.name} must be more than 0. Kept ${q.show(original)}.`, "error");
+  }
+
+  pendingSaves++;
+  input.disabled = true;
+  setQuickState(input, "Saving…");
+  try {
+    await apiFetch(`/products/${input.dataset.id}`, { method: "PATCH", body: JSON.stringify({ [q.api]: value }) });
+    input.dataset.original = value;
+    const p = predictions.find(x => String(x.product_id) === input.dataset.id);
+    if (p) p[q.key] = q.key === "price" ? value.toFixed(2) : value.toFixed(3);
+    if (input.dataset.field === "weight") {
+      input.closest("td").querySelector("[data-default-badge]")?.remove();
+      renderWeightNotice();
+    }
+    setQuickState(input, `${icon("check", { size: 12 })} Saved`, "ok");
+    loadEvents().catch(() => {});
+  } catch (err) {
+    // Undo: put the last saved value back and say why.
+    input.value = original;
+    input.setAttribute("aria-invalid", "true");
+    setQuickState(input, `Not saved: ${escapeHTML(err.message)}`, "error");
+    toast(`${q.name} not saved: ${err.message}`, "error");
+  } finally {
+    input.disabled = false;
+    pendingSaves--;
+  }
+}
+
+predRows.addEventListener("focusin", (event) => { if (event.target.dataset.field) editing = true; });
+predRows.addEventListener("change", (event) => { if (event.target.dataset.field) saveQuickEdit(event.target); });
+predRows.addEventListener("keydown", (event) => {
+  const input = event.target;
+  if (!input.dataset.field) return;
+  if (event.key === "Enter") input.blur();
+  if (event.key === "Escape") {
+    input.value = input.dataset.original;
+    input.removeAttribute("aria-invalid");
+    setQuickState(input, "");
+    input.blur();
+  }
+});
+// Leaving the table: let polling redraw it again once nothing is being saved.
+predRows.addEventListener("focusout", () => {
+  setTimeout(() => {
+    if (!predRows.contains(document.activeElement) && pendingSaves === 0) editing = false;
+  }, 0);
 });
 
-predRows.addEventListener("click", async event => {
-  const save = event.target.closest("[data-save]");
-  const remove = event.target.closest("[data-remove]");
-  const history = event.target.closest("[data-history]");
+/* ---------------------------------------------------------------------
+   ROW ACTIONS — Edit opens the editor; "More actions" opens a small menu
+   (Hide from shop). The menu is positioned against the viewport so the
+   table's scroll container can't clip it.
+   --------------------------------------------------------------------- */
+const rowMenu = document.getElementById("rowMenu");
+let rowMenuFor = null;
+
+function closeRowMenu() {
+  if (!rowMenuFor) return;
+  rowMenu.hidden = true;
+  const button = predRows.querySelector(`[data-more="${rowMenuFor}"]`);
+  if (button) button.setAttribute("aria-expanded", "false");
+  rowMenuFor = null;
+}
+
+function openRowMenu(button) {
+  closeRowMenu();
+  rowMenuFor = button.dataset.more;
+  const p = predictions.find(x => String(x.product_id) === rowMenuFor);
+  rowMenu.querySelector("[data-menu-title]").textContent = p ? p.name : "";
+  rowMenu.hidden = false;
+  const r = button.getBoundingClientRect();
+  const w = rowMenu.offsetWidth, h = rowMenu.offsetHeight;
+  rowMenu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
+  rowMenu.style.top = `${r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4}px`;
+  button.setAttribute("aria-expanded", "true");
+  rowMenu.querySelector("button").focus();
+}
+
+predRows.addEventListener("click", (event) => {
   const editBtn = event.target.closest("[data-edit]");
-
   if (editBtn) return openEditor(editBtn.dataset.edit);
-
+  const more = event.target.closest("[data-more]");
+  if (more) {
+    event.stopPropagation();
+    return rowMenuFor === more.dataset.more ? closeRowMenu() : openRowMenu(more);
+  }
+  const history = event.target.closest("[data-history]");
   if (history) {
     historyProduct.value = history.dataset.history;
     loadHistory();
     historyProduct.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+});
 
-  if (save) {
-    const row = save.closest("tr");
-    const id = save.dataset.save;
-    const original = predictions.find(p => String(p.product_id) === id);
-    // Quick edits: price and weight. Stock only changes through Edit > Adjust stock (with a reason).
-    const price = row.querySelector('[data-field="price"]').value;
-    const weight = row.querySelector('[data-field="weight"]').value;
-    const body = {};
-    if (Number(weight) !== Number(original.weight_kg)) body.weight_kg = weight === "" ? "" : Number(weight);
-    if (Number(price) !== Number(original.price)) body.price = price === "" ? "" : Number(price);
-    if (Object.keys(body).length === 0) return;
-    save.disabled = true;
-    save.classList.add("is-loading");
-    try {
-      await apiFetch(`/products/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-      toast("Saved. The forecast will update in a few seconds.", "success");
-      editing = false;
-      await Promise.all([loadPredictions(), loadEvents(), loadStatus()]);
-    } catch (err) {
-      save.disabled = false;
-      save.classList.remove("is-loading");
-      toast(err.message, "error");
-    }
-  }
-
-  if (remove) {
-    const product = predictions.find(p => String(p.product_id) === remove.dataset.remove);
+rowMenu.addEventListener("click", async (event) => {
+  const action = event.target.closest("[data-menu-action]");
+  if (!action || !rowMenuFor) return;
+  const product = predictions.find(p => String(p.product_id) === rowMenuFor);
+  closeRowMenu();
+  if (action.dataset.menuAction === "hide") {
     if (!confirm(`Hide "${product.name}" from the shop?\n\nIts order history and sales trend are kept, and you can show it again from Hidden parts.`)) return;
     try {
       await apiFetch(`/products/${product.product_id}`, { method: "DELETE" });
@@ -211,13 +307,26 @@ predRows.addEventListener("click", async event => {
   }
 });
 
-// Leaving the table without saving: let polling redraw it again.
-predRows.addEventListener("focusout", () => {
-  setTimeout(() => {
-    if (!predRows.contains(document.activeElement) &&
-        !predRows.querySelector("[data-save]:not([disabled])")) editing = false;
-  }, 0);
+document.addEventListener("click", (event) => { if (!rowMenu.contains(event.target)) closeRowMenu(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && rowMenuFor) {
+    const id = rowMenuFor;
+    closeRowMenu();
+    predRows.querySelector(`[data-more="${id}"]`)?.focus();
+  }
 });
+window.addEventListener("resize", closeRowMenu);
+window.addEventListener("scroll", closeRowMenu, true);
+
+/* ---------------------------------------------------------------------
+   The table scrolls sideways only when it doesn't fit; the Part column
+   stays pinned and gets an edge shadow while scrolled.
+   --------------------------------------------------------------------- */
+const forecastWrap = document.querySelector("#forecasts .table-wrap");
+function updateScrollShadow() {
+  forecastWrap.classList.toggle("is-scrolled", forecastWrap.scrollLeft > 0);
+}
+forecastWrap.addEventListener("scroll", updateScrollShadow, { passive: true });
 
 /* ---------------------------------------------------------------------
    SALES HISTORY (units sold per day + 7-day forecast line)

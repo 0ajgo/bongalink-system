@@ -38,7 +38,7 @@
     </div>
     <div class="card__body" id="weightNotice" hidden></div>
     <div class="table-wrap">
-      <table class="table table--compact">
+      <table class="table table--compact table--sticky-first">
         <thead>
           <tr>
             <th>Part</th><th class="num">Price (₱)</th><th class="num">On hand</th><th class="num">Weight (kg)</th>
@@ -94,6 +94,12 @@
     </div>
   </section>
 </main>
+
+<!-- Row "More actions" menu (js/inventory.js); fixed-position so the table scroll cannot clip it -->
+<div class="menu row-menu" id="rowMenu" role="menu" hidden>
+  <div class="menu__header"><strong data-menu-title></strong></div>
+  <button type="button" role="menuitem" data-menu-action="hide"><i data-icon="eye-off" data-size="18"></i>Hide from shop</button>
+</div>
 
 <!-- EDIT PART (js/product-editor.js) -->
 <dialog class="modal modal--xl" id="editDialog" aria-labelledby="editTitle">
@@ -156,8 +162,8 @@
       </dl>
       <form id="stockForm" class="form-grid" novalidate>
         <div class="field">
-          <label class="label" for="sReason">Reason</label>
-          <select class="select" id="sReason" name="reason" required>
+          <label class="label" for="sReason">Reason <span class="required">(required)</span></label>
+          <select class="select" id="sReason" name="reason" required aria-required="true" aria-describedby="reasonHelp stockReasonError">
             <option value="">Choose a reason</option>
             <option value="restock">Restock (add)</option>
             <option value="return">Customer return (add)</option>
@@ -165,20 +171,21 @@
             <option value="correction">Correction (add or remove)</option>
           </select>
           <span class="hint" id="reasonHelp"></span>
+          <span class="error-text" id="stockReasonError" role="alert"></span>
         </div>
         <div class="field" id="directionField" hidden>
           <label class="label" for="sDirection">Correction</label>
           <select class="select" id="sDirection" name="direction"><option value="add">Add units</option><option value="remove">Remove units</option></select>
         </div>
         <div class="field">
-          <label class="label" for="sQty">Units</label>
-          <input class="input" id="sQty" name="quantity" type="number" min="1" step="1" required>
+          <label class="label" for="sQty">Units <span class="required">(required)</span></label>
+          <input class="input" id="sQty" name="quantity" type="number" min="1" step="1" required aria-describedby="stockError">
+          <span class="error-text" id="stockError" role="alert"></span>
         </div>
         <div class="field field--wide">
           <label class="label" for="sNote">Note <span class="optional">(optional, e.g. supplier receipt no.)</span></label>
           <input class="input" id="sNote" name="note" maxlength="255">
         </div>
-        <p class="error-text field--wide" id="stockError" role="alert"></p>
         <div class="form-actions field--wide"><button class="btn btn--primary" type="submit" id="stockSave">Adjust stock</button></div>
       </form>
     </section>

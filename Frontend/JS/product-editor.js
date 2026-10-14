@@ -80,7 +80,7 @@ function peRenderEditor() {
   pe$("stockOnHand").textContent = p.stock_quantity;
   pe$("stockReserved").textContent = p.reserved;
   pe$("stockAvailable").textContent = p.available;
-  pe$("stockError").textContent = "";
+  peClearStockErrors();
 }
 
 async function peLoadHistory() {
@@ -231,21 +231,39 @@ function peUpdateReasonHelp() {
   // correction can go either way; the others have a fixed direction
   pe$("directionField").hidden = reason !== "correction";
 }
-pe$("stockForm").elements.reason.addEventListener("change", peUpdateReasonHelp);
+// Errors sit next to the field they're about: Reason, or Units (amounts and
+// "below reserved" from the server). The field is marked invalid until fixed.
+function peFieldError(field, message) {
+  const slot = pe$(field === "reason" ? "stockReasonError" : "stockError");
+  const input = pe$("stockForm").elements[field];
+  slot.textContent = message || "";
+  if (message) input.setAttribute("aria-invalid", "true");
+  else input.removeAttribute("aria-invalid");
+}
+function peClearStockErrors() {
+  peFieldError("reason", "");
+  peFieldError("quantity", "");
+}
+
+pe$("stockForm").elements.reason.addEventListener("change", () => { peFieldError("reason", ""); peUpdateReasonHelp(); });
+pe$("stockForm").elements.quantity.addEventListener("input", () => peFieldError("quantity", ""));
 
 pe$("stockForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const f = event.target.elements;
   const reason = f.reason.value;
   const qty = Number(f.quantity.value);
-  pe$("stockError").textContent = "";
-  if (!reason) return (pe$("stockError").textContent = "Choose a reason.");
-  if (!Number.isInteger(qty) || qty <= 0) return (pe$("stockError").textContent = "Enter how many units (a whole number above 0).");
+  peClearStockErrors();
+  let firstBad = null;
+  if (!reason) { peFieldError("reason", "Choose a reason for this change."); firstBad = f.reason; }
+  if (!Number.isInteger(qty) || qty <= 0) { peFieldError("quantity", "Enter how many units (a whole number above 0)."); firstBad ??= f.quantity; }
+  if (firstBad) return firstBad.focus();
   const sign = reason === "damaged" || (reason === "correction" && f.direction.value === "remove") ? -1 : 1;
   const change = sign * qty;
   if (PE.product.stock_quantity + change < PE.product.reserved) {
     const removable = Math.max(PE.product.stock_quantity - PE.product.reserved, 0);
-    return (pe$("stockError").textContent = `You can remove at most ${removable}: ${PE.product.reserved} are held by unpaid orders.`);
+    peFieldError("quantity", `You can remove at most ${removable}: ${PE.product.reserved} are held by unpaid orders.`);
+    return f.quantity.focus();
   }
   const button = pe$("stockSave");
   peBusy(button, true);
@@ -258,7 +276,8 @@ pe$("stockForm").addEventListener("submit", async (event) => {
     toast(`Stock ${change > 0 ? "increased" : "reduced"} by ${Math.abs(change)}.`, "success");
     await peRefreshProduct();
   } catch (err) {
-    pe$("stockError").textContent = err.message;
+    // Server answers are about the amount (sign rules, below reserved) unless they name the reason.
+    peFieldError(/reason/i.test(err.message) ? "reason" : "quantity", err.message);
   } finally {
     peBusy(button, false);
   }

@@ -175,12 +175,15 @@ describe("inventory weight flags", () => {
     expect(page.$('tr[data-id="1"]').textContent).toContain("Default");
     expect(page.$('tr[data-id="2"]').textContent).not.toContain("Default");
 
+    // Saved automatically when the field loses focus (change event); the Default flag goes away.
     const input = page.$('tr[data-id="1"] [data-field="weight"]');
     input.value = "0.8";
-    input.dispatchEvent(new page.window.Event("input", { bubbles: true }));
-    page.$('tr[data-id="1"] [data-save]').click();
-    await page.settle();
+    input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+    await page.until(() => page.calls.some(c => c.method === "PATCH"));
     expect(page.calls).toContainEqual({ url: "/products/1", method: "PATCH", body: { weight_kg: 0.8 } });
+    await page.until(() => page.$("#qs-weight-1").textContent.includes("Saved"));
+    expect(page.$('tr[data-id="1"]').textContent).not.toContain("Default");
+    expect(page.$("#weightNotice").textContent).toContain("1 part still uses the default 0.5 kg weight");
     page.close();
   });
 });
