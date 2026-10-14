@@ -526,3 +526,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card > .table-wrap { border: 0; border-radius: 0 0 var(--radius) var(--radius); }
 /* Dense data tables (admin): tighter cells so more columns fit. */
 .table--compact th, .table--compact td { padding: var(--space-2) var(--space-3); }
+
+/* ---------------------------------------------------------------- 18. MAP PICKER (JS/map-picker.js) */
+.map-picker { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.map-picker__toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.map-picker__map { height: 300px; border: 1px solid var(--color-line-strong); border-radius: var(--radius); z-index: 0; }
+.map-picker__status { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); color: var(--color-ink-2); min-height: 24px; }
+.map-picker__status--ok .icon { color: var(--color-success); }
+.map-picker__status--warn { color: var(--color-warning); }
+@media (max-width: 640px) { .map-picker__map { height: 240px; } }
+
+/* Courier option: fee basis line ("J&T Visayas rate, 1.5 kg") */
+.choice__basis { display: block; font-size: var(--text-xs); color: var(--color-ink-3); margin-top: 2px; }
+.quote-meta { display: flex; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-sm); color: var(--color-ink-2); margin-bottom: var(--space-3); }

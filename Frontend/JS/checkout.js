@@ -4,8 +4,12 @@
 
    1. Loads the SERVER cart (what POST /api/orders will order) and, if the
       customer has one, their default saved address.
-   2. Shipping quote: POST /api/v1/shipping/quote for J&T / LBC (rate
-      table) and Lalamove (Metro Manila with a map pin only).
+   2. Map pin (js/map-picker.js) fills region/province/city; the server
+      takes the shipping zone from where the pin is. Shipping quote:
+      POST /api/v1/shipping/quote for J&T / LBC (rate table) and Lalamove
+      (live quote, only when the pin is in its service area). Each option
+      says how its fee was calculated, and the order sends the fee shown
+      so the server can refuse it if the fee changed.
    3. POST /api/orders reserves stock for 24 hours (pending_payment), then
       POST /api/v1/payments/checkout sends the customer to PayMongo.
    4. Coming back from PayMongo (?order=&payment=success|cancelled) the
@@ -19,7 +23,7 @@ renderHeader();
 let cart = [];
 let options = [];
 let selectedCourier = null;
-let pin = null;   // { lat, lng } or null
+let quote = null;   // last answer from /v1/shipping/quote
 let savedAddresses = [];
 
 const els = {
@@ -30,9 +34,7 @@ const els = {
   total: document.getElementById("sum-total"),
   couriers: document.getElementById("courier-choices"),
   region: document.getElementById("region"),
-  pinField: document.getElementById("pin-field"),
-  pinStatus: document.getElementById("pin-status"),
-  pinClear: document.getElementById("pin-clear"),
+  quoteMeta: document.getElementById("quote-meta"),
   form: document.getElementById("checkout-form"),
   button: document.getElementById("place-order"),
   orderErr: document.getElementById("order-error"),
@@ -91,13 +93,14 @@ function addressLine() {
 
 async function refreshQuote() {
   const region = els.region.value;
-  els.pinField.hidden = region !== "NCR";
-  if (region !== "NCR") setPin(null, false);
+  const pin = picker.getPin();
 
-  if (!region || !cart.length) {
+  if ((!region && !pin) || !cart.length) {
     options = [];
+    quote = null;
     selectedCourier = null;
-    els.couriers.innerHTML = `<p class="muted">Choose your region to see shipping options.</p>`;
+    els.quoteMeta.hidden = true;
+    els.couriers.innerHTML = `<p class="muted">Pin your location or choose your region to see shipping options.</p>`;
     paintTotals();
     return;
   }
@@ -111,18 +114,25 @@ async function refreshQuote() {
       body: JSON.stringify({
         items: cart.map(i => ({ product_id: Number(i.productId), quantity: i.quantity })),
         address: {
-          region,
+          region: region || "NCR",   // ignored by the server when the pin is found
           province: els.form.elements.province.value.trim() || null,
+          city: els.form.elements.city.value.trim() || null,
           line: addressLine() || region,
           lat: pin?.lat, lng: pin?.lng
         }
       })
     });
     if (seq !== quoteSeq) return;
+    quote = result;
     options = result.options;
+    // The pin decides the region: keep the dropdown in step with it.
+    if (result.location.source === "pin" && els.region.value !== result.location.region) els.region.value = result.location.region;
+    renderQuoteMeta(result);
   } catch (err) {
     if (seq !== quoteSeq) return;
     options = [];
+    quote = null;
+    els.quoteMeta.hidden = true;
     failed = err.message || "Couldn't load shipping options.";
   }
 
@@ -140,7 +150,8 @@ function renderCouriers() {
     <label class="choice">
       <input type="radio" name="courier" value="${o.courier}" ${o.courier === selectedCourier ? "checked" : ""}>
       <span><span class="choice__title">${escapeHTML(o.label)}</span>
-        <span class="choice__detail">Arrives in ${escapeHTML(o.eta)}</span></span>
+        <span class="choice__detail">Arrives in ${escapeHTML(o.eta)}</span>
+        <span class="choice__basis">${escapeHTML(o.basis || "")}</span></span>
       <span class="price">${formatMoney(o.fee)}</span>
     </label>`).join("");
 }
@@ -153,27 +164,32 @@ els.couriers.addEventListener("change", (event) => {
 els.region.addEventListener("change", () => { clearError("region"); refreshQuote(); });
 els.form.elements.province.addEventListener("change", refreshQuote);
 
-// Map pin from the browser's location (asks the customer's permission).
-function setPin(value, requote = true) {
-  pin = value;
-  els.pinClear.hidden = !pin;
-  els.pinStatus.textContent = pin
-    ? `Pin set at ${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}.`
-    : "No pin set. Lalamove is only offered with a pin.";
-  if (requote) refreshQuote();
+function renderQuoteMeta(result) {
+  const l = result.location;
+  const where = [l.city, l.province, regionName(l.region)].filter(Boolean).join(", ");
+  els.quoteMeta.hidden = false;
+  els.quoteMeta.innerHTML = `
+    <span>${icon("package", { size: 16 })} Parcel weight: <strong>${result.weight_kg} kg</strong></span>
+    <span>${l.source === "pin"
+      ? `${icon("map-pin", { size: 16 })} Fees for your pin: ${escapeHTML(where)}`
+      : `${icon("info", { size: 16 })} Fees for the region you chose. Pin your location for exact fees.`}</span>`;
 }
 
-document.getElementById("pin-locate").addEventListener("click", () => {
-  clearError("pin");
-  if (!navigator.geolocation) return showError("pin", "This browser can't share your location.");
-  els.pinStatus.textContent = "Finding your location…";
-  navigator.geolocation.getCurrentPosition(
-    (pos) => setPin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-    () => { setPin(null, false); showError("pin", "Location wasn't shared. You can still use J&T or LBC."); },
-    { enableHighAccuracy: true, timeout: 15000 }
-  );
+// Map pin: fills in what the lookup found; the customer can still edit every field.
+const picker = createMapPicker(document.getElementById("mapPicker"), {
+  onLocation(location) {
+    const f = els.form.elements;
+    els.region.value = location.region;
+    f.province.value = location.province || "";
+    if (location.city) f.city.value = location.city;
+    if (location.barangay && !f.barangay.value.trim()) f.barangay.value = location.barangay;
+    if (location.postcode && !f.postalCode.value.trim()) f.postalCode.value = location.postcode;
+    ["region", "city", "barangay", "postalCode"].forEach(clearError);
+    refreshQuote();
+  },
+  onClear: () => refreshQuote(),
+  onError: () => refreshQuote()
 });
-els.pinClear.addEventListener("click", () => setPin(null));
 
 /* ---------------------------------------------------------------------
    SAVED ADDRESSES (GET /api/v1/account/addresses) — prefill the form
@@ -191,6 +207,7 @@ function fillAddress(a) {
   f.postalCode.value = a.postal_code;
   f.landmark.value = a.landmark || "";
   els.region.value = a.region || "";
+  if (a.lat !== null && a.lat !== undefined && a.lng !== null) picker.setPin({ lat: Number(a.lat), lng: Number(a.lng) }, { lookup: false });
   refreshQuote();
 }
 
@@ -334,9 +351,10 @@ async function placeOrder() {
       street: f.street.value.trim(), barangay: f.barangay.value.trim(), city: f.city.value.trim(),
       province: f.province.value.trim() || null, region: els.region.value,
       postalCode: f.postalCode.value.trim(), landmark: f.landmark.value.trim() || null,
-      lat: pin?.lat ?? null, lng: pin?.lng ?? null
+      lat: picker.getPin()?.lat ?? null, lng: picker.getPin()?.lng ?? null
     },
     courier: selectedCourier,
+    expected_shipping_fee: options.find(o => o.courier === selectedCourier)?.fee,
     payment: { method: f.payment.value },
     consent: { marketing: f.consentMarketing.checked, policyVersion: "2026-01" }
   };
@@ -348,6 +366,7 @@ async function placeOrder() {
   } catch (err) {
     busy(els.button, false);
     if (err.code === "EMAIL_NOT_VERIFIED") return showVerifyStep();
+    if (err.code === "SHIPPING_FEE_CHANGED") await refreshQuote();   // show the new fee before they retry
     els.orderErr.textContent = err.message || "Checkout failed. Please try again.";
     return;
   }

@@ -241,6 +241,40 @@
           }
         },
         {
+          "name": "Map pin — reverse geocode (region, province, city)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/geo/reverse",
+            "body": { "mode": "raw", "raw": "{\n  \"lat\": 10.3157,\n  \"lng\": 123.8854\n}" },
+            "description": "Server-side Nominatim lookup (1 request/second, cached). Returns region (PSGC code), province, city, barangay, postcode and shipping zone."
+          }
+        },
+        {
+          "name": "Admin — shipping rate card",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/admin/shipping-rates",
+            "description": "All J&T/LBC brackets and last_updated per courier. POST to add { courier, zone, max_weight_kg, fee }, PATCH /:id to edit, DELETE /:id to remove."
+          }
+        },
+        {
+          "name": "Admin — add a rate bracket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/shipping-rates",
+            "body": { "mode": "raw", "raw": "{\n  \"courier\": \"JNT\",\n  \"zone\": \"VISAYAS\",\n  \"max_weight_kg\": 2,\n  \"fee\": 199\n}" }
+          }
+        },
+        {
           "name": "Admin — shipments list",
           "request": {
             "method": "GET",

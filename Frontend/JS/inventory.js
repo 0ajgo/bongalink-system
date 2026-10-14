@@ -109,18 +109,30 @@ function trendCell(p) {
   return `<span class="muted">→ No shift</span>`;
 }
 
+// Parts still on the 0.5 kg default weight: J&T / LBC fees use this weight.
+const DEFAULT_WEIGHT = 0.5;
+const isDefaultWeight = (p) => Number(p.weight_kg) === DEFAULT_WEIGHT;
+
 function renderPredictions() {
   if (editing) return;
   document.getElementById("productCount").textContent = `${predictions.length} active parts`;
+  const unweighed = predictions.filter(isDefaultWeight).length;
+  const notice = document.getElementById("weightNotice");
+  notice.hidden = unweighed === 0;
+  notice.innerHTML = unweighed ? `<div class="alert alert--warning">${icon("triangle-alert", { size: 18 })}
+    <span>${unweighed} part${unweighed === 1 ? " still uses" : "s still use"} the default 0.5 kg weight. Enter real
+    weights so J&amp;T and LBC fees match what the couriers charge.</span></div>` : "";
   predRows.innerHTML = predictions.map(p => {
     const stale = p.computed_at && Number(p.predicted_for_stock) !== Number(p.stock_quantity);
     return `
       <tr data-id="${p.product_id}">
         <td><button class="link-button" type="button" data-history="${p.product_id}">${escapeHTML(p.name)}</button>
-            ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}</td>
-        <td>${escapeHTML(p.category)}</td>
+            ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}
+            <br><span class="muted">${escapeHTML(p.category)}</span></td>
         <td class="num"><input class="input input--sm" type="number" min="0" step="0.01" value="${Number(p.price)}" data-field="price" aria-label="Price of ${escapeHTML(p.name)}"></td>
         <td class="num"><input class="input input--sm" type="number" min="0" step="1" value="${p.stock_quantity}" data-field="stock" aria-label="Stock on hand of ${escapeHTML(p.name)}"></td>
+        <td class="num"><input class="input input--sm" type="number" min="0.01" step="0.01" value="${Number(p.weight_kg)}" data-field="weight" aria-label="Weight in kg of ${escapeHTML(p.name)}">
+            ${isDefaultWeight(p) ? `<br><span class="badge badge--warning" title="Still the default weight; enter the real parcel weight">Default</span>` : ""}</td>
         <td class="num">${forecastCell(p)}</td>
         <td class="num">${daysCell(p)}</td>
         <td>${reorderCell(p)}</td>
@@ -162,7 +174,9 @@ predRows.addEventListener("click", async event => {
     const original = predictions.find(p => String(p.product_id) === id);
     const price = row.querySelector('[data-field="price"]').value;
     const stock = row.querySelector('[data-field="stock"]').value;
+    const weight = row.querySelector('[data-field="weight"]').value;
     const body = {};
+    if (Number(weight) !== Number(original.weight_kg)) body.weight_kg = weight === "" ? "" : Number(weight);
     if (Number(price) !== Number(original.price)) body.price = price === "" ? "" : Number(price);
     if (Number(stock) !== Number(original.stock_quantity)) body.stock = stock === "" ? "" : Number(stock);
     if (Object.keys(body).length === 0) return;

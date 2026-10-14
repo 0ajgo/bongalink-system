@@ -146,8 +146,26 @@ The shop is alerted to each paid order by email (`ADMIN_ALERT_EMAIL`) and by a
 `GET /api/v1/admin/orders/to-ship` every 30 seconds). The catalog shows
 **available** stock (on hand minus units held by unpaid orders).
 
-The J&T/LBC fees in `shipping_rates` are **placeholders** — replace them with
-the shop's real rates. Products need a real `weight_kg` for accurate fees.
+### Shipping fees from map pins
+
+Checkout and saved addresses have a map (Leaflet + OpenStreetMap tiles, bundled in
+`Frontend/vendor/leaflet`). The pin is reverse-geocoded **by the backend** with
+OpenStreetMap Nominatim (`services/geocode.js`: identifying User-Agent with
+`GEOCODER_CONTACT`, max 1 request/second, results cached) and mapped to the PSGC
+region, province and the island-province list. The server takes the shipping zone
+from the pin, so a wrong region choice can't change the fee. Without a pin (or if
+Nominatim is down) the region typed in the form is used.
+
+- **J&T / LBC:** zone + parcel weight from the rate card. Edit it on the admin
+  **Rates** page (`Pages/Admin/rates.html`). The `shipping_rates` seeded by
+  migration 004 are **placeholders** — enter the real rate cards.
+- **Lalamove:** live quote from the shop pin (`STORE_LAT`/`STORE_LNG`) to the
+  customer's pin, only inside `LALAMOVE_SERVICE_AREAS`; shows the route distance.
+- **Weights:** set each part's packed weight on the Inventory page. Parts still on
+  the 0.5 kg default are flagged.
+- Each courier option shows how its fee was calculated, and the order sends the fee
+  the customer saw: if the recomputed fee differs, the order is refused with the new
+  fee (409 `SHIPPING_FEE_CHANGED`) instead of charging something else.
 Island provinces billed at the `ISLAND_PROVINCE` rate are listed in
 `services/shippingRates.js`.
 

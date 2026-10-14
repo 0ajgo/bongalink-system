@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipping rates — Bongalink admin</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/admin.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- J&T / LBC rate card (zone + weight bracket -> fee), from
+     /api/v1/admin/shipping-rates. Lalamove is always a live quote. -->
+<main id="main" class="container page">
+  <div class="page-head">
+    <div>
+      <h1>Shipping rates</h1>
+      <p>Enter J&amp;T and LBC's rate cards. Checkout picks the smallest weight bracket that fits the parcel in the
+        customer's zone; a courier isn't offered if no bracket is heavy enough. Lalamove is always a live quote.</p>
+    </div>
+  </div>
+  <div class="alert alert--info section-card"><i data-icon="info" data-size="18"></i>
+    <span>Zones come from the customer's map pin: Metro Manila, the rest of Luzon, Visayas, Mindanao, and island provinces
+    (Palawan, Romblon, Marinduque, Catanduanes, Masbate, Batanes, Siquijor, Camiguin, Basilan, Sulu, Tawi-Tawi, Dinagat Islands).</span></div>
+  <div id="rateCards" class="rate-cards" aria-live="polite"></div>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink admin</span>
+    <span>Changes apply to new quotes immediately.</span>
+  </div>
+</footer>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/rates.js"></script>
+</body>
+</html>

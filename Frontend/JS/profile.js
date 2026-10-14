@@ -147,6 +147,7 @@ function renderAddresses() {
         <div>${escapeHTML(a.recipient_phone)}</div>
         <div>${escapeHTML([a.street, a.barangay, a.city, a.province, a.postal_code].filter(Boolean).join(", "))}</div>
         <div class="muted">${escapeHTML(regionLabel(a.region))}${a.landmark ? ` · ${escapeHTML(a.landmark)}` : ""}</div>
+        <div class="muted">${a.lat !== null && a.lat !== undefined ? `${icon("map-pin", { size: 14 })} Pinned on the map` : "No map pin — add one for exact shipping fees"}</div>
       </div>
       <div class="address__actions">
         ${a.is_default ? "" : `<button class="btn btn--ghost btn--sm" type="button" data-default="${a.address_id}">Make default</button>`}
@@ -170,6 +171,17 @@ async function loadAddresses() {
 
 const dialog = $("addressDialog");
 const form = $("addressForm");
+
+// Map pin in the dialog: fills region / province / city; the server takes the zone from the pin.
+const addressPicker = createMapPicker($("addressMap"), {
+  onLocation(location) {
+    form.elements.region.value = location.region;
+    form.elements.province.value = location.province || "";
+    if (location.city) form.elements.city.value = location.city;
+    if (location.barangay && !form.elements.barangay.value.trim()) form.elements.barangay.value = location.barangay;
+    if (location.postcode && !form.elements.postal_code.value.trim()) form.elements.postal_code.value = location.postcode;
+  }
+});
 $("aRegion").innerHTML = `<option value="">Choose a region</option>` +
   PSGC_REGIONS.map(r => `<option value="${r.code}">${r.label}</option>`).join("");
 
@@ -185,7 +197,13 @@ function openAddressDialog(address = null) {
       else el.value = address[el.name] ?? "";
     }
   }
+  if (address && address.lat !== null && address.lat !== undefined) {
+    addressPicker.setPin({ lat: Number(address.lat), lng: Number(address.lng) }, { lookup: false });
+  } else {
+    addressPicker.clear();
+  }
   dialog.showModal();
+  setTimeout(() => addressPicker.refresh(), 0);   // the map was hidden until now
 }
 dialog.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => dialog.close()));
 $("addAddress").addEventListener("click", () => openAddressDialog());
@@ -194,6 +212,9 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const body = {};
   for (const el of form.elements) if (el.name) body[el.name] = el.type === "checkbox" ? el.checked : el.value;
+  const pin = addressPicker.getPin();
+  body.lat = pin ? pin.lat : null;
+  body.lng = pin ? pin.lng : null;
   busy($("addressSubmit"), true);
   try {
     await apiFetch(`/v1/account/addresses${editingAddressId ? `/${editingAddressId}` : ""}`,

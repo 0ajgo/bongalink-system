@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Checkout — Bongalink</title>
+<link rel="stylesheet" href="../../vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="../../CSS/design-system.css">
 <link rel="stylesheet" href="../../CSS/shop.css">
 </head>
@@ -50,6 +51,12 @@
               <select class="select" id="savedAddress"></select>
               <span class="hint">Manage saved addresses on your <a href="../Account/profile.html">profile</a>.</span>
             </div>
+            <!-- Map pin (js/map-picker.js): exact fees, and fills in region/province/city.
+                 The server takes the shipping zone from where the pin is. -->
+            <div class="field" id="map-field">
+              <span class="label">Pin your delivery location <span class="optional">(recommended for exact fees)</span></span>
+              <div id="mapPicker"></div>
+            </div>
             <div class="form-grid" id="address-grid">
               <div class="field">
                 <label class="label" for="firstName">First name</label>
@@ -95,17 +102,6 @@
                 <label class="label" for="landmark">Landmark or delivery note <span class="optional">(optional)</span></label>
                 <input class="input" type="text" id="landmark" name="landmark" placeholder="Gate colour, nearest corner, best time to deliver">
               </div>
-              <!-- Map pin: optional, Metro Manila only. Lalamove needs exact
-                   coordinates; without a pin only J&T / LBC are offered. -->
-              <div class="field field--wide" id="pin-field" hidden>
-                <span class="label">Map pin for same-day Lalamove <span class="optional">(optional)</span></span>
-                <div class="pin-row">
-                  <button type="button" class="btn btn--secondary" id="pin-locate"><i data-icon="map-pin" data-size="18"></i> Use my current location</button>
-                  <button type="button" class="btn btn--ghost" id="pin-clear" hidden>Remove pin</button>
-                  <span class="hint" id="pin-status">No pin set. Lalamove is only offered with a pin.</span>
-                </div>
-                <span class="error-text" data-error-for="pin"></span>
-              </div>
             </div>
           </div>
         </section>
@@ -114,7 +110,8 @@
           <div class="card__header"><h2 id="courier-title">Courier</h2><p>Sets the shipping fee</p></div>
           <div class="card__body">
             <!-- From POST /api/v1/shipping/quote; the server recomputes the fee when the order is placed. -->
-            <div class="choices" id="courier-choices"><p class="muted">Choose your region to see shipping options.</p></div>
+            <div class="quote-meta" id="quote-meta" hidden></div>
+            <div class="choices" id="courier-choices"><p class="muted">Pin your location or choose your region to see shipping options.</p></div>
             <span class="error-text" data-error-for="courier"></span>
           </div>
         </section>
@@ -206,6 +203,8 @@
 <script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>
 <script src="../../JS/ui.js"></script>
+<script src="../../vendor/leaflet/leaflet.js"></script>
+<script src="../../JS/map-picker.js"></script>
 <script src="../../JS/checkout.js"></script>
 </body>
 </html>

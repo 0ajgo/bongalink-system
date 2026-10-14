@@ -109,7 +109,7 @@ const initials = (name) => (String(name).match(/[A-Za-z0-9]/g) || ["?"]).slice(0
 const ROLE_LABEL = { admin: "Admin", user: "Customer" };
 
 /* --- Header ----------------------------------------------------------- */
-// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries"
+// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries" | "rates"
 // search: true to show the search box (submits to the catalog)
 function renderHeader({ active = "", search = true } = {}) {
   const root = document.getElementById("site-header");
@@ -121,7 +121,8 @@ function renderHeader({ active = "", search = true } = {}) {
     ...(admin ? [
       { key: "dashboard", href: `${UI_ROOT}Admin/dashboard.html`, label: "Dashboard", icon: "layout-dashboard" },
       { key: "inventory", href: `${UI_ROOT}Admin/inventory.html`, label: "Inventory", icon: "boxes" },
-      { key: "deliveries", href: `${UI_ROOT}Admin/deliveries.html`, label: "Deliveries", icon: "truck" }
+      { key: "deliveries", href: `${UI_ROOT}Admin/deliveries.html`, label: "Deliveries", icon: "truck" },
+      { key: "rates", href: `${UI_ROOT}Admin/rates.html`, label: "Rates", icon: "landmark" }
     ] : [])
   ];
   const toShip = admin ? `<a class="badge badge--warning to-ship" href="${UI_ROOT}Admin/deliveries.html" data-to-ship hidden></a>` : "";

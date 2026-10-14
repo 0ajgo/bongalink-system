@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My profile — Bongalink</title>
+<link rel="stylesheet" href="../../vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="../../CSS/design-system.css">
 <link rel="stylesheet" href="../../CSS/shop.css">
 </head>
@@ -128,6 +129,10 @@
     </div>
     <div class="modal__body form-grid">
       <div class="field field--wide">
+        <span class="label">Delivery pin <span class="optional">(recommended for exact shipping fees)</span></span>
+        <div id="addressMap"></div>
+      </div>
+      <div class="field field--wide">
         <label class="label" for="aName">Recipient name</label>
         <input class="input" id="aName" name="recipient_name" autocomplete="name" required>
       </div>
@@ -177,6 +182,8 @@
 <script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>
 <script src="../../JS/ui.js"></script>
+<script src="../../vendor/leaflet/leaflet.js"></script>
+<script src="../../JS/map-picker.js"></script>
 <script src="../../JS/orders.js"></script>
 <script src="../../JS/profile.js"></script>
 </body>

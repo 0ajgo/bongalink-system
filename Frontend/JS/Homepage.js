@@ -292,6 +292,7 @@ productForm.addEventListener("submit", async (event) => {
   form.append("price", value("productPrice"));
   form.append("stock", value("productStock"));
   form.append("description", value("productDescription"));
+  if (value("productWeight") !== "") form.append("weight_kg", value("productWeight"));
   if (productImage.files[0]) form.append("image", productImage.files[0]);
 
   const submit = document.getElementById("productSubmit");
