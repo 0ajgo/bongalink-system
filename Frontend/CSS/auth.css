@@ -30,3 +30,4 @@
   .auth__aside { padding: var(--space-6) var(--space-5); }
   .auth__main { padding: var(--space-6) var(--space-4); }
 }
+.auth__card form > .btn, .auth__card form > .stack { margin-top: var(--space-5); }

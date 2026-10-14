@@ -71,7 +71,6 @@
         <aside class="hide-mobile catalog-aside" aria-label="Categories">
           <p class="eyebrow catalog-aside__title">Categories</p>
           <ul class="filter-list" id="categoryList"></ul>
-          <button class="btn btn--secondary btn--block" type="button" id="openAddBtn" hidden><i data-icon="plus" data-size="18"></i> List a product</button>
         </aside>
 
         <div>
@@ -79,6 +78,7 @@
           <div class="catalog-toolbar">
             <h2 id="results-title" class="catalog-toolbar__title"><span id="resultsLabel">All parts</span> <span class="muted" id="resultCount"></span></h2>
             <div class="row">
+              <button class="btn btn--secondary" type="button" id="openAddBtn" hidden><i data-icon="plus" data-size="18"></i> List a product</button>
               <label class="check" for="inStockOnly"><input type="checkbox" id="inStockOnly"> In stock only</label>
               <label class="sr-only" for="sort">Sort by</label>
               <select class="select catalog-toolbar__sort" id="sort">

@@ -128,6 +128,7 @@ function renderHeader({ active = "", search = true } = {}) {
   const nav = `<nav class="site-nav" aria-label="Main">${links.map(l =>
     `<a href="${l.href}"${l.key === active ? ' aria-current="page"' : ""}>${icon(l.icon, { size: 18 })}${l.label}</a>`).join("")}${toShip}</nav>`;
 
+  search = search && !admin;   // the header search is a shopping tool; admins use the Shop link
   const searchBox = search ? `
     <form class="header-search input-icon" role="search" action="${UI_ROOT}Homepage/homepage.html">
       ${icon("search", { size: 18 })}

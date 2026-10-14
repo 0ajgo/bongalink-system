@@ -517,3 +517,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chart-table { margin-top: var(--space-3); font-size: var(--text-sm); }
 .chart-table summary { cursor: pointer; color: var(--color-primary); min-height: 32px; display: inline-flex; align-items: center; }
 .chart-table .table-wrap { margin-top: var(--space-2); max-height: 280px; overflow-y: auto; }
+
+/* Long option text must never widen the page; card headers wrap on small screens. */
+.select { max-width: 100%; text-overflow: ellipsis; }
+.card__header { flex-wrap: wrap; }
+.card__header > .row, .card__header > .select { min-width: 0; max-width: 100%; }
+/* A table directly inside a card uses the card's border, not its own. */
+.card > .table-wrap { border: 0; border-radius: 0 0 var(--radius) var(--radius); }
+/* Dense data tables (admin): tighter cells so more columns fit. */
+.table--compact th, .table--compact td { padding: var(--space-2) var(--space-3); }
