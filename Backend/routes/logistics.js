@@ -34,6 +34,32 @@ async function loadOrderForShipping(orderId) {
   return o;
 }
 
+// Adds `items: [{ product_id, name, quantity, unit_price }]` to each row (one query for all rows).
+async function attachItems(rows) {
+  if (!rows.length) return rows;
+  const [items] = await pool.query(
+    `SELECT oi.order_id, oi.product_id, p.name, oi.quantity, oi.unit_price
+       FROM order_items oi JOIN products p ON p.product_id = oi.product_id
+      WHERE oi.order_id IN (?) ORDER BY oi.order_item_id`,
+    [rows.map((r) => r.order_id)]
+  );
+  for (const row of rows) {
+    row.items = items.filter((i) => i.order_id === row.order_id)
+      .map(({ order_id, ...item }) => item);
+  }
+  return rows;
+}
+
+// Customer + delivery address columns shared by the admin lists (needs o, u, a aliases).
+const ORDER_DETAIL_COLUMNS = `
+  o.order_id, o.status AS order_status, o.created_at, o.paid_at, o.total_amount, o.shipping_fee,
+  o.courier AS courier_chosen,
+  u.username AS customer_username, COALESCE(o.contact_email, u.email) AS customer_email,
+  a.recipient_name AS ship_name, a.recipient_phone AS ship_phone,
+  CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS ship_address,
+  a.region AS ship_region, a.landmark AS ship_landmark,
+  (a.lat IS NOT NULL AND a.lng IS NOT NULL) AS has_map_pin`;
+
 // The order's delivery row, if it has been booked already.
 async function bookedDelivery(conn, orderId, lock = false) {
   const [[d]] = await conn.query(
@@ -137,6 +163,28 @@ router.get('/admin/orders/to-ship', requireAdmin, ah(async (req, res) => {
   res.json({ count: Number(row.count), oldest_paid_at: row.oldest_paid_at });
 }));
 
+// GET /admin/orders/awaiting-shipment  (REQ012, REQ013) - paid orders not booked yet, oldest payment first,
+// with customer, address, items, the courier chosen at checkout and whether Lalamove can be booked.
+router.get('/admin/orders/awaiting-shipment', requireAdmin, ah(async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT ${ORDER_DETAIL_COLUMNS}
+       FROM orders o
+       JOIN users u ON u.user_id = o.user_id
+       LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
+      WHERE o.status IN (?)
+      ORDER BY o.paid_at IS NULL, o.paid_at ASC, o.order_id ASC
+      LIMIT 200`,
+    [READY_TO_SHIP]
+  );
+  const lalamoveOn = lalamove.enabled();
+  for (const r of rows) {
+    r.has_map_pin = Boolean(r.has_map_pin);
+    r.courier_chosen_label = COURIER_LABEL[r.courier_chosen] || null;
+    r.can_book_lalamove = lalamoveOn && r.has_map_pin;
+  }
+  res.json(await attachItems(rows));
+}));
+
 // GET /admin/shipments?status=IN_TRANSIT  (REQ012, REQ016) - booked deliveries only
 router.get('/admin/shipments', requireAdmin, ah(async (req, res) => {
   const params = [];
@@ -147,15 +195,21 @@ router.get('/admin/shipments', requireAdmin, ah(async (req, res) => {
     params.push(req.query.status);
   }
   const [rows] = await pool.query(
-    `SELECT d.*, o.status AS order_status, a.recipient_name AS ship_name,
-            CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS ship_address
+    `SELECT d.delivery_id, d.courier, d.tracking_number, d.external_order_id, d.tracking_url,
+            d.fee_charged, d.fee_actual, d.status, d.dispatched_at, d.delivered_at, d.updated_at,
+            ${ORDER_DETAIL_COLUMNS}
        FROM deliveries d
        JOIN orders o ON o.order_id = d.order_id
+       JOIN users u ON u.user_id = o.user_id
        LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
-      ${where} ORDER BY d.updated_at DESC LIMIT 200`,
+      ${where} ORDER BY d.updated_at DESC, d.delivery_id DESC LIMIT 200`,
     params
   );
-  res.json(rows);
+  for (const r of rows) {
+    r.has_map_pin = Boolean(r.has_map_pin);
+    r.courier_label = COURIER_LABEL[r.courier] || r.courier;
+  }
+  res.json(await attachItems(rows));
 }));
 
 // POST /admin/shipments/:orderId/lalamove  - books a Lalamove rider (Metro Manila)
@@ -189,7 +243,8 @@ router.post('/admin/shipments/:orderId/lalamove', requireAdmin, ah(async (req, r
       await addShipmentEvent(conn, { delivery_id: id, order_id: o.order_id }, 'BOOKED', {
         note: 'Lalamove rider requested', userId: req.user.userId,
       });
-      await conn.query(`UPDATE orders SET status = 'shipped', courier = 'LALAMOVE' WHERE order_id = ?`, [o.order_id]);
+      // orders.courier keeps the customer's checkout choice; deliveries.courier is the one used.
+      await conn.query(`UPDATE orders SET status = 'shipped' WHERE order_id = ?`, [o.order_id]);
       return id;
     });
   } catch (e) {
@@ -233,7 +288,8 @@ router.post('/admin/shipments/:orderId/manual', requireAdmin, ah(async (req, res
     await addShipmentEvent(conn, { delivery_id: id, order_id: o.order_id }, 'PICKED_UP', {
       note: `Dropped off at ${COURIER_LABEL[courier]}`, userId: req.user.userId,
     });
-    await conn.query(`UPDATE orders SET status = 'shipped', courier = ? WHERE order_id = ?`, [courier, o.order_id]);
+    // orders.courier keeps the customer's checkout choice; deliveries.courier is the one used.
+    await conn.query(`UPDATE orders SET status = 'shipped' WHERE order_id = ?`, [o.order_id]);
     return id;
   });
   if (!deliveryId) return res.status(409).json({ error: 'This order already has a shipment' });

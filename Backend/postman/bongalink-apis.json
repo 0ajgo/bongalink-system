@@ -223,6 +223,24 @@
           }
         },
         {
+          "name": "Admin — paid orders awaiting shipment (details)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/admin/orders/awaiting-shipment",
+            "description": "Paid/packed orders not shipped yet, oldest payment first: customer, address, items, courier chosen at checkout, shipping fee, and can_book_lalamove (Lalamove keys set + map pin). Used by Admin/deliveries.html."
+          }
+        },
+        {
+          "name": "Customer — my orders (with items)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{baseUrl}}/api/orders",
+            "description": "Used by COpage/orders.html together with the tracking endpoint."
+          }
+        },
+        {
           "name": "Admin — shipments list",
           "request": {
             "method": "GET",

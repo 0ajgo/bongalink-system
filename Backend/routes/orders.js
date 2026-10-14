@@ -220,15 +220,34 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
 });
 
 /* ---------------------------------------------------------------------
-   GET /api/orders — this user's order history
+   GET /api/orders — this user's order history, newest first, each with
+   its items. Powers Pages/COpage/orders.html; the tracking timeline of a
+   shipped order comes from GET /api/v1/orders/:id/tracking.
    --------------------------------------------------------------------- */
 router.get("/", requireAuth, async (req, res) => {
-  const [orders] = await pool.query(
-    `SELECT order_id, status, total_amount, shipping_fee, courier, paid_at, created_at
-     FROM orders WHERE user_id = ? ORDER BY created_at DESC`,
-    [req.user.userId]
-  );
-  res.json(orders);
+  try {
+    const [orders] = await pool.query(
+      `SELECT order_id, status, total_amount, shipping_fee, courier, paid_at, created_at
+       FROM orders WHERE user_id = ? ORDER BY created_at DESC, order_id DESC LIMIT 100`,
+      [req.user.userId]
+    );
+    if (orders.length) {
+      const [items] = await pool.query(
+        `SELECT oi.order_id, p.name, oi.quantity, oi.unit_price
+         FROM order_items oi JOIN products p ON p.product_id = oi.product_id
+         WHERE oi.order_id IN (?) ORDER BY oi.order_item_id`,
+        [orders.map(o => o.order_id)]
+      );
+      for (const order of orders) {
+        order.items = items.filter(i => i.order_id === order.order_id)
+          .map(({ name, quantity, unit_price }) => ({ name, quantity, unit_price }));
+      }
+    }
+    res.json(orders);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load your orders." });
+  }
 });
 
 module.exports = router;

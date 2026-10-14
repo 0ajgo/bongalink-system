@@ -135,8 +135,11 @@ How an order flows:
    `stock_quantity` deduction.
 4. Orders unpaid after 24 hours are set to `expired` and their stock is released
    (`jobs/expireOrders.js`, runs every 5 minutes).
-5. The admin books Lalamove or encodes the J&T/LBC waybill; the customer sees
-   the timeline at `GET /api/v1/orders/:id/tracking`.
+5. On the admin **Deliveries** page (`Pages/Admin/deliveries.html`) the admin ships
+   each paid order: enters the J&T/LBC waybill number, or books a Lalamove rider
+   (offered only when Lalamove is configured and the address has a map pin), then
+   updates the status as the parcel moves. The customer sees the courier, tracking
+   number/link and timeline on **My Orders** (`Pages/COpage/orders.html`).
 
 The shop is alerted to each paid order by email (`ADMIN_ALERT_EMAIL`) and by a
 "paid orders to ship" badge on the admin Inventory page (polls
