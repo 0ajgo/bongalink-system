@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounts — Bongalink admin</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/admin.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- Account management (REQ010, REQ018, REQ019, REQ029), js/accounts.js:
+       GET    /api/v1/admin/accounts            list (search, filters, sort, pages)
+       GET    /api/v1/admin/accounts/summary    tiles
+       GET    /api/v1/admin/accounts/:id        details
+       POST   /api/v1/admin/accounts            create (emails a set-password link)
+       POST   .../:id/suspend | unsuspend | role | resend-invite,  DELETE .../:id
+       GET    /api/v1/admin/accounts/audit-log  admin activity log
+     The server enforces every rule; buttons are only disabled to explain them. -->
+<main id="main" class="container page">
+  <div class="page-head">
+    <div>
+      <h1>Accounts</h1>
+      <p>Customer and admin accounts. Every change you make here is recorded in the activity log.</p>
+    </div>
+    <button class="btn btn--primary" type="button" id="createAccount"><i data-icon="user-plus" data-size="18"></i> Create account</button>
+  </div>
+
+  <div class="stat-grid stat-grid--4" aria-live="polite">
+    <div class="card stat" id="statTotal">
+      <span class="stat__label"><i data-icon="users" data-size="16"></i> Accounts</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <div class="card stat" id="statNew">
+      <span class="stat__label"><i data-icon="user-plus" data-size="16"></i> New this week</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <div class="card stat" id="statAdmins">
+      <span class="stat__label"><i data-icon="shield-check" data-size="16"></i> Active admins</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <div class="card stat" id="statSuspended">
+      <span class="stat__label"><i data-icon="user-x" data-size="16"></i> Suspended</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+  </div>
+
+  <section class="card section-card" aria-labelledby="listTitle">
+    <div class="card__header"><h2 id="listTitle">All accounts</h2><span class="muted" id="listCount"></span></div>
+    <form class="acc-filters" id="accFilters" role="search">
+      <div class="field">
+        <label class="label" for="fSearch">Search</label>
+        <input class="input" id="fSearch" type="search" placeholder="Username or email" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="fRole">Role</label>
+        <select class="select" id="fRole"><option value="all">All roles</option><option value="user">Customers</option><option value="admin">Admins</option></select>
+      </div>
+      <div class="field">
+        <label class="label" for="fStatus">Status</label>
+        <select class="select" id="fStatus">
+          <option value="all">All (not deleted)</option><option value="active">Active</option><option value="invited">Invited</option>
+          <option value="suspended">Suspended</option><option value="deleted">Deleted</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="fVerified">Email</label>
+        <select class="select" id="fVerified"><option value="all">Verified or not</option><option value="yes">Verified</option><option value="no">Not verified</option></select>
+      </div>
+    </form>
+    <div class="table-wrap acc-table-wrap">
+      <table class="table table--compact table--sticky-first" id="accTable">
+        <caption class="sr-only">Accounts. Column headers sort the list.</caption>
+        <thead>
+          <tr>
+            <th scope="col" data-sort="username">Username</th>
+            <th scope="col" data-sort="email">Email</th>
+            <th scope="col" data-sort="role">Role</th>
+            <th scope="col" data-sort="status">Status</th>
+            <th scope="col">Verified</th>
+            <th scope="col" data-sort="created_at">Created</th>
+            <th scope="col" data-sort="last_login_at">Last login</th>
+            <th scope="col" class="num" data-sort="order_count">Orders</th>
+          </tr>
+        </thead>
+        <tbody id="accRows"></tbody>
+      </table>
+    </div>
+    <div class="card__footer pager" id="accPager"></div>
+  </section>
+
+  <section class="card section-card" aria-labelledby="logTitle">
+    <div class="card__header">
+      <h2 id="logTitle">Admin activity log</h2>
+      <div class="row">
+        <label class="sr-only" for="logAction">Action</label>
+        <select class="select select--sm" id="logAction">
+          <option value="">All actions</option>
+          <option value="create_account">Created</option><option value="resend_invite">Setup email resent</option>
+          <option value="suspend">Suspended</option><option value="unsuspend">Unsuspended</option>
+          <option value="promote">Made admin</option><option value="demote">Made customer</option>
+          <option value="delete">Deleted</option><option value="anonymize">Anonymized</option>
+        </select>
+      </div>
+    </div>
+    <div id="logList" aria-live="polite"></div>
+    <div class="card__footer pager" id="logPager"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink admin</span>
+    <span>Suspensions and role changes log the user out at once.</span>
+  </div>
+</footer>
+
+<!-- Account details -->
+<dialog class="modal modal--xl" id="detailDialog" aria-labelledby="detailTitle">
+  <div class="modal__header">
+    <h2 id="detailTitle">Account</h2>
+    <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+  </div>
+  <div class="modal__body" id="detailBody" aria-live="polite"></div>
+</dialog>
+
+<!-- Confirm an action (suspend, unsuspend, role, resend, delete) -->
+<dialog class="modal" id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+  <form id="confirmForm" novalidate>
+    <div class="modal__header">
+      <h2 id="confirmTitle">Confirm</h2>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+    <div class="modal__body">
+      <div id="confirmText" class="confirm-text"></div>
+      <div class="field" id="reasonField">
+        <label class="label" for="confirmReason">Reason <span id="reasonNeed"></span></label>
+        <textarea class="textarea" id="confirmReason" rows="3" maxlength="255" aria-describedby="confirmReasonHint confirmReasonError"></textarea>
+        <span class="hint" id="confirmReasonHint">Saved in the activity log.</span>
+        <span class="error-text" id="confirmReasonError" role="alert"></span>
+      </div>
+      <div class="field" id="typeField" hidden>
+        <label class="label" for="confirmUsername">Type the username <strong id="typeName"></strong> to confirm <span class="required">(required)</span></label>
+        <input class="input" id="confirmUsername" autocomplete="off" spellcheck="false" aria-describedby="confirmUsernameError">
+        <span class="error-text" id="confirmUsernameError" role="alert"></span>
+      </div>
+      <p class="error-text" id="confirmError" role="alert"></p>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="confirmSubmit">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Create account -->
+<dialog class="modal" id="createDialog" aria-labelledby="createTitle">
+  <form id="createForm" novalidate>
+    <div class="modal__header">
+      <h2 id="createTitle">Create account</h2>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+    <div class="modal__body">
+      <div class="field">
+        <label class="label" for="newUsername">Username <span class="required">(required)</span></label>
+        <input class="input" id="newUsername" maxlength="50" autocomplete="off" spellcheck="false" aria-describedby="newUsernameHint newUsernameError">
+        <span class="hint" id="newUsernameHint">3 to 50 letters, numbers, dots, dashes or underscores. They log in with this.</span>
+        <span class="error-text" id="newUsernameError" role="alert"></span>
+      </div>
+      <div class="field">
+        <label class="label" for="newEmail">Email <span class="required">(required)</span></label>
+        <input class="input" id="newEmail" type="email" maxlength="150" autocomplete="off" aria-describedby="newEmailError">
+        <span class="error-text" id="newEmailError" role="alert"></span>
+      </div>
+      <fieldset class="field role-choice">
+        <legend class="label">Account type</legend>
+        <label class="choice"><input type="radio" name="newRole" value="user" checked>
+          <span><span class="choice__title">Customer</span><span class="choice__detail">Shops and orders parts.</span></span></label>
+        <label class="choice"><input type="radio" name="newRole" value="admin">
+          <span><span class="choice__title">Admin</span><span class="choice__detail">Full access to inventory, orders, deliveries, chats and accounts.</span></span></label>
+      </fieldset>
+      <div class="alert alert--info">
+        <i data-icon="mail" data-size="18"></i>
+        <span>We email them a link to confirm their email and choose a password. The link works once and expires in 72 hours.</span>
+      </div>
+      <p class="error-text" id="createError" role="alert"></p>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="createSubmit">Create and send email</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/accounts.js"></script>
+</body>
+</html>

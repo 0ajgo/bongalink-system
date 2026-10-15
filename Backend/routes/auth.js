@@ -1,15 +1,19 @@
 /* =====================================================================
    routes/auth.js
-   Powers: register.html (POST /api/auth/register) and
-           login.html (POST /api/auth/login)
+   Powers: register.html (POST /api/auth/register),
+           login.html (POST /api/auth/login) and
+           set-password.html (GET/POST /api/auth/set-password: accounts
+           created by an admin, services/accountSetup.js)
    Backing table: users
    ===================================================================== */
 
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const pool = require("../db");
 const { issueVerificationCode } = require("./emailVerification");
+const { rateLimit } = require("express-rate-limit");
+const { signToken, SUSPENDED } = require("../middleware/auth");
+const { findSetup, completeSetup } = require("../services/accountSetup");
 
 const router = express.Router();
 
@@ -83,14 +87,23 @@ router.post("/login", async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      "SELECT user_id, username, email, password_hash, role FROM users WHERE username = ?",
+      `SELECT user_id, username, email, password_hash, role, status, token_version, must_set_password
+         FROM users WHERE username = ?`,
       [username]
     );
-    if (rows.length === 0) {
+    // Deleted (anonymized) accounts look like unknown usernames.
+    if (rows.length === 0 || rows[0].status === "deleted") {
       return res.status(401).json({ error: "Invalid username or password." });
     }
 
     const user = rows[0];
+    // Created by an admin and not set up yet: there is no password to check.
+    if (user.must_set_password) {
+      return res.status(403).json({
+        error: "Finish setting up your account first: open the link we emailed you to set your password. If it expired, ask the shop to send a new one.",
+        code: "PASSWORD_NOT_SET"
+      });
+    }
     const passwordMatches = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatches) {
       return res.status(401).json({ error: "Invalid username or password." });
@@ -103,11 +116,11 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ error: `This account is not registered as ${role}.` });
     }
 
-    const token = jwt.sign(
-      { userId: user.user_id, username: user.username, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
+    // Checked after the password, so the status of an account isn't revealed to guessers.
+    if (user.status === "suspended") return res.status(403).json(SUSPENDED);
+
+    const token = signToken(user);
+    await pool.query("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
 
     res.json({
       token,
@@ -116,6 +129,37 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed." });
+  }
+});
+
+/* ---------------------------------------------------------------------
+   Set-password link for accounts created by an admin.
+   GET  /api/auth/set-password?token=...    is the link still good? -> { username }
+   POST /api/auth/set-password  { token, password }
+   --------------------------------------------------------------------- */
+const setupLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: "draft-7", legacyHeaders: false,
+  message: { error: "Too many tries. Please wait a few minutes." } });
+const BAD_LINK = "This link is invalid, already used or expired. Ask the shop to send a new one.";
+
+router.get("/set-password", setupLimit, async (req, res) => {
+  try {
+    const setup = await findSetup(req.query.token);
+    if (!setup) return res.status(400).json({ error: BAD_LINK });
+    res.json({ username: setup.username });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not check the link." });
+  }
+});
+
+router.post("/set-password", setupLimit, async (req, res) => {
+  try {
+    const result = await completeSetup(req.body?.token, req.body?.password);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ message: "Password set. You can log in now.", username: result.username });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not set the password." });
   }
 });
 

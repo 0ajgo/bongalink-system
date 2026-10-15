@@ -6,7 +6,8 @@ module.exports = () => ({
     paymentReceived: jest.fn().mockResolvedValue(),
     shipmentBooked: jest.fn().mockResolvedValue(),
     orderPaidAlert: jest.fn().mockResolvedValue(),
-    delivered: jest.fn().mockResolvedValue()
+    delivered: jest.fn().mockResolvedValue(),
+    accountInvite: jest.fn().mockResolvedValue()
   },
   transporter: {}
 });

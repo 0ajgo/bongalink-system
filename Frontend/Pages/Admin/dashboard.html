@@ -15,7 +15,8 @@
        GET /api/admin/ml/dashboard   stock counts, month sales, trend, top products
        GET /api/v1/admin/orders/to-ship
        GET /api/admin/ml/status      forecast model status
-       GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer -->
+       GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer
+       GET /api/v1/admin/accounts/summary  accounts: total, new this week, suspended -->
 <main id="main" class="container page">
   <div class="page-head">
     <div>
@@ -25,11 +26,12 @@
     <div class="row">
       <a class="btn btn--secondary" href="inventory.html"><i data-icon="boxes" data-size="18"></i> Inventory</a>
       <a class="btn btn--secondary" href="deliveries.html"><i data-icon="truck" data-size="18"></i> Deliveries</a>
+      <a class="btn btn--secondary" href="accounts.html"><i data-icon="users" data-size="18"></i> Accounts</a>
       <a class="btn btn--secondary" href="inventory.html#forecasts"><i data-icon="layout-dashboard" data-size="18"></i> Forecasts</a>
     </div>
   </div>
 
-  <div class="stat-grid stat-grid--6" aria-live="polite">
+  <div class="stat-grid stat-grid--4" aria-live="polite">
     <a class="card stat" href="deliveries.html" id="statToShip">
       <span class="stat__label"><i data-icon="truck" data-size="16"></i> Orders to ship</span>
       <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
@@ -58,6 +60,11 @@
     <a class="card stat" href="inventory.html#forecasts" id="statModel">
       <span class="stat__label"><i data-icon="cpu" data-size="16"></i> Forecast model</span>
       <span class="stat__value stat__value--sm"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+    <a class="card stat stat--wide" href="accounts.html" id="statAccounts">
+      <span class="stat__label"><i data-icon="users" data-size="16"></i> Accounts</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
       <span class="stat__sub">&nbsp;</span>
     </a>
   </div>

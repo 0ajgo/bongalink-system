@@ -28,6 +28,14 @@ function showMessage(message, type) {
   loginMessage.innerHTML = `${icon(type === "error" ? "circle-alert" : "check", { size: 18 })}<span>${escapeHTML(message)}</span>`;
 }
 
+// Sent here by api.js when the account was suspended or the session was ended.
+const ENDED = {
+  suspended: ["Your account is suspended. Contact the shop.", "error"],
+  ended: ["Your session has ended. Please log in again.", "info"]
+};
+const ended = ENDED[new URLSearchParams(location.search).get("ended")];
+if (ended) showMessage(...ended);
+
 togglePassword.addEventListener("click", () => {
   const show = passwordInput.type === "password";
   passwordInput.type = show ? "text" : "password";

@@ -277,7 +277,7 @@ describe("admin dashboard", () => {
     expect(page.$$("#trendChart .bar")).toHaveLength(30);
     expect(page.$("#trendTable table").rows).toHaveLength(31);
     expect(page.$("#topProducts").textContent).toContain("Printhead L3210");
-    expect(page.$$(".page-head a").map(a => a.getAttribute("href"))).toEqual(["inventory.html", "deliveries.html", "inventory.html#forecasts"]);
+    expect(page.$$(".page-head a").map(a => a.getAttribute("href"))).toEqual(["inventory.html", "deliveries.html", "accounts.html", "inventory.html#forecasts"]);
 
     page.$('[data-metric="units"]').click();
     expect(page.$('[data-metric="units"]').getAttribute("aria-pressed")).toBe("true");

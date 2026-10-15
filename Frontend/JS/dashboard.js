@@ -41,6 +41,16 @@ async function loadChat() {
   }
 }
 
+// Accounts: total, new in the last 7 days, suspended.
+async function loadAccountsTile() {
+  try {
+    const s = await apiFetch("/v1/admin/accounts/summary");
+    setStat("statAccounts", String(s.total), `${s.new_this_week} new this week · ${s.suspended} suspended · ${s.admins} admin${s.admins === 1 ? "" : "s"}`);
+  } catch (err) {
+    setStat("statAccounts", "—", `Couldn't load: ${err.message}`);
+  }
+}
+
 const ML_STATE = { up_to_date: ["Up to date", "success"], updating: ["Updating", "info"], failed: ["Failed", "error"] };
 async function loadModel() {
   try {
@@ -125,4 +135,5 @@ if (requireAdminPage()) {
   loadToShip();
   loadModel();
   loadChat();
+  loadAccountsTile();
 }

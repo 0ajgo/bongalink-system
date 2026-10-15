@@ -160,7 +160,7 @@ const initials = (name) => (String(name).match(/[A-Za-z0-9]/g) || ["?"]).slice(0
 const ROLE_LABEL = { admin: "Admin", user: "Customer" };
 
 /* --- Header ----------------------------------------------------------- */
-// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries" | "rates" | "chat"
+// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries" | "rates" | "chat" | "accounts"
 // search: true to show the search box (submits to the catalog)
 function renderHeader({ active = "", search = true } = {}) {
   const root = document.getElementById("site-header");
@@ -174,7 +174,8 @@ function renderHeader({ active = "", search = true } = {}) {
       { key: "inventory", href: `${UI_ROOT}Admin/inventory.html`, label: "Inventory", icon: "boxes" },
       { key: "deliveries", href: `${UI_ROOT}Admin/deliveries.html`, label: "Deliveries", icon: "truck" },
       { key: "rates", href: `${UI_ROOT}Admin/rates.html`, label: "Rates", icon: "landmark" },
-      { key: "chat", href: `${UI_ROOT}Admin/chat.html`, label: "Chat & FAQs", icon: "messages-square" }
+      { key: "chat", href: `${UI_ROOT}Admin/chat.html`, label: "Chat & FAQs", icon: "messages-square" },
+      { key: "accounts", href: `${UI_ROOT}Admin/accounts.html`, label: "Accounts", icon: "users" }
     ] : [])
   ];
   const toShip = admin ? `<a class="badge badge--warning to-ship" href="${UI_ROOT}Admin/deliveries.html" data-to-ship hidden></a>` : "";
@@ -220,7 +221,7 @@ function renderHeader({ active = "", search = true } = {}) {
     <a class="btn btn--ghost hide-mobile" href="${UI_ROOT}Homepage/login.html">Log in</a>
     <a class="btn btn--primary" href="${UI_ROOT}Homepage/register.html">Sign up</a>`;
 
-  root.className = "site-header";
+  root.className = admin ? "site-header site-header--admin" : "site-header";   // admin: long nav, text-only links
   root.innerHTML = `
     <div class="container site-header__inner">
       <button class="btn btn--ghost btn--icon menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-panel">

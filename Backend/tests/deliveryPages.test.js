@@ -237,9 +237,9 @@ describe("header navigation and account indicator (every page)", () => {
     page.close();
   });
 
-  test("admins see Dashboard, Inventory, Deliveries, Rates and Chat & FAQs, no cart, and an Admin badge", async () => {
+  test("admins see Dashboard, Inventory, Deliveries, Rates, Chat & FAQs and Accounts, no cart, and an Admin badge", async () => {
     const page = await openPage("Pages/Homepage/homepage.html", { role: "admin", username: "owner", api });
-    expect(navLabels(page)).toEqual(["Shop", "Dashboard", "Inventory", "Deliveries", "Rates", "Chat & FAQs"]);
+    expect(navLabels(page)).toEqual(["Shop", "Dashboard", "Inventory", "Deliveries", "Rates", "Chat & FAQs", "Accounts"]);
     expect(page.$(".cart-link")).toBeNull();
     expect(page.$(".account__role").textContent).toBe("Admin");
     expect(page.$$("#account-menu a").map(a => [a.textContent.trim(), a.getAttribute("href")]))

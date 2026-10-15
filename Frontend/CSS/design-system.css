@@ -460,7 +460,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .mobile-panel .site-nav a { min-height: var(--tap); font-size: var(--text-base); }
 }
 @media (max-width: 640px) { .brand__since { display: none; } }
-/* Narrow desktops (the admin nav has seven items): text-only links, avatar without the name. */
+/* Admin header: eight links plus the "to ship" badge, so the desktop nav is text-only. */
+@media (min-width: 961px) {
+  .site-header--admin .site-header__inner { gap: var(--space-3); }
+  .site-header--admin .site-header__inner > .site-nav a { padding: 0 var(--space-2); }
+  .site-header--admin .site-header__inner > .site-nav a .icon { display: none; }
+}
+/* Narrow desktops: text-only links, avatar without the name. */
 @media (min-width: 961px) and (max-width: 1240px) {
   .site-header__inner { gap: var(--space-3); }
   .site-header__inner > .site-nav a { padding: 0 var(--space-2); }

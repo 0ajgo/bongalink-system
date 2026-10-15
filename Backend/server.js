@@ -27,6 +27,7 @@ const geoRoutes = require("./routes/geo");
 const rateRoutes = require("./routes/rates");
 const chatRoutes = require("./routes/chat");
 const chatAdminRoutes = require("./routes/chatAdmin");
+const adminAccountRoutes = require("./routes/adminAccounts");
 const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
@@ -62,6 +63,7 @@ app.use("/api/v1/admin/shipping-rates", rateRoutes);
 app.use("/api/v1/payments", paymentRoutes);
 app.use("/api/v1", chatRoutes);              // /chat/messages (AI chat support, Gemini server-side)
 app.use("/api/v1", chatAdminRoutes);         // /admin/chat/*, /admin/faqs
+app.use("/api/v1/admin/accounts", adminAccountRoutes);   // account management (admins)
 app.use("/api/v1", logisticsRoutes); // /shipping/quote, /orders/:id/tracking, /admin/shipments, /webhooks/lalamove
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
@@ -76,7 +78,7 @@ app.use((err, req, res, next) => {
   }
   const status = err instanceof multer.MulterError ? 400 : err.status || err.statusCode || 500;
   if (status < 500) {
-    return res.status(status).json({ error: err.message || "Invalid request." });
+    return res.status(status).json({ error: err.message || "Invalid request.", ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) ? { code: err.code } : {}) });
   }
   console.error(err);
   res.status(500).json({ error: "Something went wrong." });

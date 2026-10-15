@@ -46,9 +46,24 @@ async function apiFetch(path, options = {}) {
     const error = new Error(data.error || "Something went wrong.");
     error.status = response.status;
     error.code = data.code;
+    // Suspended by the shop, or logged out by an account change (e.g. a new role):
+    // the token no longer works anywhere, so end the session and go to the login page.
+    if (token && SESSION_ENDED_CODES[data.code] && !path.startsWith("/auth/")) endSession(SESSION_ENDED_CODES[data.code]);
     throw error;
   }
   return data;
+}
+
+const SESSION_ENDED_CODES = { ACCOUNT_SUSPENDED: "suspended", SESSION_ENDED: "ended" };
+
+// Clears the login and sends the user to the login page, which explains why
+// (?ended=suspended|ended) and brings them back here after logging in.
+function endSession(reason) {
+  ["bongalink_token", "bongalink_logged_in", "bongalink_role", "bongalink_username"]
+    .forEach(k => sessionStorage.removeItem(k));
+  const here = location.pathname.split("/Pages/")[1];
+  const next = here && !here.startsWith("Homepage/login.html") ? `&next=${encodeURIComponent(here + location.search)}` : "";
+  location.href = `../Homepage/login.html?ended=${reason}${next}`;
 }
 
 /* Shared auth-check helpers — used by Homepage.js and by the checkout.html

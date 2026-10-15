@@ -77,6 +77,20 @@ const mail = {
       ].join('\n')
     ),
 
+  // An admin created this account: verify the email and choose a password (REQ010).
+  accountInvite: (to, name, role, link, ttlHours) =>
+    send(
+      to,
+      'Set up your Bongalink account',
+      layout('Your Bongalink account is ready', `<p>Hi ${esc(name)},</p>
+        <p>The shop created a Bongalink ${role === 'admin' ? '<b>admin</b> ' : ''}account for you.
+        Your username is <b>${esc(name)}</b>.</p>
+        <p>Open this link to confirm your email and choose your password:</p>
+        <p><a href="${esc(link)}" style="display:inline-block;background:#14498c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Set my password</a></p>
+        <p>The link works once and expires in ${ttlHours} hours. If you weren't expecting this, you can ignore this email.</p>`),
+      `The shop created a Bongalink account for you (username ${name}). Set your password within ${ttlHours} hours: ${link}`
+    ),
+
   delivered: (to, name, orderId) =>
     send(
       to,
