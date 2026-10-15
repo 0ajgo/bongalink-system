@@ -29,7 +29,9 @@ Admin edits product ──► Node API (Backend/routes/products.js)
 | Price changed | `PRICE_CHANGED` | Recorded in the audit trail; re-scores |
 | Product ID changed | `ID_CHANGED` | Recorded in the audit trail; re-scores |
 | Nothing for an hour | — | Full re-score (new orders change demand without touching `products`) |
-| Nightly (first poll after 02:00) or 200 newly sold items | — | **Retrain** with TensorFlow |
+| Admin clicks **Update forecasts & trends** (Forecasts page or Dashboard) | queued run | **Retrain** on the next poll |
+| Nightly (first poll after `ML_RETRAIN_HOUR`, 02:00) | — | **Retrain** |
+| `ML_RETRAIN_NEW_ORDERS` (50) new paid orders or `ML_RETRAIN_STOCK_CHANGES` (100) stock changes since the last training | — | **Retrain** |
 
 No event ever needs a retrain: the stock model takes 6 per-product features, not the product
 list, so adding or removing products only changes *which* products are scored.
@@ -40,6 +42,22 @@ window that mean "didn't exist yet", not "no demand". Its forecast column shows 
 model forecast of its category (or of the whole store if the category has none), tagged
 `insufficient_data`. That estimate never triggers a reorder by itself; only an empty shelf does.
 Trend detection likewise needs 84 days.
+
+### Retraining on demand and automatically (REQ028)
+Every retraining is a row in `ml_training_runs` (migration 010): what started it (an admin's
+button, the nightly schedule, new data, or `--retrain`), its progress (queued → training →
+done / failed), the sales records, orders and products it used, the accuracy (validation MAE
+of the new model, of the model in use, and of a naive average), and the result. The admin
+Forecasts page shows the latest runs and polls for progress.
+
+The API never trains: `POST /api/admin/ml/training` only queues a run, and this worker picks
+it up on its next poll. Only one run can be queued or training at a time: `active_slot`
+has a unique key, so the database refuses a second run from any source (two admins, the
+schedule, or a second worker process). If the worker stops mid-run, the run is marked failed
+when it starts again. Any of the automatic triggers can be turned off with `off` in `.env`.
+
+The worker reads only products, orders (status and date), order items and the `ml_*` tables:
+no personal data, and it never needs the backend's encryption keys.
 
 ### Retraining safety
 Every attempt is recorded in `ml_model_versions`:

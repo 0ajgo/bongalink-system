@@ -5,9 +5,10 @@
    ml_events (written by the Python worker in ml/worker and by the
    product triggers), plus products/orders/order_items for history.
 
-   Read-only: these routes never call the ML worker, so a slow or
-   stopped worker can't block the dashboard or product CRUD. They just
-   show whatever the worker last wrote, and how fresh it is.
+   These routes never call the ML worker, so a slow or stopped worker
+   can't block the dashboard or product CRUD. They show whatever the
+   worker last wrote, and how fresh it is. The one write is queueing a
+   retrain (POST /training), which the worker picks up on its next poll.
    ===================================================================== */
 
 const express = require("express");
@@ -255,6 +256,126 @@ router.get("/events", async (req, res) => {
   } catch (err) {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load change log." });
+  }
+});
+
+/* ---------------------------------------------------------------------
+   RETRAINING (REQ028) — the "Update forecasts & trends" button.
+   The API never trains: it queues a run in ml_training_runs and the ML
+   worker (ml/worker) picks it up on its next poll, trains, and records
+   the result there. The worker also starts runs on its own: nightly, and
+   when enough new paid orders or stock changes have come in.
+   Only one run at a time: while a run is queued or training, the
+   database's unique key on active_slot refuses another one.
+   --------------------------------------------------------------------- */
+
+// A queued/training run whose worker has been silent this long is treated as dead.
+const STALE_RUN_SECONDS = 10 * 60;
+
+const runRow = (r) => r && ({
+  run_id: r.run_id, trigger_type: r.trigger_type, trigger_detail: r.trigger_detail,
+  requested_by: r.requested_by_label, status: r.status, outcome: r.outcome, model_version: r.model_version,
+  sales_records: r.sales_records, orders_used: r.orders_used, products_used: r.products_used,
+  train_rows: r.train_rows, val_rows: r.val_rows, data_from: r.data_from, data_to: r.data_to,
+  val_mae: r.val_mae, baseline_val_mae: r.baseline_val_mae, naive_val_mae: r.naive_val_mae,
+  message: r.message, queued_at: r.queued_at, started_at: r.started_at, finished_at: r.finished_at,
+});
+
+async function workerHeartbeatAge(conn = pool) {
+  const [[s]] = await conn.query("SELECT TIMESTAMPDIFF(SECOND, heartbeat_at, NOW()) AS age FROM ml_status WHERE id = 1");
+  return s?.age ?? null;
+}
+
+// GET /api/admin/ml/training — the current run, recent runs, model accuracy, automatic triggers.
+router.get("/training", async (req, res) => {
+  try {
+    const [[current]] = await pool.query("SELECT * FROM ml_training_runs WHERE active_slot = 1");
+    const [runs] = await pool.query("SELECT * FROM ml_training_runs ORDER BY run_id DESC LIMIT 10");
+    const [[lastDone]] = await pool.query(
+      "SELECT * FROM ml_training_runs WHERE status = 'done' AND outcome IN ('promoted','rejected') ORDER BY run_id DESC LIMIT 1");
+    const [[status]] = await pool.query(
+      `SELECT last_train_at, last_train_status, last_train_message, auto_retrain_hour, auto_retrain_orders,
+              auto_retrain_stock_changes, sold_orders_at_last_train, event_id_at_last_train FROM ml_status WHERE id = 1`);
+    const [[model]] = await pool.query(
+      `SELECT version, trained_with, trained_at, train_rows, val_rows, val_mae, baseline_val_mae
+         FROM ml_model_versions WHERE status = 'active' ORDER BY version_id DESC LIMIT 1`);
+    const [[orders]] = await pool.query("SELECT COUNT(*) AS n FROM orders WHERE status IN (?)", [SOLD_STATUSES]);
+    const [[changes]] = await pool.query(
+      "SELECT COUNT(*) AS n FROM ml_events WHERE event_type = 'STOCK_CHANGED' AND event_id > ?", [status?.event_id_at_last_train || 0]);
+    const age = await workerHeartbeatAge();
+
+    res.json({
+      current: runRow(current) || null,
+      runs: runs.map(runRow),
+      last_completed: runRow(lastDone) || null,
+      last_trained_at: status?.last_train_at || null,
+      last_result: status?.last_train_status ? { status: status.last_train_status, message: status.last_train_message } : null,
+      model: model || null,
+      worker_online: age !== null && age <= WORKER_TIMEOUT_SECONDS,
+      auto: {
+        nightly_hour: status?.auto_retrain_hour ?? null,
+        new_orders: { threshold: status?.auto_retrain_orders ?? null, since_last: Math.max(orders.n - (status?.sold_orders_at_last_train || 0), 0) },
+        stock_changes: { threshold: status?.auto_retrain_stock_changes ?? null, since_last: changes.n },
+      },
+    });
+  } catch (err) {
+    logError("Forecasts request failed", err);
+    res.status(500).json({ error: "Could not load the training status." });
+  }
+});
+
+// POST /api/admin/ml/training — queue a retrain (the button). 202 with the run; 409 if one is running.
+// Requests to queue a retrain run one at a time (a named lock), so two admins clicking at
+// the same moment get one run and one "already queued", never a database deadlock.
+const QUEUE_LOCK = "bongalink_ml_retrain";
+
+router.post("/training", async (req, res) => {
+  const conn = await pool.getConnection();
+  let locked = false;
+  try {
+    const [[{ ok }]] = await conn.query("SELECT GET_LOCK(?, 10) AS ok", [QUEUE_LOCK]);
+    if (ok !== 1) return res.status(503).json({ error: "Busy, please try again." });
+    locked = true;
+    await conn.beginTransaction();
+    const [[active]] = await conn.query("SELECT * FROM ml_training_runs WHERE active_slot = 1 FOR UPDATE");
+    if (active) {
+      const age = await workerHeartbeatAge(conn);
+      const workerGone = age === null || age > STALE_RUN_SECONDS;
+      if (!workerGone) {
+        await conn.rollback();
+        const who = active.requested_by_label ? `by ${active.requested_by_label}` : `automatically (${active.trigger_detail || active.trigger_type})`;
+        return res.status(409).json({
+          error: `A retrain is already ${active.status === "queued" ? "queued" : "running"}, started ${who}. Wait for it to finish.`,
+          code: "RETRAIN_IN_PROGRESS", run: runRow(active),
+        });
+      }
+      // Its worker has been silent for a long time: free the slot so training can be requested again.
+      await conn.query(
+        `UPDATE ml_training_runs SET status = 'failed', outcome = 'failed', finished_at = NOW(3),
+                message = 'The ML worker stopped before finishing this run. The model in use was kept.'
+          WHERE run_id = ?`, [active.run_id]);
+    }
+    const [r] = await conn.query(
+      `INSERT INTO ml_training_runs (trigger_type, trigger_detail, requested_by, requested_by_label)
+       VALUES ('manual', 'Update forecasts & trends button', ?, ?)`, [req.user.userId, req.user.username]);
+    await conn.query(
+      `INSERT INTO admin_audit_log (admin_id, admin_label, action, target_user_id, target_label, new_value)
+       VALUES (?, ?, 'ml_retrain', NULL, 'Stock forecasts', ?)`,
+      [req.user.userId, req.user.username, JSON.stringify({ run_id: r.insertId })]);
+    await conn.commit();
+    const [[run]] = await pool.query("SELECT * FROM ml_training_runs WHERE run_id = ?", [r.insertId]);
+    const age = await workerHeartbeatAge();
+    res.status(202).json({ run: runRow(run), worker_online: age !== null && age <= WORKER_TIMEOUT_SECONDS });
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    if (err.code === "ER_DUP_ENTRY") {   // another admin queued one at the same moment
+      return res.status(409).json({ error: "A retrain was just started. Wait for it to finish.", code: "RETRAIN_IN_PROGRESS" });
+    }
+    logError("Queueing a retrain failed", err);
+    res.status(500).json({ error: "Could not start the update." });
+  } finally {
+    if (locked) await conn.query("DO RELEASE_LOCK(?)", [QUEUE_LOCK]).catch(() => {});
+    conn.release();
   }
 });
 

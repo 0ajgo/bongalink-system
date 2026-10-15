@@ -22,6 +22,15 @@ def _int(name: str, default: int) -> int:
     return int(os.environ.get(name, default))
 
 
+def _optional_int(name: str, default: int | None) -> int | None:
+    """A number, or None when set to "off" (or left empty) to turn the feature off."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    raw = raw.strip().lower()
+    return None if raw in ("", "off", "none") else int(raw)
+
+
 def _path(name: str, default: Path) -> Path:
     p = Path(os.environ.get(name, default))
     return p if p.is_absolute() else (WORKER_DIR / p).resolve()
@@ -44,8 +53,10 @@ class Settings:
     cold_start_days: int = _int("ML_COLD_START_DAYS", 28)
     # Trend labels need sales on at least this many distinct days in the 84-day window.
     trend_min_sale_days: int = _int("ML_TREND_MIN_SALE_DAYS", 8)
-    retrain_items: int = _int("ML_RETRAIN_ITEMS", 200)         # sold items since last training
-    retrain_hour: int = _int("ML_RETRAIN_HOUR", 2)             # nightly retrain, local hour
+    # Automatic retraining (REQ028); each can be turned off with "off".
+    retrain_hour: int | None = _optional_int("ML_RETRAIN_HOUR", 2)                # nightly, first poll at/after this local hour
+    retrain_new_orders: int | None = _optional_int("ML_RETRAIN_NEW_ORDERS", 50)   # new paid orders since the last training
+    retrain_stock_changes: int | None = _optional_int("ML_RETRAIN_STOCK_CHANGES", 100)   # stock changes since then
     # "tensorflow" (default): retraining fails loudly if TensorFlow is missing.
     # "auto": fall back to closed-form least squares, recorded in trained_with.
     trainer: str = os.environ.get("ML_TRAINER", "tensorflow")

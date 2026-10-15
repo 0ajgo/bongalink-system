@@ -1,7 +1,7 @@
 """Integration tests against a throwaway MySQL database (bongalink_worker_test).
 
 Needs the MySQL server from ml/worker/.env; skipped if it can't be reached.
-The database is recreated from the real schema + migration 003 and the synthetic
+The database is recreated from the real schema + migrations 003-010 and the synthetic
 data in tests/fixture_data.py, so these exercise the actual triggers, not a mock of them.
 """
 import dataclasses
@@ -172,6 +172,12 @@ class WorkerFlow(unittest.TestCase):
         self.assertIn("simulated crash", st["last_train_message"])
         failed = self.q("SELECT status FROM ml_model_versions ORDER BY version_id DESC LIMIT 1")[0]
         self.assertEqual(failed["status"], "failed")
+        run = self.q("SELECT * FROM ml_training_runs ORDER BY run_id DESC LIMIT 1")[0]
+        self.assertEqual((run["trigger_type"], run["status"], run["outcome"], run["active_slot"]),
+                         ("command_line", "failed", "failed", None))
+        self.assertIn("simulated crash", run["message"])
+        # The predictions still come from the model in use.
+        self.assertEqual({r["model_version"] for r in self.q("SELECT DISTINCT model_version FROM ml_predictions")}, {active})
 
     def test_t9_worse_model_is_rejected(self):
         active = db.active_model_version(self.conn)["version"]
@@ -190,6 +196,105 @@ class WorkerFlow(unittest.TestCase):
                      "ORDER BY version_id DESC LIMIT 1")[0]
         self.assertEqual(row["status"], "rejected")
         self.assertGreater(row["val_mae"], row["baseline_val_mae"])
+
+
+    # ------------------------------------------------------------------ training runs (REQ028)
+    def queue_run(self, admin="owner"):
+        """What POST /api/admin/ml/training does."""
+        with self.conn.cursor() as cur:
+            cur.execute("""INSERT INTO ml_training_runs (trigger_type, trigger_detail, requested_by, requested_by_label)
+                           VALUES ('manual', 'Update forecasts & trends button', 1, %s)""", (admin,))
+            return cur.lastrowid
+
+    def test_u1_queued_run_is_trained_and_recorded(self):
+        run_id = self.queue_run()
+        result = self.worker.maybe_retrain()
+        self.assertIn(result.status, ("promoted", "rejected"))
+        run = self.q("SELECT * FROM ml_training_runs WHERE run_id = %s", (run_id,))[0]
+        self.assertEqual((run["status"], run["outcome"], run["requested_by_label"]), ("done", result.status, "owner"))
+        self.assertIsNotNone(run["started_at"])
+        self.assertIsNotNone(run["finished_at"])
+        self.assertGreater(run["sales_records"], 1000)
+        self.assertGreater(run["orders_used"], 500)
+        self.assertGreater(run["products_used"], 5)
+        self.assertGreater(run["train_rows"], 0)
+        self.assertIsNotNone(run["val_mae"])
+        self.assertIsNotNone(run["naive_val_mae"])
+        self.assertEqual(run["model_version"], result.version)
+        # Nothing left to do afterwards.
+        self.assertIsNone(self.worker.maybe_retrain())
+
+    def test_u2_only_one_run_at_a_time(self):
+        import pymysql
+        run_id = self.queue_run()
+        with self.assertRaises(pymysql.err.IntegrityError):    # the database refuses a second queued run
+            self.queue_run("someone-else")
+        self.assertIsNone(db.start_run(self.conn, "nightly", "nightly retraining"))   # and an automatic one
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE ml_training_runs SET status = 'training' WHERE run_id = %s", (run_id,))
+        self.assertIsNone(db.claim_queued_run(self.conn))
+        self.assertIsNone(db.start_run(self.conn, "new_data", "x"))
+        # A worker restart finds the stuck run and marks it failed, freeing the slot.
+        Worker(SETTINGS, conn=self.conn)
+        run = self.q("SELECT status, outcome, message FROM ml_training_runs WHERE run_id = %s", (run_id,))[0]
+        self.assertEqual((run["status"], run["outcome"]), ("failed", "failed"))
+        self.assertIn("stopped during training", run["message"])
+        self.assertIsNotNone(db.start_run(self.conn, "command_line", "x"))
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE ml_training_runs SET status = 'done' WHERE status = 'training'")
+
+    def test_u3_automatic_triggers_fire_at_the_threshold(self):
+        w = self.worker
+        original = w.s
+        try:
+            w.s = dataclasses.replace(original, retrain_hour=None, retrain_new_orders=3, retrain_stock_changes=4)
+            # Just trained: nothing is due.
+            with self.conn.cursor() as cur:
+                cur.execute("""UPDATE ml_status SET last_train_at = NOW(),
+                               sold_orders_at_last_train = (SELECT COUNT(*) FROM orders
+                                 WHERE status IN ('processing','completed','paid','packed','shipped','delivered')),
+                               event_id_at_last_train = (SELECT COALESCE(MAX(event_id), 0) FROM ml_events) WHERE id = 1""")
+            self.assertIsNone(w.auto_retrain_reason())
+
+            def paid_order():
+                with self.conn.cursor() as cur:
+                    cur.execute("INSERT INTO orders (user_id, status, total_amount) VALUES (2, 'paid', 100)")
+            paid_order(); paid_order()
+            self.assertIsNone(w.auto_retrain_reason())                       # 2 of 3
+            paid_order()
+            self.assertEqual(w.auto_retrain_reason(), ("new_data", "3 new paid orders since the last training"))
+
+            w.s = dataclasses.replace(w.s, retrain_new_orders=None)          # orders trigger off
+            pid = self.q("SELECT product_id FROM products WHERE name = 'Logitech USB Mouse'")[0]["product_id"]
+            for stock in (70, 71, 72):
+                self.as_admin("UPDATE products SET stock_quantity = %s WHERE product_id = %s", (stock, pid))
+            self.assertIsNone(w.auto_retrain_reason())                       # 3 of 4
+            self.as_admin("UPDATE products SET stock_quantity = 73 WHERE product_id = %s", (pid,))
+            self.assertEqual(w.auto_retrain_reason(), ("new_data", "4 stock changes since the last training"))
+
+            w.s = dataclasses.replace(w.s, retrain_stock_changes=None, retrain_hour=0)
+            self.assertIsNone(w.auto_retrain_reason())                       # already trained today
+            with self.conn.cursor() as cur:
+                cur.execute("UPDATE ml_status SET last_train_at = NOW() - INTERVAL 1 DAY WHERE id = 1")
+            self.assertEqual(w.auto_retrain_reason(), ("nightly", "nightly retraining (after 00:00)"))
+
+            # When it fires, the run is recorded with its trigger, and the counters move on.
+            w.s = dataclasses.replace(w.s, retrain_hour=None, retrain_new_orders=3)
+            paid_order(); paid_order(); paid_order()
+            with mock.patch.object(training, "train_model", side_effect=RuntimeError("simulated crash")):
+                result = w.maybe_retrain()
+            self.assertEqual(result.status, "failed")
+            run = self.q("SELECT trigger_type, trigger_detail, status FROM ml_training_runs ORDER BY run_id DESC LIMIT 1")[0]
+            self.assertEqual((run["trigger_type"], run["status"]), ("new_data", "failed"))
+            self.assertIn("new paid orders", run["trigger_detail"])
+            self.assertIsNone(w.auto_retrain_reason())                       # counted from this run on
+        finally:
+            w.s = original
+
+    def test_u4_settings_are_published_for_the_admin_page(self):
+        st = db.get_status(self.conn)
+        self.assertEqual((st["auto_retrain_hour"], st["auto_retrain_orders"], st["auto_retrain_stock_changes"]),
+                         (SETTINGS.retrain_hour, SETTINGS.retrain_new_orders, SETTINGS.retrain_stock_changes))
 
 
 if __name__ == "__main__":

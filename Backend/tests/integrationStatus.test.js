@@ -94,6 +94,7 @@ describe("server startup output", () => {
     expect(out).toContain("  Email:      enabled (");
     expect(out).toContain("  Gemini:     enabled (model ");
     expect(out).toContain("  Encryption: enabled (AES-256-GCM, key v1)");
+    expect(out).toMatch(/\n {2}ML: {9}(enabled|worker not running|not set up)/);
     for (const secret of [...SECRETS, ...realValues]) expect(out).not.toContain(secret);
   }, 20000);
 });

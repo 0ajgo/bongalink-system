@@ -23,7 +23,8 @@ from bongalink_ml.core import is_payday
 
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "Backend" / "database" / "bongalink_schema.sql"
-MIGRATION = ROOT / "Backend" / "database" / "migrations" / "003_ml_sync.sql"
+# Same migrations as the backend's test database (003 = ML triggers ... 010 = training runs).
+MIGRATIONS = sorted(p for p in (ROOT / "Backend" / "database" / "migrations").glob("0*.sql") if p.name >= "003")
 NO_LOGIN = "!test-fixture-no-login"
 
 CATEGORIES = [(1, "Printer Parts"), (2, "Computer Parts"), (3, "Laptop Parts"),
@@ -96,7 +97,8 @@ def build(database: str, days: int = 150, seed_value: int = 2026) -> None:
         cur.execute("SELECT CURDATE()")
         today = cur.fetchone()[0]
     sqlscript.run_file(conn, SCHEMA)
-    sqlscript.run_file(conn, MIGRATION)
+    for migration in MIGRATIONS:
+        sqlscript.run_file(conn, migration)
 
     start = today - dt.timedelta(days=days)
     dates = [start + dt.timedelta(days=i) for i in range(days)]   # up to yesterday

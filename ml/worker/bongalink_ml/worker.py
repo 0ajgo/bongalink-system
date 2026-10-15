@@ -7,7 +7,11 @@ Every poll (ML_POLL_SECONDS):
      inference pass for the whole batch, so 20 quick edits = 1 update;
   3. otherwise re-score everything every ML_FULL_REFRESH_MINUTES (new orders and
      order-status changes change demand without touching the products table);
-  4. retrain nightly or after ML_RETRAIN_ITEMS newly sold items.
+  4. retrain (REQ028), recording each run in ml_training_runs:
+     - first, a run an admin queued with "Update forecasts & trends";
+     - otherwise nightly (ML_RETRAIN_HOUR), or once ML_RETRAIN_NEW_ORDERS new paid orders
+       or ML_RETRAIN_STOCK_CHANGES stock changes have arrived since the last training.
+     Only one run at a time (the database refuses a second); a failed run keeps the model in use.
 
 The worker only reads products/orders and writes the ml_* tables, so it can
 never block the admin's product CRUD.
@@ -39,6 +43,12 @@ class Worker:
         self.last_full_refresh = 0.0
         self.retry_after = 0.0
         self._ensure_model()
+        # A run left "training" means the worker stopped mid-run; say so instead of leaving it stuck.
+        if db.fail_interrupted_runs(self.conn):
+            log.warning("marked an interrupted training run as failed")
+        # Tell the admin page which automatic triggers are on.
+        db.set_status(self.conn, auto_retrain_hour=settings.retrain_hour, auto_retrain_orders=settings.retrain_new_orders,
+                      auto_retrain_stock_changes=settings.retrain_stock_changes)
 
     # ------------------------------------------------------------ models
     def _ensure_model(self) -> None:
@@ -112,24 +122,56 @@ class Worker:
         return self.refresh(p["max_id"], f"{len(events)} events: {summary}; {why}")
 
     # ------------------------------------------------------------ training
-    def maybe_retrain(self, force: bool = False) -> training.TrainResult | None:
+    def auto_retrain_reason(self) -> tuple[str, str] | None:
+        """(trigger_type, detail) when an automatic retrain is due, else None."""
         status = db.get_status(self.conn)
-        sold = db.sold_items_total(self.conn)
-        today = db.today(self.conn)
         last = status["last_train_at"]
-        new_items = sold - status["sold_items_at_last_train"]
-        nightly_due = (time.localtime().tm_hour >= self.s.retrain_hour
-                       and (last is None or last.date() < today))
-        threshold_due = new_items >= self.s.retrain_items
-        if not (force or nightly_due or threshold_due):
-            return None
+        hour = self.s.retrain_hour
+        if hour is not None and time.localtime().tm_hour >= hour and (last is None or last.date() < db.today(self.conn)):
+            return "nightly", f"nightly retraining (after {hour:02d}:00)"
+        if self.s.retrain_new_orders is not None:
+            new_orders = db.sold_orders_total(self.conn) - status["sold_orders_at_last_train"]
+            if new_orders >= self.s.retrain_new_orders:
+                return "new_data", f"{new_orders} new paid orders since the last training"
+        if self.s.retrain_stock_changes is not None:
+            changes = db.stock_changes_since(self.conn, status["event_id_at_last_train"])
+            if changes >= self.s.retrain_stock_changes:
+                return "new_data", f"{changes} stock changes since the last training"
+        return None
 
-        reason = "forced" if force else ("nightly" if nightly_due else f"{new_items} new sold items")
-        log.info("retraining (%s)", reason)
+    def maybe_retrain(self, force: bool = False) -> training.TrainResult | None:
+        """Runs one retraining if one is queued (admin button), forced (--retrain) or due."""
+        run = db.claim_queued_run(self.conn)
+        if run is None:
+            if force:
+                trigger = ("command_line", "python -m bongalink_ml --retrain")
+            else:
+                trigger = self.auto_retrain_reason()
+                if trigger is None:
+                    return None
+            run = db.start_run(self.conn, *trigger)
+            if run is None:
+                log.info("not retraining (%s): another training run is already in progress", trigger[1])
+                return None
+        return self._train(run)
+
+    def _train(self, run: dict) -> training.TrainResult:
+        who = run["requested_by_label"] or run["trigger_type"]
+        log.info("retraining (run %s: %s, %s)", run["run_id"], who, run["trigger_detail"] or "")
         db.set_status(self.conn, state="updating")
-        result = training.retrain(self.conn, self.s.models_dir, self.model, self.s.trainer)
+        # The counters the new-data trigger compares against, taken before training.
+        counters = {"sold_items_at_last_train": db.sold_items_total(self.conn),
+                    "sold_orders_at_last_train": db.sold_orders_total(self.conn),
+                    "event_id_at_last_train": db.max_event_id(self.conn)}
+        try:
+            result = training.retrain(self.conn, self.s.models_dir, self.model, self.s.trainer)
+        except Exception as e:   # retrain() already catches training errors; this is the last guard
+            log.exception("retraining crashed; keeping the active model")
+            result = training.TrainResult("failed", f"Retraining failed, kept the active model: {type(e).__name__}: {e}"[:1000])
         db.set_status(self.conn, last_train_at="NOW()", last_train_status=result.status,
-                      last_train_message=result.message, sold_items_at_last_train=sold)
+                      last_train_message=result.message, **counters)
+        db.finish_run(self.conn, run["run_id"], status="failed" if result.status == "failed" else "done",
+                      outcome=result.status, message=result.message, model_version=result.version, stats=result.stats)
         if result.status == "promoted":
             self._load(db.active_model_version(self.conn))
             self.refresh(None, f"new model {result.version}")

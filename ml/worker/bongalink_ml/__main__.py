@@ -1,6 +1,6 @@
 """python -m bongalink_ml            run the worker until stopped (Ctrl+C / docker stop)
    python -m bongalink_ml --once     process pending events (or refresh everything) once, then exit
-   python -m bongalink_ml --retrain  retrain now (ignores the nightly/200-item schedule), then exit
+   python -m bongalink_ml --retrain  retrain now (ignores the automatic schedule), then exit
 """
 import argparse
 import logging
@@ -27,6 +27,9 @@ def main() -> int:
     worker = Worker(config.load())
     if args.retrain:
         result = worker.maybe_retrain(force=True)
+        if result is None:
+            print("Another training run is already queued or in progress; try again when it finishes.")
+            return 1
         print(result.message)
         return 0 if result.status in ("promoted", "rejected", "skipped") else 1
     if args.once:

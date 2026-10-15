@@ -74,14 +74,16 @@ function integrationStatus(env = process.env) {
   });
 }
 
+// "Name:" padded so every status line (these and the ML line, lib/mlStatus.js) lines up.
+const padLabel = (name) => `${name}:`.padEnd(Math.max(...INTEGRATIONS.map((i) => i.name.length)) + 2);
+
 function statusLines(env = process.env) {
-  const width = Math.max(...INTEGRATIONS.map((i) => i.name.length)) + 1;
   return integrationStatus(env).map(({ name, state, missing, detail }) => {
-    const label = `${name}:`.padEnd(width + 1);
+    const label = padLabel(name);
     if (state === "enabled") return `${label}enabled (${detail})`;
     if (state === "off") return `${label}off, keys not set (${missing.join(", ")})`;
     return `${label}incomplete, not set: ${missing.join(", ")}`;
   });
 }
 
-module.exports = { integrationStatus, statusLines, INTEGRATIONS };
+module.exports = { integrationStatus, statusLines, padLabel, INTEGRATIONS };

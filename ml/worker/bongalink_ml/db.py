@@ -216,7 +216,9 @@ def write_predictions(conn, rows: list[dict], processed_up_to: int | None) -> in
 # ---------------------------------------------------------------- status
 def set_status(conn, **fields) -> None:
     allowed = {"state", "last_update_at", "last_error", "last_train_at", "last_train_status",
-               "last_train_message", "sold_items_at_last_train", "heartbeat_at"}
+               "last_train_message", "sold_items_at_last_train", "heartbeat_at",
+               "auto_retrain_hour", "auto_retrain_orders", "auto_retrain_stock_changes",
+               "sold_orders_at_last_train", "event_id_at_last_train"}
     if not fields:
         return
     bad = set(fields) - allowed
@@ -268,3 +270,85 @@ def record_model_version(conn, *, version, file_path, trained_with, data_source,
     except Exception:
         conn.rollback()
         raise
+
+
+# ---------------------------------------------------------------- training runs (migration 010)
+# One row per retraining. While a run is queued or training, ml_training_runs.active_slot
+# is 1 and its UNIQUE key makes MySQL refuse any second run, wherever it comes from.
+RUN_STATS = ("sales_records", "orders_used", "products_used", "train_rows", "val_rows", "data_from", "data_to",
+             "val_mae", "baseline_val_mae", "naive_val_mae")
+
+
+def claim_queued_run(conn) -> dict | None:
+    """Takes the run an admin queued from the Forecasts page (oldest first), if any."""
+    with conn.cursor() as cur:
+        cur.execute("""UPDATE ml_training_runs SET status = 'training', started_at = NOW(3)
+                       WHERE status = 'queued' ORDER BY run_id LIMIT 1""")
+        if cur.rowcount == 0:
+            return None
+        cur.execute("SELECT * FROM ml_training_runs WHERE status = 'training' ORDER BY run_id DESC LIMIT 1")
+        return cur.fetchone()
+
+
+def start_run(conn, trigger_type: str, detail: str) -> dict | None:
+    """Starts an automatic or command-line run. None if another run is already queued or training."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO ml_training_runs (trigger_type, trigger_detail, status, started_at)
+                           VALUES (%s, %s, 'training', NOW(3))""", (trigger_type, detail[:255]))
+            cur.execute("SELECT * FROM ml_training_runs WHERE run_id = %s", (cur.lastrowid,))
+            return cur.fetchone()
+    except pymysql.err.IntegrityError:
+        return None
+
+
+def finish_run(conn, run_id: int, *, status: str, outcome: str, message: str,
+               model_version: str | None = None, stats: dict | None = None) -> None:
+    fields = {"status": status, "outcome": outcome, "message": (message or "")[:1000], "model_version": model_version}
+    fields.update({k: v for k, v in (stats or {}).items() if k in RUN_STATS})
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    with conn.cursor() as cur:
+        cur.execute(f"UPDATE ml_training_runs SET {sets}, finished_at = NOW(3) WHERE run_id = %s",
+                    (*fields.values(), run_id))
+
+
+def fail_interrupted_runs(conn) -> int:
+    """At start-up: a run still 'training' means the worker stopped in the middle of it."""
+    with conn.cursor() as cur:
+        cur.execute("""UPDATE ml_training_runs
+                       SET status = 'failed', outcome = 'failed', finished_at = NOW(3),
+                           message = 'The ML worker stopped during training. The model in use was kept.'
+                       WHERE status = 'training'""")
+        return cur.rowcount
+
+
+# ---------------------------------------------------------------- new-data counters
+def sold_orders_total(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) AS n FROM orders WHERE status IN ({_in(SOLD_STATUSES)})", SOLD_STATUSES)
+        return int(cur.fetchone()["n"])
+
+
+def max_event_id(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT COALESCE(MAX(event_id), 0) AS n FROM ml_events")
+        return int(cur.fetchone()["n"])
+
+
+def stock_changes_since(conn, event_id: int) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM ml_events WHERE event_type = 'STOCK_CHANGED' AND event_id > %s", (event_id,))
+        return int(cur.fetchone()["n"])
+
+
+def training_data_counts(conn, start: dt.date, end: dt.date) -> dict:
+    """How much sales data a training window used: sold order lines, orders and products."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT COUNT(*) AS lines_, COUNT(DISTINCT o.order_id) AS orders_, COUNT(DISTINCT oi.product_id) AS products_
+                FROM order_items oi JOIN orders o ON o.order_id = oi.order_id
+                WHERE o.status IN ({_in(SOLD_STATUSES)}) AND o.created_at >= %s AND o.created_at < %s""",
+            (*SOLD_STATUSES, start, end),
+        )
+        r = cur.fetchone()
+        return {"sales_records": int(r["lines_"]), "orders_used": int(r["orders_"]), "products_used": int(r["products_"])}

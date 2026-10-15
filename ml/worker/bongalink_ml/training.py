@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +53,9 @@ class TrainResult:
     status: str            # promoted | rejected | skipped | failed
     message: str
     version: str | None = None
+    # What the run used and how it scored (ml_training_runs columns): sales_records, orders_used,
+    # products_used, train_rows, val_rows, data_from, data_to, val_mae, baseline_val_mae, naive_val_mae.
+    stats: dict = field(default_factory=dict)
 
 
 def build_dataset(series: dict[int, np.ndarray], listed_idx: dict[int, int], dates: list[dt.date]) -> Dataset:
@@ -159,13 +162,17 @@ def mae(model: StockModel, X: np.ndarray, y: np.ndarray) -> float:
 
 def retrain(conn, models_dir: Path, active: StockModel | None, trainer: str) -> TrainResult:
     version = "v" + dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]   # ms: unique even if retried at once
+    today = db.today(conn)
     try:
-        ds = load_dataset(conn, db.today(conn))
+        ds = load_dataset(conn, today)
     except InsufficientData as e:
         log.info("retraining skipped: %s", e)
         return TrainResult("skipped", f"Retraining skipped: {e}.")
 
+    stats = {"train_rows": int(len(ds.X_train)), "val_rows": int(len(ds.X_val)),
+             "data_from": ds.first_day, "data_to": ds.last_day}
     try:
+        stats.update(db.training_data_counts(conn, ds.first_day, today))
         spec = train_model(ds, trainer)
         candidate = StockModel(spec)
         cand_mae = mae(candidate, ds.X_val, ds.y_val)
@@ -173,6 +180,7 @@ def retrain(conn, models_dir: Path, active: StockModel | None, trainer: str) -> 
         naive_mae = float(np.mean(np.abs(ds.X_val[:, 0] * HORIZON - ds.y_val)))
         spec["metrics"].update(val_mae_units_7d=round(cand_mae, 3), naive_val_mae_units_7d=round(naive_mae, 3),
                                active_model_val_mae=None if base_mae is None else round(base_mae, 3))
+        stats.update(val_mae=cand_mae, baseline_val_mae=base_mae, naive_val_mae=naive_mae)
 
         promote = base_mae is None or cand_mae <= base_mae
         status = "active" if promote else "rejected"
@@ -191,9 +199,9 @@ def retrain(conn, models_dir: Path, active: StockModel | None, trainer: str) -> 
         if promote:
             log.info("model %s promoted (%s) [%s]", version, verdict, spec["trained_with"])
             return TrainResult("promoted", f"Model {version} promoted: {verdict}. Trained with {spec['trained_with']}.",
-                               version)
+                               version, stats)
         log.warning("model %s rejected, keeping the active model (%s)", version, verdict)
-        return TrainResult("rejected", f"Model {version} rejected, kept the active model: {verdict}.", version)
+        return TrainResult("rejected", f"Model {version} rejected, kept the active model: {verdict}.", version, stats)
 
     except Exception as e:   # anything at all: keep the active model, record the failure
         log.exception("retraining failed; keeping the active model")
@@ -202,4 +210,5 @@ def retrain(conn, models_dir: Path, active: StockModel | None, trainer: str) -> 
                                     data_source="mysql", status="failed", notes=f"{type(e).__name__}: {e}")
         except Exception:
             log.exception("could not record the failed training run")
-        return TrainResult("failed", f"Retraining failed, kept the active model: {type(e).__name__}: {e}"[:1000])
+        return TrainResult("failed", f"Retraining failed, kept the active model: {type(e).__name__}: {e}"[:1000],
+                           None, stats)

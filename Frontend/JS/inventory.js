@@ -433,6 +433,13 @@ async function init() {
   const editId = new URLSearchParams(location.search).get("edit");
   if (/^\d+$/.test(editId || "")) openEditor(editId);
   setInterval(() => loadStatus().catch(() => {}), STATUS_POLL_MS);
+  // A finished retrain brings new forecasts and trend labels: reload them and the chart.
+  MLTraining.mount(document.getElementById("modelTraining"), {
+    onFinished: () => {
+      lastSeenUpdate = null;
+      loadStatus().then(() => loadHistory()).catch(() => {});
+    }
+  });
 }
 
 if (requireAdminPage()) init();

@@ -100,11 +100,15 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => {
-    console.log(`Bongalink API running on http://localhost:${PORT}`);
+  // The ML worker is a separate process; this says whether it's running and when it last trained.
+  require("./lib/mlStatus").mlStatusLine(require("./db")).then((line) => {
+    console.log(`  ${line}`);
+    const PORT = process.env.PORT || 4000;
+    app.listen(PORT, () => {
+      console.log(`Bongalink API running on http://localhost:${PORT}`);
+    });
+    startOrderExpiryJob();
   });
-  startOrderExpiryJob();
 }
 
 module.exports = app;

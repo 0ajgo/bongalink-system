@@ -136,4 +136,6 @@ if (requireAdminPage()) {
   loadModel();
   loadChat();
   loadAccountsTile();
+  // After a retrain: the model tile and the sales trend chart.
+  MLTraining.mount(document.getElementById("dashTraining"), { compact: true, onFinished: () => { loadModel(); loadDashboard(); } });
 }
