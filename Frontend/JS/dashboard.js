@@ -31,6 +31,16 @@ async function loadToShip() {
   }
 }
 
+// Questions the AI chat assistant couldn't answer, waiting on Chat & FAQs.
+async function loadChat() {
+  try {
+    const { unanswered_open: open } = await apiFetch("/v1/admin/chat/summary");
+    setStat("statChat", String(open), open ? "The assistant couldn't answer: add FAQs" : "Nothing to review");
+  } catch (err) {
+    setStat("statChat", "—", `Couldn't load: ${err.message}`);
+  }
+}
+
 const ML_STATE = { up_to_date: ["Up to date", "success"], updating: ["Updating", "info"], failed: ["Failed", "error"] };
 async function loadModel() {
   try {
@@ -114,4 +124,5 @@ if (requireAdminPage()) {
   loadDashboard();
   loadToShip();
   loadModel();
+  loadChat();
 }

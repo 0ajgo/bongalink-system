@@ -106,3 +106,31 @@ a.stat:hover { text-decoration: none; border-color: var(--color-primary); }
 .row-menu .menu__header strong { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
 /* Narrower screens: Edit becomes icon-only (keeps its aria-label and tooltip) so every column fits. */
 @media (max-width: 1240px) { .table .actions .btn-label { display: none; } }
+
+/* ---------- Chat & FAQs (js/chat-admin.js) ---------- */
+.stat-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stat-grid--3 { grid-template-columns: minmax(0, 1fr); } }
+.stat-grid--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1240px) { .stat-grid--6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px)  { .stat-grid--6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.chat-item { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-line); }
+.card__header + * .chat-item:first-child, .card__header + .chat-item { border-top: 0; }
+.chat-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--color-ink-3); }
+.chat-item__q { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.chat-item__a { font-size: var(--text-sm); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.chat-item__a p + p, .chat-item__a ul { margin-top: var(--space-1); }
+.chat-item__a ul { padding-left: var(--space-5); margin-bottom: 0; }
+.chat-item__reply summary { cursor: pointer; font-size: var(--text-sm); color: var(--color-primary); width: max-content; }
+.chat-item__reply .chat-msg { margin-top: var(--space-2); max-width: 100%; }
+.chat-item__actions { gap: var(--space-2); }
+.faq-item { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-2) var(--space-4); }
+.faq-item__q { font-size: var(--text-base); margin-top: var(--space-1); }
+.faq-item__a { font-size: var(--text-sm); color: var(--color-ink-2); margin-top: var(--space-1); white-space: pre-line; }
+.faq-item.is-inactive .faq-item__q, .faq-item.is-inactive .faq-item__a { color: var(--color-ink-3); }
+@media (max-width: 640px) { .faq-item { grid-template-columns: minmax(0, 1fr); } .chat-item { padding: var(--space-4); } }
+.chat-filters { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-line); }
+.chat-filters .field + .field { margin-top: 0; }
+@media (max-width: 860px) { .chat-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .chat-filters .field:first-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .chat-filters { padding: var(--space-4); } }
+.convo-log { max-height: 60vh; border: 1px solid var(--color-line); border-radius: var(--radius); margin-top: var(--space-3); }
+.convo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-xs); color: var(--color-ink-3); }

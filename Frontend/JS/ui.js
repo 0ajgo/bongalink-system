@@ -88,6 +88,24 @@ function productCard(p, { admin = false } = {}) {
     </article>`;
 }
 
+/* --- Chatbot replies (chat widget, admin Chat & FAQs) -------------------
+ Escaped text with product links [Name](product:ID), **bold**, "- " lists
+ and line breaks. Nothing else becomes HTML. */
+function chatTextHTML(text) {
+  const lines = escapeHTML(text).split("\n");
+  let html = "", list = false;
+  for (const raw of lines) {
+    const item = /^\s*[-*•]\s+(.*)$/.exec(raw);
+    if (item && !list) { html += "<ul>"; list = true; }
+    if (!item && list) { html += "</ul>"; list = false; }
+    const line = (item ? item[1] : raw)
+      .replace(/\[([^\]]{1,200})\]\(product:(\d+)\)/g, (_, label, id) => `<a href="${productUrl(id)}">${label}</a>`)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html += item ? `<li>${line}</li>` : (line.trim() ? `<p>${line}</p>` : "");
+  }
+  return html + (list ? "</ul>" : "");
+}
+
 /* --- List / table states --------------------------------------------- */
 const UIState = {
   empty: ({ icon: name = "package-open", title, text = "", action = "" }) => `
@@ -142,7 +160,7 @@ const initials = (name) => (String(name).match(/[A-Za-z0-9]/g) || ["?"]).slice(0
 const ROLE_LABEL = { admin: "Admin", user: "Customer" };
 
 /* --- Header ----------------------------------------------------------- */
-// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries" | "rates"
+// active: "shop" | "orders" | "profile" | "dashboard" | "inventory" | "deliveries" | "rates" | "chat"
 // search: true to show the search box (submits to the catalog)
 function renderHeader({ active = "", search = true } = {}) {
   const root = document.getElementById("site-header");
@@ -155,7 +173,8 @@ function renderHeader({ active = "", search = true } = {}) {
       { key: "dashboard", href: `${UI_ROOT}Admin/dashboard.html`, label: "Dashboard", icon: "layout-dashboard" },
       { key: "inventory", href: `${UI_ROOT}Admin/inventory.html`, label: "Inventory", icon: "boxes" },
       { key: "deliveries", href: `${UI_ROOT}Admin/deliveries.html`, label: "Deliveries", icon: "truck" },
-      { key: "rates", href: `${UI_ROOT}Admin/rates.html`, label: "Rates", icon: "landmark" }
+      { key: "rates", href: `${UI_ROOT}Admin/rates.html`, label: "Rates", icon: "landmark" },
+      { key: "chat", href: `${UI_ROOT}Admin/chat.html`, label: "Chat & FAQs", icon: "messages-square" }
     ] : [])
   ];
   const toShip = admin ? `<a class="badge badge--warning to-ship" href="${UI_ROOT}Admin/deliveries.html" data-to-ship hidden></a>` : "";

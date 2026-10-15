@@ -101,6 +101,7 @@ function render() {
         <div class="product__stock">${stockBadge(available)}<span>${stockText(available)}</span></div>
         <div id="stockAlert" role="alert"></div>
         ${buy}
+        ${!isAdmin() && typeof ChatWidget !== "undefined" ? `<button class="btn btn--secondary" type="button" id="askAbout">${icon("message-circle", { size: 18 })} Ask about this part</button>` : ""}
         <dl class="product__facts">
           <dt>Parcel weight</dt><dd>${Number(p.weight_kg)} kg</dd>
           <dt>Delivery</dt><dd>J&amp;T and LBC nationwide · Lalamove same-day in Metro Manila</dd>
@@ -108,7 +109,7 @@ function render() {
         </dl>
         <div class="product__description">
           <h2>Description</h2>
-          <p class="product__desc-text">${p.description ? escapeHTML(p.description) : `<span class="muted">No description yet. Message the shop to ask about compatibility.</span>`}</p>
+          <p class="product__desc-text">${p.description ? escapeHTML(p.description) : `<span class="muted">No description yet. Use “Ask about this part” to check compatibility.</span>`}</p>
         </div>
       </div>
     </article>`;
@@ -133,6 +134,7 @@ function wireProduct() {
   $("mainPhoto").addEventListener("click", () => photos.length && openPhoto(photoIndex));
   view.querySelectorAll("[data-photo]").forEach(b => b.addEventListener("click", () => selectPhoto(Number(b.dataset.photo))));
   if (isAdmin()) return;
+  $("askAbout")?.addEventListener("click", () => ChatWidget.askAbout({ id: product.id, name: product.name }));
   $("qtyDown").addEventListener("click", () => setQty(Number($("qty").value) - 1));
   $("qtyUp").addEventListener("click", () => setQty(Number($("qty").value) + 1));
   $("qty").addEventListener("change", () => setQty($("qty").value));

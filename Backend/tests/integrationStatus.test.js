@@ -9,17 +9,19 @@ const FULL = {
   STORE_LAT: "14.5547", STORE_LNG: "121.0244",
   PAYMONGO_SECRET_KEY: "sk_test_PAYMONGO333", PAYMONGO_WEBHOOK_SECRET: "whsk_WEBHOOK444", APP_URL: "http://localhost:5500/Frontend",
   SMTP_USER: "shop@example.com", SMTP_PASS: "app password 555", MAIL_FROM: "Bongalink <shop@example.com>",
-  VERIFICATION_SECRET: "verification-666", ADMIN_ALERT_EMAIL: "owner@example.com"
+  VERIFICATION_SECRET: "verification-666", ADMIN_ALERT_EMAIL: "owner@example.com",
+  GEMINI_API_KEY: "AIzaGEMINI777"
 };
 const SECRETS = ["SECRETKEY111", "SECRETSECRET222", "PAYMONGO333", "WEBHOOK444", "app password 555", "verification-666",
-                 "shop@example.com", "owner@example.com", "14.5547", "121.0244"];
+                 "shop@example.com", "owner@example.com", "14.5547", "121.0244", "AIzaGEMINI777"];
 
 describe("integration status", () => {
   test("everything set: enabled, with non-secret details", () => {
     expect(statusLines(FULL)).toEqual([
       "Lalamove: enabled (sandbox; areas NCR, Bulacan, Cavite, Laguna, Rizal)",
       "PayMongo: enabled (test mode; methods gcash,qrph,dob,dob_ubp)",
-      "Email:    enabled (smtp.gmail.com:465; shop alerts on)"
+      "Email:    enabled (smtp.gmail.com:465; shop alerts on)",
+      "Gemini:   enabled (model gemini-3.8-flash, fallback gemini-3.5-flash-lite)"
     ]);
   });
 
@@ -27,7 +29,8 @@ describe("integration status", () => {
     expect(statusLines({})).toEqual([
       "Lalamove: off, keys not set (LALAMOVE_API_KEY, LALAMOVE_API_SECRET, STORE_LAT, STORE_LNG)",
       "PayMongo: off, keys not set (PAYMONGO_SECRET_KEY, PAYMONGO_WEBHOOK_SECRET, APP_URL)",
-      "Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)"
+      "Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)",
+      "Gemini:   off, keys not set (GEMINI_API_KEY)"
     ]);
   });
 
@@ -45,6 +48,8 @@ describe("integration status", () => {
     expect(live[0]).toBe("Lalamove: enabled (PRODUCTION; areas NCR, Cebu)");
     expect(live[1]).toMatch(/^PayMongo: enabled \(LIVE mode;/);
     expect(live[2]).toBe("Email:    enabled (smtp.gmail.com:465; shop alerts off (ADMIN_ALERT_EMAIL not set))");
+    expect(statusLines({ ...FULL, GEMINI_MODEL: " gemini-3.5-flash-lite " })[3]).toBe("Gemini:   enabled (model gemini-3.5-flash-lite)");
+    expect(statusLines({ ...FULL, GEMINI_FALLBACK_MODEL: "gemini-3.8-flash" })[3]).toBe("Gemini:   enabled (model gemini-3.8-flash)");
   });
 
   test("no line ever contains a value", () => {
@@ -60,7 +65,7 @@ describe("server startup output", () => {
     // settings the status lines are meant to show.
     const SHOWN = new Set(["LALAMOVE_ENV", "LALAMOVE_SERVICE_AREAS", "PAYMONGO_METHODS", "SMTP_HOST", "SMTP_PORT",
                            "LALAMOVE_SERVICE_TYPE", "NODE_ENV", "PORT", "DB_NAME", "DB_HOST", "DB_PORT",
-                           "STORE_CONTACT_NAME"]);   // "Bongalink", also in the "Bongalink API running" line
+                           "STORE_CONTACT_NAME", "GEMINI_MODEL", "GEMINI_FALLBACK_MODEL"]);   // "Bongalink", also in the "Bongalink API running" line
     const realValues = Object.entries(require("dotenv").parse(fs.readFileSync(path.join(backend, ".env"))))
       .filter(([k, v]) => !SHOWN.has(k) && v && v.length >= 6)
       .map(([, v]) => v);
@@ -82,6 +87,7 @@ describe("server startup output", () => {
     expect(out).toContain("  Lalamove: enabled (sandbox;");
     expect(out).toContain("  PayMongo: enabled (test mode;");
     expect(out).toContain("  Email:    enabled (");
+    expect(out).toContain("  Gemini:   enabled (model ");
     for (const secret of [...SECRETS, ...realValues]) expect(out).not.toContain(secret);
   }, 20000);
 });

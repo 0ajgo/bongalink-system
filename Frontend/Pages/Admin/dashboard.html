@@ -14,7 +14,8 @@
      sales, orders and inventory. Read-only, from existing endpoints:
        GET /api/admin/ml/dashboard   stock counts, month sales, trend, top products
        GET /api/v1/admin/orders/to-ship
-       GET /api/admin/ml/status      forecast model status -->
+       GET /api/admin/ml/status      forecast model status
+       GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer -->
 <main id="main" class="container page">
   <div class="page-head">
     <div>
@@ -28,7 +29,7 @@
     </div>
   </div>
 
-  <div class="stat-grid" aria-live="polite">
+  <div class="stat-grid stat-grid--6" aria-live="polite">
     <a class="card stat" href="deliveries.html" id="statToShip">
       <span class="stat__label"><i data-icon="truck" data-size="16"></i> Orders to ship</span>
       <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
@@ -49,6 +50,11 @@
       <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
       <span class="stat__sub">&nbsp;</span>
     </div>
+    <a class="card stat" href="chat.html#unanswered" id="statChat">
+      <span class="stat__label"><i data-icon="circle-help" data-size="16"></i> Unanswered chats</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
     <a class="card stat" href="inventory.html#forecasts" id="statModel">
       <span class="stat__label"><i data-icon="cpu" data-size="16"></i> Forecast model</span>
       <span class="stat__value stat__value--sm"><span class="skeleton skeleton--title"></span></span>

@@ -25,6 +25,8 @@ const logisticsRoutes = require("./routes/logistics");
 const accountRoutes = require("./routes/account");
 const geoRoutes = require("./routes/geo");
 const rateRoutes = require("./routes/rates");
+const chatRoutes = require("./routes/chat");
+const chatAdminRoutes = require("./routes/chatAdmin");
 const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
@@ -58,6 +60,8 @@ app.use("/api/v1/account", accountRoutes);   // profile, password, saved address
 app.use("/api/v1/geo", geoRoutes);            // map pin -> region/province/city (Nominatim, server-side)
 app.use("/api/v1/admin/shipping-rates", rateRoutes);
 app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1", chatRoutes);              // /chat/messages (AI chat support, Gemini server-side)
+app.use("/api/v1", chatAdminRoutes);         // /admin/chat/*, /admin/faqs
 app.use("/api/v1", logisticsRoutes); // /shipping/quote, /orders/:id/tracking, /admin/shipments, /webhooks/lalamove
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));

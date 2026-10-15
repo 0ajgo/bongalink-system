@@ -1,6 +1,7 @@
 /* =====================================================================
    middleware/auth.js
    - requireAuth  : any logged-in user (user or admin)
+   - optionalAuth : the logged-in user if a valid token is sent, else a guest
    - requireAdmin : must be logged in AND role === "admin"
    - requireRole  : after requireAuth, allow only the listed roles
    - requireVerifiedEmail : after requireAuth, block unverified emails
@@ -27,6 +28,22 @@ function requireAuth(req, res, next) {
   } catch (err) {
     return res.status(401).json({ error: "Session expired or invalid. Please log in again." });
   }
+}
+
+// For routes that also serve visitors (the chat): sets req.user when a valid token
+// is sent, otherwise carries on as a guest. An expired token is treated as a guest.
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  req.user = null;
+  if (token) {
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      req.user = null;
+    }
+  }
+  next();
 }
 
 function requireAdmin(req, res, next) {
@@ -56,4 +73,4 @@ async function requireVerifiedEmail(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAdmin, requireRole, requireVerifiedEmail };
+module.exports = { requireAuth, optionalAuth, requireAdmin, requireRole, requireVerifiedEmail };

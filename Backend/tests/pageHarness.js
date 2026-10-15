@@ -9,7 +9,8 @@ const FRONTEND = path.join(__dirname, "..", "..", "Frontend");
 // page: path under Frontend/, e.g. "Pages/Admin/deliveries.html".
 // api(url, options) returns { status = 200, body }.
 // role: "user" | "admin" | null (logged out). fastTimers: run setTimeout callbacks immediately.
-async function openPage(page, { api, role = "user", query = "", fastTimers = false, username = "juan" }) {
+// storage: extra sessionStorage entries, e.g. a chat carried over from another page.
+async function openPage(page, { api, role = "user", query = "", fastTimers = false, username = "juan", storage = {} }) {
   const dir = path.dirname(path.join(FRONTEND, page));
   const html = fs.readFileSync(path.join(FRONTEND, page), "utf8")
     .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
@@ -30,6 +31,7 @@ async function openPage(page, { api, role = "user", query = "", fastTimers = fal
         window.sessionStorage.setItem("bongalink_role", role);
         window.sessionStorage.setItem("bongalink_username", username);
       }
+      Object.entries(storage).forEach(([k, v]) => window.sessionStorage.setItem(k, v));
       window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
       window.HTMLDialogElement.prototype.close = function () { this.open = false; };
       window.scrollTo = () => {};

@@ -2,6 +2,7 @@
 //   Lalamove: enabled (sandbox; areas NCR, Bulacan, Cavite, Laguna, Rizal)
 //   PayMongo: incomplete, not set: PAYMONGO_WEBHOOK_SECRET
 //   Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)
+//   Gemini:   enabled (model gemini-3.8-flash, fallback gemini-3.5-flash-lite)
 // Only variable NAMES and labels derived from them (test/live, sandbox/production)
 // are ever printed, never values. Remember: .env is read at startup, so restart the
 // server after changing it.
@@ -10,6 +11,9 @@
 // an optional detail(env) that returns non-secret context.
 
 const DEFAULT_LALAMOVE_AREAS = "NCR,Bulacan,Cavite,Laguna,Rizal";
+// Keep in sync with services/chatbot.js
+const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+const DEFAULT_GEMINI_FALLBACK = "gemini-3.5-flash-lite";
 
 const INTEGRATIONS = [
   {
@@ -35,6 +39,16 @@ const INTEGRATIONS = [
     required: ["SMTP_USER", "SMTP_PASS", "MAIL_FROM", "VERIFICATION_SECRET"],
     detail: (env) =>
       `${env.SMTP_HOST || "smtp.gmail.com"}:${env.SMTP_PORT || 465}; shop alerts ${isSet(env.ADMIN_ALERT_EMAIL) ? "on" : "off (ADMIN_ALERT_EMAIL not set)"}`,
+  },
+  {
+    // AI chat support. Off = the chat answers with the shop's contact details instead.
+    name: "Gemini",
+    required: ["GEMINI_API_KEY"],
+    detail: (env) => {
+      const model = isSet(env.GEMINI_MODEL) ? env.GEMINI_MODEL.trim() : DEFAULT_GEMINI_MODEL;
+      const fallback = isSet(env.GEMINI_FALLBACK_MODEL) ? env.GEMINI_FALLBACK_MODEL.trim() : DEFAULT_GEMINI_FALLBACK;
+      return `model ${model}${fallback !== model ? `, fallback ${fallback}` : ""}`;
+    },
   },
 ];
 

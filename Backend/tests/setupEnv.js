@@ -19,6 +19,10 @@ Object.assign(process.env, {
   STORE_PHONE: "09170000000",
   TRACKING_URL_JNT: "https://www.jtexpress.ph/track?waybill={tn}",
   TRACKING_URL_LBC: "",
+  // Gemini is mocked in the chat tests; this fake key keeps the real one out of tests.
+  GEMINI_API_KEY: "test-gemini-key",
+  GEMINI_MODEL: "gemini-test-model",
+  GEMINI_FALLBACK_MODEL: "gemini-test-fallback",
   // Uploaded photos go to a throwaway folder, never Backend/uploads.
   UPLOAD_DIR: path.join(require("os").tmpdir(), "bongalink-test-uploads")
 });

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat &amp; FAQs — Bongalink admin</title>
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/chat.css">
+<link rel="stylesheet" href="../../CSS/admin.css">
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- AI chat support, admin side (REQ026, "progressively improve"):
+       GET   /api/v1/admin/chat/summary        tiles
+       GET   /api/v1/admin/chat/logs           unanswered queue + history (filters)
+       GET   /api/v1/admin/chat/sessions/:id   one conversation
+       PATCH /api/v1/admin/chat/logs/:id       dismiss
+       /api/v1/admin/faqs                      FAQ list, add, edit, delete
+     Active FAQs are given to the chatbot with every message. -->
+<main id="main" class="container page">
+  <div class="page-head">
+    <div>
+      <h1>Chat &amp; FAQs</h1>
+      <p>What customers ask the AI assistant. Turn questions it couldn't answer into FAQs; it uses them in its next answer.</p>
+    </div>
+  </div>
+
+  <div class="stat-grid stat-grid--3" aria-live="polite">
+    <a class="card stat" href="#unanswered" id="statOpen">
+      <span class="stat__label"><i data-icon="circle-help" data-size="16"></i> Unanswered to review</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+    <div class="card stat" id="statRate">
+      <span class="stat__label"><i data-icon="messages-square" data-size="16"></i> Answered, last 30 days</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <a class="card stat" href="#faqs" id="statFaqs">
+      <span class="stat__label"><i data-icon="book-open" data-size="16"></i> Active FAQs</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </a>
+  </div>
+
+  <section class="card section-card" id="unanswered" aria-labelledby="unansweredTitle">
+    <div class="card__header">
+      <h2 id="unansweredTitle">Unanswered questions</h2>
+      <span class="muted">Newest first · off-topic questions are left out</span>
+    </div>
+    <div id="queue" aria-live="polite"></div>
+  </section>
+
+  <section class="card section-card" id="faqs" aria-labelledby="faqsTitle">
+    <div class="card__header">
+      <h2 id="faqsTitle">FAQs</h2>
+      <button class="btn btn--primary btn--sm" type="button" id="addFaq"><i data-icon="plus" data-size="16"></i> Add FAQ</button>
+    </div>
+    <div id="faqNotice"></div>
+    <div id="faqList" aria-live="polite"></div>
+  </section>
+
+  <section class="card section-card" id="history" aria-labelledby="historyTitle">
+    <div class="card__header">
+      <h2 id="historyTitle">Conversation history</h2>
+    </div>
+    <form class="chat-filters" id="filters" role="search">
+      <div class="field">
+        <label class="label" for="fQ">Search</label>
+        <input class="input" id="fQ" type="search" placeholder="Words in the question or reply">
+      </div>
+      <div class="field">
+        <label class="label" for="fView">Answered</label>
+        <select class="select" id="fView">
+          <option value="all">All</option>
+          <option value="answered">Answered</option>
+          <option value="not_answered">Not answered</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="fCustomer">Customer</label>
+        <select class="select" id="fCustomer">
+          <option value="all">Everyone</option>
+          <option value="registered">Logged in</option>
+          <option value="guest">Guests</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="fDays">Period</label>
+        <select class="select" id="fDays">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="all">All time</option>
+        </select>
+      </div>
+    </form>
+    <div id="logList" aria-live="polite"></div>
+    <div class="card__footer" id="moreWrap" hidden>
+      <button class="btn btn--secondary btn--sm" type="button" id="loadMore">Load older messages</button>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink admin</span>
+    <span>FAQ changes apply to the very next chat answer.</span>
+  </div>
+</footer>
+
+<!-- Add / edit FAQ -->
+<dialog class="modal modal--wide" id="faqDialog" aria-labelledby="faqDialogTitle">
+  <form id="faqForm" novalidate>
+    <div class="modal__header">
+      <h2 id="faqDialogTitle">Add FAQ</h2>
+      <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--info" id="faqSource" hidden></div>
+      <div class="field">
+        <label class="label" for="faqQuestion">Question <span class="required">(required)</span></label>
+        <input class="input" id="faqQuestion" maxlength="255" required aria-describedby="faqQuestionError">
+        <span class="error-text" id="faqQuestionError" role="alert"></span>
+      </div>
+      <div class="field">
+        <label class="label" for="faqAnswer">Answer <span class="required">(required)</span></label>
+        <textarea class="textarea" id="faqAnswer" rows="5" maxlength="2000" required aria-describedby="faqAnswerHint faqAnswerError"></textarea>
+        <span class="hint" id="faqAnswerHint">Write it the way the shop would answer. Only write facts the shop has confirmed.</span>
+        <span class="error-text" id="faqAnswerError" role="alert"></span>
+      </div>
+      <div class="field">
+        <label class="label" for="faqCategory">Category</label>
+        <input class="input" id="faqCategory" maxlength="40" list="faqCategories" placeholder="General">
+        <datalist id="faqCategories"></datalist>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="faqActive" checked> <span><strong>Active</strong>: the chatbot uses this answer</span></label>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="faqConfirmed"> <span><strong>Confirmed by the shop</strong>: unconfirmed answers come with "please confirm with the shop"</span></label>
+      </div>
+      <p class="error-text" id="faqError" role="alert"></p>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="faqSubmit">Save FAQ</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- One whole conversation -->
+<dialog class="modal modal--wide" id="convoDialog" aria-labelledby="convoTitle">
+  <div class="modal__header">
+    <h2 id="convoTitle">Conversation</h2>
+    <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+  </div>
+  <div class="modal__body">
+    <p class="muted" id="convoMeta"></p>
+    <div class="chat-log convo-log" id="convoLog"></div>
+  </div>
+</dialog>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/chat-admin.js"></script>
+</body>
+</html>

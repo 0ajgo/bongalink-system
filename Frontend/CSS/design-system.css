@@ -410,6 +410,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: var(--radius); color: var(--color-ink-2); font-size: var(--text-sm); font-weight: var(--weight-medium);
 }
 .site-nav a:hover { background: var(--color-surface-2); color: var(--color-ink); text-decoration: none; }
+.site-nav a { white-space: nowrap; }
 .site-nav a[aria-current="page"] { color: var(--color-primary); background: var(--color-primary-tint); }
 .header-search { flex: 1; max-width: 420px; }
 .header-actions { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
@@ -459,6 +460,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .mobile-panel .site-nav a { min-height: var(--tap); font-size: var(--text-base); }
 }
 @media (max-width: 640px) { .brand__since { display: none; } }
+/* Narrow desktops (the admin nav has seven items): text-only links, avatar without the name. */
+@media (min-width: 961px) and (max-width: 1240px) {
+  .site-header__inner { gap: var(--space-3); }
+  .site-header__inner > .site-nav a { padding: 0 var(--space-2); }
+  .site-header__inner > .site-nav a .icon { display: none; }
+  .site-header__inner > .site-nav a.to-ship { margin-left: var(--space-1); }
+  .site-header__inner .account__text { display: none; }
+}
 
 /* ---------------------------------------------------------------- 15. FOOTER + TRUST */
 .site-footer { margin-top: auto; background: var(--color-surface); border-top: 1px solid var(--color-line); padding: var(--space-6) 0; font-size: var(--text-sm); color: var(--color-ink-2); }
@@ -500,6 +509,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- 17. CHARTS (JS/chart.js) */
 .chart { position: relative; width: 100%; min-height: 220px; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .state svg { width: 40px; height: 40px; }   /* the empty state's icon, not a chart */
 .chart .bar { fill: var(--color-chart); }
 .chart .bar.is-active { fill: var(--color-chart-active); }
 .chart .hit { fill: transparent; cursor: crosshair; }
