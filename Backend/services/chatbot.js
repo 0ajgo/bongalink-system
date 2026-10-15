@@ -8,6 +8,8 @@
 //      tool calls; we run them against the database and send the results back, until
 //      it writes the reply (at most MAX_TOOL_ROUNDS rounds).
 //   3. Keep only product links to real, active products, and log the exchange.
+// Database problems never cost the customer their answer: loading context and saving to
+// chat_logs are best effort, and a failed lookup tool tells the bot it couldn't check.
 // If the model is busy (429/5xx) or times out, the whole exchange is retried once on
 // GEMINI_FALLBACK_MODEL. If Gemini is not configured or still fails, the customer gets
 // the shop's contact details instead of an error, logged as unanswered ("service_down").
@@ -111,7 +113,9 @@ async function checkProductLinks(text) {
   const ids = [...new Set([...text.matchAll(/\[[^\]\n]{1,200}\]\(product:(\d+)\)/g)].map((m) => Number(m[1])))];
   let products = [];
   if (ids.length) {
-    [products] = await pool.query('SELECT product_id AS id, name FROM products WHERE is_active = 1 AND product_id IN (?)', [ids]);
+    // Can't check them right now: the names stay, as plain text.
+    products = await optional('product links',
+      pool.query('SELECT product_id AS id, name FROM products WHERE is_active = 1 AND product_id IN (?)', [ids]).then(([rows]) => rows), []);
   }
   const ok = new Set(products.map((p) => p.id));
   const reply = text.replace(/\[([^\]\n]{1,200})\]\(([^)\s]*)\)/g, (whole, label, target) => {
@@ -119,6 +123,17 @@ async function checkProductLinks(text) {
     return m && ok.has(Number(m[1])) ? whole : label;
   });
   return { reply, products };
+}
+
+// Context for the answer (FAQs, earlier turns, the page's product) is best effort:
+// if the database can't give it, the bot answers without it and the server logs why.
+async function optional(what, promise, fallback) {
+  try {
+    return await promise;
+  } catch (err) {
+    console.error(`Chat: ${what} not loaded (${err.code || 'error'}): ${err.message}`);
+    return fallback;
+  }
 }
 
 // Tool calls as logged: big argument lists are dropped, not cut (the column is JSON).
@@ -155,7 +170,7 @@ async function askGemini(ai, { modelName, contents, config, ctx, toolsUsed }) {
   throw new Error('Too many tool rounds without a reply');
 }
 
-// -> { reply, products, answered, chat_id }
+// -> { reply, products, answered, chat_id } (chat_id is null if the log could not be saved)
 async function handleMessage({ sessionId, message, user = null, productId = null }) {
   const started = Date.now();
   const toolsUsed = [];
@@ -166,7 +181,9 @@ async function handleMessage({ sessionId, message, user = null, productId = null
   try {
     if (!ai) throw Object.assign(new Error('GEMINI_API_KEY is not set'), { quiet: true });
     const [faqs, history, product] = await Promise.all([
-      activeFaqs(), sessionHistory(sessionId, user?.userId), pageProduct(productId),
+      optional('FAQs', activeFaqs(), []),
+      optional('chat history', sessionHistory(sessionId, user?.userId), []),
+      optional('page product', pageProduct(productId), null),
     ]);
     const config = {
       systemInstruction: systemInstruction({ faqs, loggedIn: Boolean(user), product }),
@@ -196,14 +213,22 @@ async function handleMessage({ sessionId, message, user = null, productId = null
     reason = 'service_down';
   }
 
-  const [r] = await pool.query(
-    `INSERT INTO chat_logs (session_id, user_id, product_id, message, reply, tools_used, answered, unanswered_reason, model, response_ms)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [sessionId, user?.userId ?? null, productId || null, message, reply,
-     toolsUsed.length ? JSON.stringify(toolsUsed.slice(0, 20).map(logEntry)) : null,
-     reason ? 0 : 1, reason, usedModel, Date.now() - started]);
+  // Logging must never cost the customer their answer: if chat_logs can't be written
+  // (table missing, database down), the reply still goes out and only the server logs it.
+  let chatId = null;
+  try {
+    const [r] = await pool.query(
+      `INSERT INTO chat_logs (session_id, user_id, product_id, message, reply, tools_used, answered, unanswered_reason, model, response_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [sessionId, user?.userId ?? null, productId || null, message, reply,
+       toolsUsed.length ? JSON.stringify(toolsUsed.slice(0, 20).map(logEntry)) : null,
+       reason ? 0 : 1, reason, usedModel, Date.now() - started]);
+    chatId = r.insertId;
+  } catch (err) {
+    console.error(`Chat log not saved (${err.code || 'error'}): ${err.message}`);
+  }
 
-  return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: r.insertId };
+  return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: chatId };
 }
 
 module.exports = { handleMessage, systemInstruction, fallbackReply, contactText, MAX_MESSAGE, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL };

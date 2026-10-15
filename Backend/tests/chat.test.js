@@ -337,6 +337,63 @@ describe("limits and failures", () => {
   });
 });
 
+describe("database problems never reach the customer", () => {
+  // console.error calls made while fn runs (the spy is removed afterwards).
+  async function serverErrors(fn) {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await fn();
+      return spy.mock.calls.map((c) => c.join(" "));
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  test("chat_logs missing: the customer still gets the answer; the server logs the error", async () => {
+    script(say("Yes, we have printheads."));
+    let res;
+    await pool.query("RENAME TABLE chat_logs TO chat_logs_hidden");
+    const errors = await serverErrors(async () => {
+      try {
+        res = await send("Do you have printheads?");
+      } finally {
+        await pool.query("RENAME TABLE chat_logs_hidden TO chat_logs");
+      }
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ reply: "Yes, we have printheads.", products: [] });
+    expect(errors).toContainEqual(expect.stringMatching(/^Chat: chat history not loaded \(ER_NO_SUCH_TABLE\)/));
+    expect(errors).toContainEqual(expect.stringMatching(/^Chat log not saved \(ER_NO_SUCH_TABLE\)/));
+  });
+
+  test("database down: the reply still goes out; a failed lookup is reported to the bot, not the customer", async () => {
+    script(toolCall("search_products", { query: "ram" }), say("Sorry, I can't check stock for [DDR4 RAM](product:5) right now. Please call the shop."));
+    const down = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3306"), { code: "ECONNREFUSED" });
+    const query = jest.spyOn(pool, "query").mockRejectedValue(down);
+    let res;
+    const errors = await serverErrors(async () => { res = await send("Do you have RAM?"); });
+    query.mockRestore();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ reply: "Sorry, I can't check stock for DDR4 RAM right now. Please call the shop.", products: [] });
+    expect(toolResult(1)).toMatchObject({ error: "lookup_failed" });
+    expect(errors).toContainEqual(expect.stringContaining("Chat log not saved (ECONNREFUSED)"));
+  });
+
+  test("database down and Gemini down: the friendly fallback with the shop's contact, not 'Something went wrong'", async () => {
+    mockGenerate.mockRejectedValue(Object.assign(new Error("503 overloaded"), { status: 503 }));
+    const query = jest.spyOn(pool, "query").mockRejectedValue(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    let res;
+    const errors = await serverErrors(async () => { res = await send("Do you have RAM?"); });
+    query.mockRestore();
+    warn.mockRestore();
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toMatch(/^Sorry, our chat assistant isn't available right now\./);
+    expect(res.body.reply).toContain("09170000000");
+    expect(errors).toContainEqual(expect.stringContaining("Chat log not saved (ECONNREFUSED)"));
+  });
+});
+
 describe("admin: Chat & FAQs", () => {
   test("FAQ create, edit and delete are admin-only", async () => {
     const customer = await createUser();
