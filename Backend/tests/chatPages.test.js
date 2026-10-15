@@ -268,12 +268,12 @@ describe("admin Chat & FAQs page", () => {
     expect(page.$("#faqAnswer").getAttribute("aria-invalid")).toBe("true");
     expect(page.calls.some(c => c.method === "POST")).toBe(false);
 
-    page.$("#faqAnswer").value = "Yes, we install parts at the shop for free.";
-    page.$("#faqCategory").value = "Repairs";
+    page.$("#faqAnswer").value = "Yes, we sell genuine Epson ink bottles.";
+    page.$("#faqCategory").value = "Products";
     page.$("#faqForm").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
     await page.until(() => page.calls.some(c => c.method === "POST"));
     expect(page.calls.find(c => c.method === "POST")).toEqual({ url: "/v1/admin/faqs", method: "POST", body: {
-      question: "Question 11", answer: "Yes, we install parts at the shop for free.", category: "Repairs",
+      question: "Question 11", answer: "Yes, we sell genuine Epson ink bottles.", category: "Products",
       is_active: true, is_placeholder: false, source_chat_id: 11 } });
     await page.until(() => !page.$("#faqDialog").open);
     await page.until(() => page.calls.filter(c => c.url.startsWith("/v1/admin/chat/logs?view=unanswered")).length === 2);

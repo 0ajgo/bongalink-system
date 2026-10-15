@@ -57,7 +57,9 @@ CREATE TABLE chat_logs (
 -- Starter FAQs. PLACEHOLDERS: confirm every answer with the shop owner, then edit
 -- it on Admin > Chat & FAQs and tick "Confirmed by the shop".
 -- Payment, courier, delivery-time and ordering facts match how the system works today;
--- store hours, returns and repair details are guesses to be replaced.
+-- store hours and return details are guesses to be replaced. Repairs are outside the
+-- system's scope (parts ordering, inquiries, delivery, inventory), so the repairs FAQ only
+-- says that and points to the shop.
 INSERT INTO faqs (question, answer, category, is_placeholder) VALUES
 ('What payment methods do you accept?',
  'We accept GCash and bank transfer. At checkout you pay securely through PayMongo using GCash, QR Ph or online banking. Orders are confirmed as soon as the payment goes through.',
@@ -78,11 +80,11 @@ INSERT INTO faqs (question, answer, category, is_placeholder) VALUES
  'Log in and open My orders. Once your order ships you will see the courier, the tracking number and each delivery update there. You can also ask this chat about your order.',
  'Ordering', 1),
 ('Can I return or exchange a part?',
- 'If a part arrives defective or is not what you ordered, message the shop within 7 days of delivery with your order number and photos. Parts must be unused and in their original packaging. Returns are checked by our technician before a replacement or refund is given.',
+ 'If a part arrives defective or is not what you ordered, message the shop within 7 days of delivery with your order number and photos. Parts must be unused and in their original packaging. Returns are checked by the shop before a replacement or refund is given.',
  'Returns', 1),
-('Do you repair computers, laptops and printers?',
- 'Yes. Bongalink repairs desktop computers, laptops and printers, including printhead cleaning and replacement, laptop screen and battery replacement, and general troubleshooting. Repair prices depend on the problem, so contact the shop for a quote.',
- 'Repairs', 1),
+('Can I book a repair through the website or this chat?',
+ 'No. The online store is for ordering computer, laptop and printer parts only; repairs are not handled through the website or this chat. For anything about a repair, please contact the shop directly.',
+ 'General', 0),
 ('What are your store hours?',
  'Our physical shop is open Monday to Saturday, 9:00 AM to 6:00 PM, closed on Sundays and holidays. Online orders and this chat are available 24/7.',
  'Store', 1),

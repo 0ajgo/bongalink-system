@@ -252,7 +252,7 @@ const DECLARATIONS = [
       properties: {
         reason: {
           type: 'string', enum: ['no_information', 'needs_staff', 'off_topic'],
-          description: 'no_information: shop info we do not have. needs_staff: a person must handle it (repair quote, complaint, refund, payment problem). off_topic: not about the shop.',
+          description: 'no_information: shop info we do not have. needs_staff: a person must handle it (complaint, refund, payment problem, damaged parcel). off_topic: not about the shop.',
         },
         topic: { type: 'string', description: 'A few words on what was asked.' },
       },

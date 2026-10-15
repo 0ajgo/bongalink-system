@@ -421,12 +421,12 @@ describe("admin: Chat & FAQs", () => {
 
   test("Turn into FAQ: the new FAQ links and resolves the question it came from", async () => {
     script(toolCall("mark_unanswered", { reason: "no_information" }), say("Not sure."));
-    await send("Do you install the parts you sell?");
+    await send("Do you sell genuine Epson ink?");
     const { chat_id: chatId } = await lastLog();
     const admin = await createUser({ role: "admin" });
 
     const faq = await request(app).post("/api/v1/admin/faqs").set("Authorization", admin.auth).send({
-      question: "Do you install the parts you sell?", answer: "Yes, bring the unit to the shop.", category: "Repairs", source_chat_id: chatId });
+      question: "Do you sell genuine Epson ink?", answer: "Yes, genuine Epson 003 ink bottles.", category: "Products", source_chat_id: chatId });
     expect(faq.status).toBe(201);
     expect(faq.body.from_questions).toBe(1);
     const log = (await pool.query("SELECT faq_id, resolved_at, resolved_by FROM chat_logs WHERE chat_id = ?", [chatId]))[0][0];
