@@ -36,7 +36,7 @@ async function findSetup(token, conn = pool, lock = false) {
   const [[row]] = await conn.query(
     `SELECT t.token_id, u.user_id, u.username, u.role
        FROM password_setup_tokens t JOIN users u ON u.user_id = t.user_id
-      WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+      WHERE t.token_hash = ? AND t.purpose = 'setup' AND t.used_at IS NULL AND t.expires_at > NOW()
         AND u.must_set_password = 1 AND u.status = 'active'${lock ? ' FOR UPDATE' : ''}`,
     [hashToken(token)]);
   return row || null;
@@ -74,4 +74,4 @@ async function completeSetup(token, password) {
   }
 }
 
-module.exports = { sendSetupLink, findSetup, completeSetup, unusablePasswordHash, SETUP_HOURS, MIN_PASSWORD };
+module.exports = { sendSetupLink, findSetup, completeSetup, unusablePasswordHash, hashToken, SETUP_HOURS, MIN_PASSWORD };

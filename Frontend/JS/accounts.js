@@ -136,7 +136,7 @@ $("accRows").addEventListener("click", (e) => {
 const ACTION = {
   create_account: "Created the account", resend_invite: "Resent the setup email", suspend: "Suspended", unsuspend: "Unsuspended",
   promote: "Made admin", demote: "Made customer", delete: "Deleted the account", anonymize: "Anonymized the account",
-  ml_retrain: "Asked for a forecast update"
+  ml_retrain: "Asked for a forecast update", password_reset: "Reset the password (emailed link)"
 };
 function changeText(e) {
   const o = e.old_value || {}, n = e.new_value || {};

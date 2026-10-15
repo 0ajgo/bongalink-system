@@ -14,6 +14,7 @@
 <div class="auth">
   <main class="auth__main" id="main">
     <div class="auth__card">
+      <section id="loginStep">
       <h1>Log in</h1>
       <p class="auth__lead">Welcome back. Customers and the shop admin use the same form.</p>
 
@@ -35,13 +36,31 @@
         </div>
         <div class="auth__row">
           <label class="check" for="rememberMe"><input type="checkbox" id="rememberMe"> Remember me</label>
-          <a href="#" id="forgotPassword">Forgot password?</a>
+          <a href="#forgot" id="forgotPassword">Forgot password?</a>
         </div>
         <button class="btn btn--primary btn--lg btn--block" type="submit" id="loginSubmit">Log in</button>
       </form>
 
       <p class="auth__alt">New to Bongalink? <a href="register.html">Create an account</a></p>
       <p class="auth__alt"><a href="homepage.html">Browse the shop as a guest</a></p>
+      </section>
+
+      <!-- Forgot password: POST /api/auth/forgot-password (js/login.js). The answer is
+           always the same, so it can't be used to find out which emails have accounts. -->
+      <section id="forgotStep" hidden>
+        <h1>Reset your password</h1>
+        <p class="auth__lead">Enter the email of your account and we'll send you a link to choose a new password.</p>
+        <div class="alert" id="forgotMessage" role="status" hidden></div>
+        <form id="forgotForm" novalidate>
+          <div class="field">
+            <label class="label" for="forgotEmail">Email</label>
+            <input class="input" id="forgotEmail" type="email" autocomplete="email" required aria-describedby="forgotEmailError">
+            <span class="error-text" id="forgotEmailError" role="alert"></span>
+          </div>
+          <button class="btn btn--primary btn--lg btn--block" type="submit" id="forgotSubmit">Send reset link</button>
+        </form>
+        <p class="auth__alt"><a href="login.html" id="backToLogin">Back to log in</a></p>
+      </section>
     </div>
   </main>
 

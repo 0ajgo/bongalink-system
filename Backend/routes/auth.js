@@ -3,7 +3,8 @@
    Powers: register.html (POST /api/auth/register),
            login.html (POST /api/auth/login) and
            set-password.html (GET/POST /api/auth/set-password: accounts
-           created by an admin, services/accountSetup.js)
+           created by an admin, services/accountSetup.js) and
+           reset-password.html (forgot password, services/passwordReset.js)
    Backing table: users
    ===================================================================== */
 
@@ -11,9 +12,10 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const pool = require("../db");
 const { issueVerificationCode } = require("./emailVerification");
-const { rateLimit } = require("express-rate-limit");
+const { rateLimit, MemoryStore } = require("express-rate-limit");
 const { signToken, SUSPENDED } = require("../middleware/auth");
 const { findSetup, completeSetup } = require("../services/accountSetup");
+const { requestReset, findReset, completeReset } = require("../services/passwordReset");
 const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
@@ -192,5 +194,63 @@ router.post("/set-password", setupLimit, async (req, res) => {
     res.status(500).json({ error: "Could not set the password." });
   }
 });
+
+/* ---------------------------------------------------------------------
+   Forgot password (services/passwordReset.js).
+   POST /api/auth/forgot-password  { email }   always the same answer
+   GET  /api/auth/reset-password?token=...      is the link still good? -> { username }
+   POST /api/auth/reset-password  { token, password }
+   Rate limits: per IP, and per email (counted by its blind index, so it
+   works the same for emails with and without an account).
+   --------------------------------------------------------------------- */
+const RESET_SENT = "If that email has an account, we've sent a reset link. It works for 30 minutes.";
+const tooMany = { error: "Too many reset requests. Please wait a while and try again.", code: "RATE_LIMITED" };
+const resetStores = [new MemoryStore(), new MemoryStore(), new MemoryStore()];
+const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, store: resetStores[0],
+  standardHeaders: "draft-7", legacyHeaders: false, message: tooMany });
+const forgotPerEmail = rateLimit({ windowMs: 60 * 60 * 1000, limit: 3, store: resetStores[1],
+  standardHeaders: "draft-7", legacyHeaders: false, message: tooMany,
+  keyGenerator: (req) => `email:${blindIndex(req.body?.email) || "none"}` });
+const resetLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, store: resetStores[2],
+  standardHeaders: "draft-7", legacyHeaders: false, message: { error: "Too many tries. Please wait a few minutes." } });
+const BAD_RESET_LINK = "This link is invalid, already used or expired. Ask for a new one from the login page.";
+
+router.post("/forgot-password", forgotPerIp, forgotPerEmail, async (req, res) => {
+  const email = String(req.body?.email || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 150) {
+    return res.status(400).json({ error: "Enter the email address of your account." });
+  }
+  // Answer right away and send in the background: the same answer, and about the same
+  // response time, whether or not the email has an account. Failures are only logged.
+  requestReset(email).catch((err) => logError("Password reset request failed", err));
+  res.json({ message: RESET_SENT });
+});
+
+router.get("/reset-password", resetLimit, async (req, res) => {
+  try {
+    const reset = await findReset(req.query.token);
+    if (!reset) return res.status(400).json({ error: BAD_RESET_LINK });
+    if (reset.status === "suspended") return res.status(403).json(SUSPENDED);
+    res.json({ username: reset.username });
+  } catch (err) {
+    logError("Reset link check failed", err);
+    res.status(500).json({ error: "Could not check the link." });
+  }
+});
+
+router.post("/reset-password", resetLimit, async (req, res) => {
+  try {
+    const result = await completeReset(req.body?.token, req.body?.password);
+    if (result.code === "ACCOUNT_SUSPENDED") return res.status(403).json(SUSPENDED);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ message: "Your password was changed. Log in with the new one.", username: result.username });
+  } catch (err) {
+    logError("Password reset failed", err);
+    res.status(500).json({ error: "Could not reset the password." });
+  }
+});
+
+// Tests: start every test from empty rate-limit counters.
+router.resetRateLimits = () => Promise.all(resetStores.map((s) => s.resetAll()));
 
 module.exports = router;

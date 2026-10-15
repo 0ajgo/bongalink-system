@@ -10,7 +10,7 @@ const FRONTEND = path.join(__dirname, "..", "..", "Frontend");
 // api(url, options) returns { status = 200, body }.
 // role: "user" | "admin" | null (logged out). fastTimers: run setTimeout callbacks immediately.
 // storage: extra sessionStorage entries, e.g. a chat carried over from another page.
-async function openPage(page, { api, role = "user", query = "", fastTimers = false, username = "juan", storage = {} }) {
+async function openPage(page, { api, role = "user", query = "", hash = "", fastTimers = false, username = "juan", storage = {} }) {
   const dir = path.dirname(path.join(FRONTEND, page));
   const html = fs.readFileSync(path.join(FRONTEND, page), "utf8")
     .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
@@ -20,7 +20,7 @@ async function openPage(page, { api, role = "user", query = "", fastTimers = fal
   const timers = new Set();
   let closed = false;   // after close(), page timers and fetches stop for good
   const dom = new JSDOM(html, {
-    url: `http://localhost:5500/Frontend/${page}${query ? `?${query}` : ""}`,
+    url: `http://localhost:5500/Frontend/${page}${query ? `?${query}` : ""}${hash ? `#${hash}` : ""}`,
     runScripts: "dangerously",
     // Quiet: jsdom can't follow window.location changes (e.g. the PayMongo redirect).
     virtualConsole: new VirtualConsole(),

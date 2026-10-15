@@ -74,7 +74,63 @@ loginForm.addEventListener("submit", async (event) => {
   }
 });
 
+/* ---------------------------------------------------------------------
+   FORGOT PASSWORD — login.html#forgot
+   POST /api/auth/forgot-password { email }. The answer is the same whether
+   or not the email has an account.
+   --------------------------------------------------------------------- */
+const forgotForm = document.getElementById("forgotForm");
+const forgotEmail = document.getElementById("forgotEmail");
+
+function showStep(forgot) {
+  document.getElementById("loginStep").hidden = forgot;
+  document.getElementById("forgotStep").hidden = !forgot;
+  (forgot ? forgotEmail : document.getElementById("username")).focus();
+}
+
+function forgotNotice(message, type) {
+  const box = document.getElementById("forgotMessage");
+  box.hidden = false;
+  box.className = `alert alert--${type}`;
+  box.innerHTML = `${icon(type === "error" ? "circle-alert" : "mail", { size: 18 })}<span>${escapeHTML(message)}</span>`;
+}
+
 document.getElementById("forgotPassword").addEventListener("click", (event) => {
   event.preventDefault();
-  showMessage("Password reset by email isn't available yet. Please message the shop and we'll reset it for you.", "info");
+  history.replaceState(null, "", "#forgot");
+  showStep(true);
 });
+document.getElementById("backToLogin").addEventListener("click", (event) => {
+  event.preventDefault();
+  history.replaceState(null, "", location.pathname + location.search);
+  showStep(false);
+});
+forgotEmail.addEventListener("input", () => {
+  document.getElementById("forgotEmailError").textContent = "";
+  forgotEmail.removeAttribute("aria-invalid");
+});
+
+forgotForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = forgotEmail.value.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    document.getElementById("forgotEmailError").textContent = "Enter the email address of your account.";
+    forgotEmail.setAttribute("aria-invalid", "true");
+    return forgotEmail.focus();
+  }
+  const button = document.getElementById("forgotSubmit");
+  button.disabled = true;
+  button.classList.add("is-loading");
+  try {
+    const { message } = await apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+    forgotNotice(message, "success");
+    forgotForm.reset();
+  } catch (err) {
+    forgotNotice(err.message || "Could not send the link. Please try again.", "error");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-loading");
+  }
+});
+
+if (location.hash === "#forgot") showStep(true);

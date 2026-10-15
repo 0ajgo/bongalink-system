@@ -91,6 +91,41 @@ const mail = {
       `The shop created a Bongalink account for you (username ${name}). Set your password within ${ttlHours} hours: ${link}`
     ),
 
+  // Forgot password (services/passwordReset.js).
+  passwordReset: (to, name, link, ttlMinutes) =>
+    send(
+      to,
+      'Reset your Bongalink password',
+      layout('Reset your password', `<p>Hi ${esc(name)},</p>
+        <p>Someone asked to reset the password of your Bongalink account (username <b>${esc(name)}</b>).
+        If it was you, open this link to choose a new password:</p>
+        <p><a href="${esc(link)}" style="display:inline-block;background:#14498c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Choose a new password</a></p>
+        <p>The link works once and expires in ${ttlMinutes} minutes. If you didn't ask for this, ignore this email:
+        your password stays the same.</p>`),
+      `Reset your Bongalink password (username ${name}) within ${ttlMinutes} minutes: ${link}\nIf you didn't ask for this, ignore this email.`
+    ),
+
+  passwordChanged: (to, name) =>
+    send(
+      to,
+      'Your Bongalink password was changed',
+      layout('Your password was changed', `<p>Hi ${esc(name)},</p>
+        <p>The password of your Bongalink account was just changed, and every device that was logged in has been logged out.</p>
+        <p>If you didn't do this, contact the shop right away.</p>`),
+      `The password of your Bongalink account (${name}) was just changed and all devices were logged out. If this wasn't you, contact the shop right away.`
+    ),
+
+  // A suspended account asked for a reset: no link, just why.
+  resetBlockedSuspended: (to, name) =>
+    send(
+      to,
+      'About your Bongalink password reset',
+      layout('Your account is suspended', `<p>Hi ${esc(name)},</p>
+        <p>We got a request to reset your Bongalink password, but your account is suspended, so the password can't be reset.
+        Contact the shop if you think this is a mistake.</p>`),
+      `We got a request to reset your Bongalink password, but your account is suspended. Contact the shop if you think this is a mistake.`
+    ),
+
   delivered: (to, name, orderId) =>
     send(
       to,
