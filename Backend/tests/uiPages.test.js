@@ -303,14 +303,14 @@ describe("admin dashboard", () => {
 });
 
 describe("login page", () => {
-  test("one form, no role switch; sends only username and password", async () => {
+  test("one form, no role switch; sends the username, password and the Remember me choice", async () => {
     const page = await openPage("Pages/Homepage/login.html", { role: null, api: async () => ({ status: 401, body: { error: "Invalid username or password." } }) });
     expect(page.$("#userRoleBtn")).toBeNull();
     page.$("#username").value = "juan";
     page.$("#password").value = "secret123";
     page.$("#loginForm").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
     await page.until(() => !page.$("#loginMessage").hidden);
-    expect(page.calls).toEqual([{ url: "/auth/login", method: "POST", body: { username: "juan", password: "secret123" } }]);
+    expect(page.calls).toEqual([{ url: "/auth/login", method: "POST", body: { username: "juan", password: "secret123", remember: false } }]);
     expect(page.$("#loginMessage").textContent).toContain("Invalid username or password.");
     page.close();
   });

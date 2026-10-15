@@ -257,6 +257,10 @@ describe("header navigation and account indicator (every page)", () => {
     expect(page.$("#account-menu").hidden).toBe(true);
     page.$("[data-logout]").click();
     expect(page.window.sessionStorage.getItem("bongalink_token")).toBeNull();
+    // The server is told too, so this device's session ends there as well.
+    await page.until(() => page.calls.some((c) => c.url === "/auth/logout"));
+    expect(page.calls.find((c) => c.url === "/auth/logout").method).toBe("POST");
+    await page.settle();
     page.close();
   });
 

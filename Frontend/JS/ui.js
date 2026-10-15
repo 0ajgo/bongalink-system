@@ -149,12 +149,9 @@ function toast(message, type = "info") {
 /* --- Session ---------------------------------------------------------- */
 const session = {
   get loggedIn() { return isLoggedIn(); },
-  get role() { return sessionStorage.getItem("bongalink_role") || ""; },
-  get username() { return sessionStorage.getItem("bongalink_username") || ""; },
-  logout() {
-    ["bongalink_token", "bongalink_logged_in", "bongalink_role", "bongalink_username"]
-      .forEach(k => sessionStorage.removeItem(k));
-  }
+  get role() { return authStore.get("bongalink_role") || ""; },
+  get username() { return authStore.get("bongalink_username") || ""; },
+  logout() { return logOut(); }   // ends this device's session on the server too (api.js)
 };
 const initials = (name) => (String(name).match(/[A-Za-z0-9]/g) || ["?"]).slice(0, 2).join("").toUpperCase();
 const ROLE_LABEL = { admin: "Admin", user: "Customer" };
@@ -260,8 +257,9 @@ function renderHeader({ active = "", search = true } = {}) {
     button.addEventListener("click", (e) => { e.stopPropagation(); setOpen(menu.hidden); });
     document.addEventListener("click", (e) => { if (!menu.contains(e.target)) setOpen(false); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") { setOpen(false); button.focus(); } });
-    root.querySelector("[data-logout]").addEventListener("click", () => {
-      session.logout();
+    root.querySelector("[data-logout]").addEventListener("click", async (e) => {
+      e.currentTarget.disabled = true;
+      await session.logout();
       window.location.href = `${UI_ROOT}Homepage/homepage.html`;
     });
   }

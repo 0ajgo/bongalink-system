@@ -98,7 +98,7 @@ $("infoForm").addEventListener("submit", async (event) => {
   busy($("infoSubmit"), true);
   try {
     me = await apiFetch("/v1/account/me", { method: "PATCH", body: JSON.stringify(body) });
-    sessionStorage.setItem("bongalink_username", me.username);
+    authStore.update("bongalink_username", me.username);
     renderHeader({ active: "profile" });
     renderHead();
     $("infoPassword").value = "";
@@ -123,9 +123,11 @@ $("passwordForm").addEventListener("submit", async (event) => {
   if (next !== $("confirmPassword").value) return ($("passwordError").textContent = "The new passwords don't match.");
   busy($("passwordSubmit"), true);
   try {
-    await apiFetch("/v1/account/password", { method: "POST", body: JSON.stringify({ current_password: current, new_password: next }) });
+    // Every other device is logged out; this one gets a new login, kept the same way as before.
+    const result = await apiFetch("/v1/account/password", { method: "POST", body: JSON.stringify({ current_password: current, new_password: next }) });
+    authStore.update("bongalink_token", result.token);
     $("passwordForm").reset();
-    toast("Password changed.", "success");
+    toast("Password changed. You were logged out on every other device.", "success");
   } catch (err) {
     $("passwordError").textContent = err.message;
   } finally {

@@ -35,9 +35,11 @@
           </div>
         </div>
         <div class="auth__row">
-          <label class="check" for="rememberMe"><input type="checkbox" id="rememberMe"> Remember me</label>
+          <label class="check" for="rememberMe" title="Stay logged in on this device for 30 days, even after closing the browser. Don't use on a shared computer.">
+            <input type="checkbox" id="rememberMe" aria-describedby="rememberHint"> Remember me</label>
           <a href="#forgot" id="forgotPassword">Forgot password?</a>
         </div>
+        <p class="hint remember-hint" id="rememberHint">Remember me keeps you logged in on this device for 30 days. Leave it off on a shared computer.</p>
         <button class="btn btn--primary btn--lg btn--block" type="submit" id="loginSubmit">Log in</button>
       </form>
 

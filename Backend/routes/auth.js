@@ -13,7 +13,7 @@ const bcrypt = require("bcryptjs");
 const pool = require("../db");
 const { issueVerificationCode } = require("./emailVerification");
 const { rateLimit, MemoryStore } = require("express-rate-limit");
-const { signToken, SUSPENDED } = require("../middleware/auth");
+const { startSession, endSession, bearer, SUSPENDED } = require("../middleware/auth");
 const { findSetup, completeSetup } = require("../services/accountSetup");
 const { requestReset, findReset, completeReset } = require("../services/passwordReset");
 const { emailColumns, logError } = require("../lib/pii");
@@ -103,7 +103,7 @@ router.post("/register", async (req, res) => {
 
 /* ---------------------------------------------------------------------
    POST /api/auth/login
-   Body: { username, password, role }  -- role is the tab the user
+   Body: { username, password, remember?, role? }  -- role is the tab the user
    picked (User/Admin) on the login page; the server re-checks it
    against the real role in the database rather than trusting it blindly.
    --------------------------------------------------------------------- */
@@ -148,17 +148,35 @@ router.post("/login", async (req, res) => {
     // Checked after the password, so the status of an account isn't revealed to guessers.
     if (user.status === "suspended") return res.status(403).json(SUSPENDED);
 
-    const token = signToken(user);
+    // "Remember me": a 30-day login the browser keeps after closing; otherwise this tab only.
+    const session = await startSession(user, { remember: req.body.remember === true });
     await pool.query("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
 
     res.json({
-      token,
+      token: session.token,
+      remember: session.remember,
+      expires_at: session.expiresAt,
       user: { username: user.username, role: user.role }
     });
   } catch (err) {
     logError("Login failed", err);
     res.status(500).json({ error: "Login failed." });
   }
+});
+
+/* ---------------------------------------------------------------------
+   POST /api/auth/logout — ends this device's session at once (the token
+   stops working everywhere it was copied). Always answers 200, so the
+   browser can always finish logging out.
+   --------------------------------------------------------------------- */
+router.post("/logout", async (req, res) => {
+  const token = bearer(req);
+  try {
+    if (token) await endSession(token);
+  } catch (err) {
+    logError("Logout failed", err);
+  }
+  res.json({ ok: true });
 });
 
 /* ---------------------------------------------------------------------

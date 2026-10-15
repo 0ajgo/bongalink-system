@@ -5,7 +5,7 @@ const pool = require("../db");
 const { emailColumns, encryptAddress, decryptAddress, enc } = require("../lib/pii");
 
 const TABLES = [
-  "ml_training_runs", "admin_audit_log", "password_setup_tokens", "chat_logs", "faqs", "product_changes", "product_images", "shipment_events", "payment_events", "payments", "inventory_movements", "email_verifications",
+  "user_sessions", "ml_training_runs", "admin_audit_log", "password_setup_tokens", "chat_logs", "faqs", "product_changes", "product_images", "shipment_events", "payment_events", "payments", "inventory_movements", "email_verifications",
   "deliveries", "consent_records", "order_items", "orders", "delivery_addresses",
   "cart_items", "carts", "ml_events", "products", "categories", "users"
 ];

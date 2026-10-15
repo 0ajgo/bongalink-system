@@ -12,13 +12,73 @@
 
 const API_BASE_URL = "http://localhost:4000/api";
 
+/* --- The stored login -------------------------------------------------
+   A normal login lives in sessionStorage: this tab only, gone when it
+   closes. "Remember me" puts it in localStorage instead, so it survives
+   closing the browser, for the 30 days the server allows. The server
+   still decides: suspension, a role or password change, or logging out
+   ends the login on the next request, whichever kind it is. */
+const AUTH_KEYS = ["bongalink_token", "bongalink_logged_in", "bongalink_role", "bongalink_username"];
+const authStore = {
+  get(key) {
+    try { return sessionStorage.getItem(key) ?? localStorage.getItem(key); } catch (e) { return null; }
+  },
+  // data = { token, user: { role, username } } from POST /auth/login
+  save(data, remember) {
+    this.clear();
+    const area = remember ? localStorage : sessionStorage;
+    try {
+      area.setItem("bongalink_token", data.token);
+      area.setItem("bongalink_logged_in", "true");
+      area.setItem("bongalink_role", data.user.role);
+      area.setItem("bongalink_username", data.user.username);
+    } catch (e) { /* storage blocked: this page stays logged out */ }
+  },
+  // Change one value wherever the login is kept (e.g. a new token after a password change).
+  update(key, value) {
+    try {
+      const area = sessionStorage.getItem("bongalink_token") ? sessionStorage : localStorage;
+      area.setItem(key, value);
+    } catch (e) { /* ignore */ }
+  },
+  get remembered() {
+    try { return !sessionStorage.getItem("bongalink_token") && Boolean(localStorage.getItem("bongalink_token")); } catch (e) { return false; }
+  },
+  clear() {
+    for (const area of [sessionStorage, localStorage]) {
+      try { AUTH_KEYS.forEach(k => area.removeItem(k)); } catch (e) { /* ignore */ }
+    }
+  }
+};
+
+// A remembered login past its 30 days is dropped before the page uses it.
+(function dropExpiredLogin() {
+  try {
+    const token = localStorage.getItem("bongalink_token");
+    if (!token) return;
+    const { exp } = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (exp && exp * 1000 <= Date.now()) AUTH_KEYS.forEach(k => localStorage.removeItem(k));
+  } catch (e) { /* not a token we can read: leave it to the server */ }
+})();
+
+// Log out: end this device's session on the server, then forget the login here.
+// The local part always happens, even offline.
+async function logOut() {
+  const token = authStore.get("bongalink_token");
+  authStore.clear();
+  if (!token) return;
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, keepalive: true });
+  } catch (e) { /* offline: the token is gone from this device anyway */ }
+}
+
 /**
  * Wraps fetch() with the API base URL, JSON handling, and the
  * logged-in user's auth token (if any). Throws an Error with the
  * server's message on non-2xx responses so callers can catch() it.
  */
 async function apiFetch(path, options = {}) {
-  const token = sessionStorage.getItem("bongalink_token");
+  const token = authStore.get("bongalink_token");
 
   const headers = { ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -59,8 +119,7 @@ const SESSION_ENDED_CODES = { ACCOUNT_SUSPENDED: "suspended", SESSION_ENDED: "en
 // Clears the login and sends the user to the login page, which explains why
 // (?ended=suspended|ended) and brings them back here after logging in.
 function endSession(reason) {
-  ["bongalink_token", "bongalink_logged_in", "bongalink_role", "bongalink_username"]
-    .forEach(k => sessionStorage.removeItem(k));
+  authStore.clear();
   const here = location.pathname.split("/Pages/")[1];
   const next = here && !here.startsWith("Homepage/login.html") ? `&next=${encodeURIComponent(here + location.search)}` : "";
   location.href = `../Homepage/login.html?ended=${reason}${next}`;
@@ -69,11 +128,11 @@ function endSession(reason) {
 /* Shared auth-check helpers — used by Homepage.js and by the checkout.html
    inline script, since both need to gate actions on being logged in. */
 function isLoggedIn() {
-  return sessionStorage.getItem("bongalink_logged_in") === "true";
+  return authStore.get("bongalink_logged_in") === "true";
 }
 
 // UI hint only — the server enforces the real admin check on every
 // admin-only request via the requireAdmin middleware.
 function isAdmin() {
-  return isLoggedIn() && sessionStorage.getItem("bongalink_role") === "admin";
+  return isLoggedIn() && authStore.get("bongalink_role") === "admin";
 }

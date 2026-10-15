@@ -56,14 +56,9 @@ loginForm.addEventListener("submit", async (event) => {
   loginSubmitBtn.disabled = true;
   loginSubmitBtn.classList.add("is-loading");
   try {
-    const data = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
-
-    sessionStorage.setItem("bongalink_token", data.token);
-    sessionStorage.setItem("bongalink_logged_in", "true");
-    sessionStorage.setItem("bongalink_role", data.user.role);
-    sessionStorage.setItem("bongalink_username", data.user.username);
-    if (remember) localStorage.setItem("bongalink_remember", "true");
-    else localStorage.removeItem("bongalink_remember");
+    const data = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ username, password, remember }) });
+    // Remember me: kept for 30 days even after the browser closes; otherwise this tab only.
+    authStore.save(data, data.remember);
 
     showMessage("Logged in. Taking you there…", "success");
     window.location.href = nextPage(data.user.role);

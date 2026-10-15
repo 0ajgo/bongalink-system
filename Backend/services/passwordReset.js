@@ -14,6 +14,7 @@ const { mail } = require('./mailer');
 const { hashToken, MIN_PASSWORD } = require('./accountSetup');
 const { blindIndex } = require('../lib/dataProtection');
 const { dec, logError } = require('../lib/pii');
+const { endAllSessions } = require('../middleware/auth');
 
 const RESET_MINUTES = 30;
 
@@ -79,6 +80,7 @@ async function completeReset(token, password) {
               email_verified_at = COALESCE(email_verified_at, NOW())
         WHERE user_id = ?`, [passwordHash, reset.user_id]);
     await conn.query('UPDATE password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [reset.user_id]);
+    await endAllSessions(reset.user_id, conn);
     await conn.query(
       `INSERT INTO admin_audit_log (admin_id, admin_label, action, target_user_id, target_label, new_value)
        VALUES (?, ?, 'password_reset', ?, ?, ?)`,

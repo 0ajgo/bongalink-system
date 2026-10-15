@@ -37,3 +37,4 @@
 .privacy-notice h2 { font-size: var(--text-base); margin-bottom: var(--space-2); color: var(--color-ink); }
 .privacy-notice p + p { margin-top: var(--space-2); }
 .auth__card .check a { text-decoration: underline; text-underline-offset: 2px; }
+.remember-hint { margin: calc(-1 * var(--space-3)) 0 var(--space-4); }

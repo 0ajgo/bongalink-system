@@ -24,7 +24,8 @@ const router = require("express").Router();
 const bcrypt = require("bcryptjs");
 const pool = require("../db");
 const ah = require("../lib/asyncHandler");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, startSession, endAllSessions } = require("../middleware/auth");
+const { mail } = require("../services/mailer");
 const { issueVerificationCode } = require("./emailVerification");
 const { REGIONS, zoneFor } = require("../services/shippingRates");
 const geocode = require("../services/geocode");
@@ -115,9 +116,18 @@ router.post("/password", ah(async (req, res) => {
   if (await bcrypt.compare(String(new_password), row.password_hash)) {
     return res.status(400).json({ error: "Choose a password different from your current one." });
   }
-  await pool.query("UPDATE users SET password_hash = ? WHERE user_id = ?",
+  // A new password logs out every other device (token_version + 1 and their sessions ended);
+  // this device gets a fresh login, kept the same way it was ("Remember me" or not).
+  await pool.query("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE user_id = ?",
     [await bcrypt.hash(String(new_password), 10), req.user.userId]);
-  res.json({ message: "Password changed." });
+  await endAllSessions(req.user.userId);
+  const [[user]] = await pool.query(
+    "SELECT user_id, username, role, token_version, email FROM users WHERE user_id = ?", [req.user.userId]);
+  const session = await startSession(user, { remember: req.user.remember });
+  mail.passwordChanged(dec("users", "email", user.email), user.username)
+    .catch((err) => logError("Password-changed email failed", err));
+  res.json({ message: "Password changed. Every other device was logged out.", token: session.token,
+             remember: session.remember, expires_at: session.expiresAt });
 }));
 
 /* ---------------------------------------------------------------- addresses */

@@ -10,7 +10,8 @@ const FRONTEND = path.join(__dirname, "..", "..", "Frontend");
 // api(url, options) returns { status = 200, body }.
 // role: "user" | "admin" | null (logged out). fastTimers: run setTimeout callbacks immediately.
 // storage: extra sessionStorage entries, e.g. a chat carried over from another page.
-async function openPage(page, { api, role = "user", query = "", hash = "", fastTimers = false, username = "juan", storage = {} }) {
+// local: localStorage entries, e.g. a "Remember me" login from an earlier browser session.
+async function openPage(page, { api, role = "user", query = "", hash = "", fastTimers = false, username = "juan", storage = {}, local = {} }) {
   const dir = path.dirname(path.join(FRONTEND, page));
   const html = fs.readFileSync(path.join(FRONTEND, page), "utf8")
     .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
@@ -32,6 +33,8 @@ async function openPage(page, { api, role = "user", query = "", hash = "", fastT
         window.sessionStorage.setItem("bongalink_username", username);
       }
       Object.entries(storage).forEach(([k, v]) => window.sessionStorage.setItem(k, v));
+      window.localStorage.clear();
+      Object.entries(local).forEach(([k, v]) => window.localStorage.setItem(k, v));
       window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
       window.HTMLDialogElement.prototype.close = function () { this.open = false; };
       window.scrollTo = () => {};
