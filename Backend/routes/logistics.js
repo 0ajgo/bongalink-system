@@ -8,6 +8,7 @@ const lalamove = require('../services/lalamove');
 const { quoteOptions, storeLocation, COURIER_LABEL } = require('../services/shippingRates');
 const { mail } = require('../services/mailer');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { decryptAddress, addressLine, orderEmail, maskEmail, logError } = require('../lib/pii');
 
 const SHIPMENT_STATUSES = ['BOOKED', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED'];
 const READY_TO_SHIP = ['paid', 'packed'];
@@ -18,20 +19,25 @@ const trackingUrlFor = (courier, tn) => {
   return tpl ? tpl.replace('{tn}', encodeURIComponent(tn)) : null;
 };
 
+// Personal fields are stored encrypted (lib/pii.js); this decrypts them for booking and emails.
 async function loadOrderForShipping(orderId) {
-  const [[o]] = await pool.query(
-    `SELECT o.order_id, o.status, o.shipping_fee, o.courier,
-            u.username AS customer_name, COALESCE(o.contact_email, u.email) AS customer_email,
-            a.recipient_name AS ship_name, a.recipient_phone AS ship_phone,
-            CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS ship_address,
-            a.lat AS ship_lat, a.lng AS ship_lng
+  const [[row]] = await pool.query(
+    `SELECT o.order_id, o.status, o.shipping_fee, o.courier, u.username AS customer_name,
+            o.contact_email, u.email AS account_email,
+            a.recipient_name, a.recipient_phone, a.street, a.barangay, a.city, a.province, a.postal_code, a.lat, a.lng
        FROM orders o
        JOIN users u ON u.user_id = o.user_id
        LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
       WHERE o.order_id = ?`,
     [orderId]
   );
-  return o;
+  if (!row) return row;
+  const a = decryptAddress(row);
+  return {
+    order_id: row.order_id, status: row.status, shipping_fee: row.shipping_fee, courier: row.courier,
+    customer_name: row.customer_name, customer_email: orderEmail(row),
+    ship_name: a.recipient_name, ship_phone: a.recipient_phone, ship_address: addressLine(a), ship_lat: a.lat, ship_lng: a.lng,
+  };
 }
 
 // Adds `items: [{ product_id, name, quantity, unit_price }]` to each row (one query for all rows).
@@ -50,15 +56,26 @@ async function attachItems(rows) {
   return rows;
 }
 
-// Customer + delivery address columns shared by the admin lists (needs o, u, a aliases).
+// Customer + delivery address columns shared by the admin lists (needs o, u, a aliases);
+// shapeOrderDetail() turns them into ship_name, ship_phone, ship_address, ship_landmark.
 const ORDER_DETAIL_COLUMNS = `
   o.order_id, o.status AS order_status, o.created_at, o.paid_at, o.total_amount, o.shipping_fee,
   o.courier AS courier_chosen,
-  u.username AS customer_username, COALESCE(o.contact_email, u.email) AS customer_email,
-  a.recipient_name AS ship_name, a.recipient_phone AS ship_phone,
-  CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS ship_address,
-  a.region AS ship_region, a.landmark AS ship_landmark,
+  u.username AS customer_username, o.contact_email, u.email AS account_email,
+  a.recipient_name, a.recipient_phone, a.street, a.barangay, a.city, a.province, a.postal_code, a.landmark,
+  a.region AS ship_region,
   (a.lat IS NOT NULL AND a.lng IS NOT NULL) AS has_map_pin`;
+
+// Decrypts for the Deliveries page. Name, phone and address stay whole: they go on the
+// courier waybill. The customer's email isn't needed there, so it's masked.
+function shapeOrderDetail(row) {
+  const a = decryptAddress(row);
+  const { contact_email, account_email, recipient_name, recipient_phone, street, barangay, city, province, postal_code, landmark, ...rest } = row;
+  return {
+    ...rest, customer_email: maskEmail(orderEmail(row)),
+    ship_name: a.recipient_name, ship_phone: a.recipient_phone, ship_address: addressLine(a), ship_landmark: a.landmark,
+  };
+}
 
 // The order's delivery row, if it has been booked already.
 async function bookedDelivery(conn, orderId, lock = false) {
@@ -114,7 +131,7 @@ async function inTransaction(work) {
 
 async function notifyDelivered(orderId) {
   const o = await loadOrderForShipping(orderId);
-  mail.delivered(o.customer_email, o.customer_name, o.order_id).catch((e) => console.error('Mail failed:', e.message));
+  mail.delivered(o.customer_email, o.customer_name, o.order_id).catch((e) => logError('Mail failed', e));
 }
 
 // ---------------------------------------------------------------- customer
@@ -166,7 +183,7 @@ router.get('/admin/orders/to-ship', requireAdmin, ah(async (req, res) => {
 // GET /admin/orders/awaiting-shipment  (REQ012, REQ013) - paid orders not booked yet, oldest payment first,
 // with customer, address, items, the courier chosen at checkout and whether Lalamove can be booked.
 router.get('/admin/orders/awaiting-shipment', requireAdmin, ah(async (req, res) => {
-  const [rows] = await pool.query(
+  let [rows] = await pool.query(
     `SELECT ${ORDER_DETAIL_COLUMNS}
        FROM orders o
        JOIN users u ON u.user_id = o.user_id
@@ -177,6 +194,7 @@ router.get('/admin/orders/awaiting-shipment', requireAdmin, ah(async (req, res) 
     [READY_TO_SHIP]
   );
   const lalamoveOn = lalamove.enabled();
+  rows = rows.map(shapeOrderDetail);
   for (const r of rows) {
     r.has_map_pin = Boolean(r.has_map_pin);
     r.courier_chosen_label = COURIER_LABEL[r.courier_chosen] || null;
@@ -194,7 +212,7 @@ router.get('/admin/shipments', requireAdmin, ah(async (req, res) => {
     where = 'WHERE d.status = ?';
     params.push(req.query.status);
   }
-  const [rows] = await pool.query(
+  let [rows] = await pool.query(
     `SELECT d.delivery_id, d.courier, d.tracking_number, d.external_order_id, d.tracking_url,
             d.fee_charged, d.fee_actual, d.status, d.dispatched_at, d.delivered_at, d.updated_at,
             ${ORDER_DETAIL_COLUMNS}
@@ -205,6 +223,7 @@ router.get('/admin/shipments', requireAdmin, ah(async (req, res) => {
       ${where} ORDER BY d.updated_at DESC, d.delivery_id DESC LIMIT 200`,
     params
   );
+  rows = rows.map(shapeOrderDetail);
   for (const r of rows) {
     r.has_map_pin = Boolean(r.has_map_pin);
     r.courier_label = COURIER_LABEL[r.courier] || r.courier;
@@ -254,7 +273,7 @@ router.post('/admin/shipments/:orderId/lalamove', requireAdmin, ah(async (req, r
   }
 
   mail.shipmentBooked(o.customer_email, o.customer_name, o.order_id, COURIER_LABEL.LALAMOVE, null, booked.shareLink)
-    .catch((e) => console.error('Mail failed:', e.message));
+    .catch((e) => logError('Mail failed', e));
   res.status(201).json({
     delivery_id: deliveryId,
     lalamove_order_id: booked.orderId,
@@ -295,7 +314,7 @@ router.post('/admin/shipments/:orderId/manual', requireAdmin, ah(async (req, res
   if (!deliveryId) return res.status(409).json({ error: 'This order already has a shipment' });
 
   mail.shipmentBooked(o.customer_email, o.customer_name, o.order_id, COURIER_LABEL[courier], tn, url)
-    .catch((e) => console.error('Mail failed:', e.message));
+    .catch((e) => logError('Mail failed', e));
   res.status(201).json({ delivery_id: deliveryId, tracking_url: url });
 }));
 

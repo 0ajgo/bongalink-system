@@ -32,6 +32,7 @@ const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
 const { statusLines } = require("./lib/integrationStatus");
+const { logError } = require("./lib/pii");
 
 const app = express();
 
@@ -73,14 +74,15 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 // an unexpected 500 and gets a generic message.
 app.use((err, req, res, next) => {
   if (err instanceof PaymentError || err instanceof LogisticsError) {
-    console.error(`${err.constructor.name}: ${err.message}`);
+    logError(err.constructor.name, err);
     return res.status(502).json({ error: err.message });
   }
   const status = err instanceof multer.MulterError ? 400 : err.status || err.statusCode || 500;
   if (status < 500) {
     return res.status(status).json({ error: err.message || "Invalid request.", ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) ? { code: err.code } : {}) });
   }
-  console.error(err);
+  // Never the whole error: database errors carry the SQL with its values (personal data).
+  logError(`${req.method} ${req.path} failed`, err);
   res.status(500).json({ error: "Something went wrong." });
 });
 
@@ -88,6 +90,15 @@ if (require.main === module) {
   // Which outside services are on. Names only, never values (lib/integrationStatus.js).
   console.log("Integrations (from .env; restart after changing it):");
   statusLines().forEach((line) => console.log(`  ${line}`));
+
+  // Personal information is stored encrypted (lib/dataProtection.js): without working
+  // keys the server would write it in plain text or fail to read it, so it won't start.
+  try {
+    require("./lib/dataProtection").assertReady();
+  } catch (err) {
+    console.error(`Encryption: ${err.message}. The server will not start without it (see Backend/.env.example).`);
+    process.exit(1);
+  }
 
   const PORT = process.env.PORT || 4000;
   app.listen(PORT, () => {

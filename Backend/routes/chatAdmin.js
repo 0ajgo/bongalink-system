@@ -13,6 +13,7 @@ const express = require('express');
 const pool = require('../db');
 const ah = require('../lib/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
+const { dec, maskText } = require('../lib/pii');
 
 const router = express.Router();
 
@@ -47,14 +48,19 @@ const toolNames = (json) => {
   return [...new Set(list.map((t) => t.name))];
 };
 
-const logRow = (r) => ({
+// Messages are stored encrypted. Lists show them with emails and phone numbers masked;
+// the full text is only in the one-conversation view.
+const decryptLog = (r) => ({ ...r, message: dec('chat_logs', 'message', r.message), reply: dec('chat_logs', 'reply', r.reply) });
+const logRow = (r, { masked = false } = {}) => ({
   chat_id: r.chat_id, session_id: r.session_id, user_id: r.user_id, username: r.username,
-  product_id: r.product_id, product_name: r.product_name, message: r.message, reply: r.reply,
+  product_id: r.product_id, product_name: r.product_name,
+  message: masked ? maskText(r.message) : r.message, reply: masked ? maskText(r.reply) : r.reply,
   tools: toolNames(r.tools_used), answered: Boolean(r.answered), unanswered_reason: r.unanswered_reason,
   resolved_at: r.resolved_at, faq_id: r.faq_id, model: r.model, response_ms: r.response_ms, created_at: r.created_at,
   ...(r.session_messages !== undefined ? { session_messages: r.session_messages } : {}),
 });
 
+const SEARCH_SCAN = 2000;
 const LOG_SELECT = `
   SELECT l.*, u.username, p.name AS product_name
     FROM chat_logs l
@@ -66,10 +72,6 @@ router.get('/admin/chat/logs', requireAdmin, ah(async (req, res) => {
   if (!VIEWS[view]) return res.status(400).json({ error: 'Unknown view.' });
   const where = [VIEWS[view]];
   const params = [];
-  if (q.trim()) {
-    where.push('(l.message LIKE ? OR l.reply LIKE ?)');
-    params.push(`%${q.trim()}%`, `%${q.trim()}%`);
-  }
   if (days !== 'all') {
     const n = Number(days);
     if (!Number.isInteger(n) || n < 1 || n > 3650) return res.status(400).json({ error: 'Choose a period.' });
@@ -87,17 +89,24 @@ router.get('/admin/chat/logs', requireAdmin, ah(async (req, res) => {
   const before = Number(req.query.before);
   if (Number.isInteger(before) && before > 0) { where.push('l.chat_id < ?'); params.push(before); }
 
-  const [rows] = await pool.query(
+  // Text search can't run in the database (the text is encrypted): it decrypts up to
+  // SEARCH_SCAN of the newest rows matching the other filters and searches those.
+  const search = q.trim().toLowerCase();
+  const take = search ? SEARCH_SCAN : limit + 1;
+  const [found] = await pool.query(
     `SELECT x.*, (SELECT COUNT(*) FROM chat_logs s WHERE s.session_id = x.session_id) AS session_messages
-       FROM (${LOG_SELECT} WHERE ${where.join(' AND ')} ORDER BY l.chat_id DESC LIMIT ${limit + 1}) x
+       FROM (${LOG_SELECT} WHERE ${where.join(' AND ')} ORDER BY l.chat_id DESC LIMIT ${take}) x
       ORDER BY x.chat_id DESC`, params);
-  res.json({ logs: rows.slice(0, limit).map(logRow), has_more: rows.length > limit });
+  let rows = found.map(decryptLog);
+  if (search) rows = rows.filter((r) => r.message.toLowerCase().includes(search) || r.reply.toLowerCase().includes(search));
+  res.json({ logs: rows.slice(0, limit).map((r) => logRow(r, { masked: true })), has_more: rows.length > limit,
+             ...(search && found.length === SEARCH_SCAN ? { searched_newest: SEARCH_SCAN } : {}) });
 }));
 
 router.get('/admin/chat/sessions/:sessionId', requireAdmin, ah(async (req, res) => {
   const [rows] = await pool.query(`${LOG_SELECT} WHERE l.session_id = ? ORDER BY l.chat_id ASC LIMIT 200`, [req.params.sessionId]);
   if (!rows.length) return res.status(404).json({ error: 'Conversation not found.' });
-  res.json({ session_id: req.params.sessionId, messages: rows.map(logRow) });
+  res.json({ session_id: req.params.sessionId, messages: rows.map((r) => logRow(decryptLog(r))) });
 }));
 
 router.patch('/admin/chat/logs/:id(\\d+)', requireAdmin, ah(async (req, res) => {

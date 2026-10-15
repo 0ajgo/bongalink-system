@@ -7,7 +7,7 @@ const app = require("../server");
 const lalamove = require("../services/lalamove");
 const geocode = require("../services/geocode");
 const { PINS, installNominatim } = require("./nominatimMock");
-const { pool, resetDb, createUser, createProduct, fillCart, orderBody } = require("./helpers");
+const { pool, resetDb, createUser, createProduct, fillCart, orderBody, addressRows } = require("./helpers");
 
 let user, admin, productId;
 jest.setTimeout(30000);
@@ -125,10 +125,10 @@ describe("POST /api/orders: the fee shown is the fee charged", () => {
     const res = await placeOrder({ expected_shipping_fee: shown });
     expect(res.status).toBe(201);
     expect(res.body.shippingFee).toBe(shown);
-    const [[row]] = await pool.query(
-      "SELECT o.shipping_fee, a.region, a.province, a.shipping_zone, a.lat, a.lng FROM orders o JOIN delivery_addresses a USING (address_id)");
-    expect(row).toEqual({ shipping_fee: "230.00", region: "VII", province: "Cebu", shipping_zone: "VISAYAS",
-                          lat: "10.3157000", lng: "123.8854000" });
+    const [[order]] = await pool.query("SELECT shipping_fee FROM orders");
+    expect(order.shipping_fee).toBe("230.00");
+    const [address] = await addressRows();   // the pin is stored encrypted
+    expect(address).toMatchObject({ region: "VII", province: "Cebu", shipping_zone: "VISAYAS", lat: 10.3157, lng: 123.8854 });
   });
 
   test("if the fee changed since the quote, the order is refused with the new fee", async () => {
@@ -148,7 +148,7 @@ describe("saved addresses keep their pin", () => {
     });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ region: "IV-B", province: "Palawan", shipping_zone: "ISLAND_PROVINCE",
-                                     lat: "9.7392000", lng: "118.7353000" });
+                                     lat: 9.7392, lng: 118.7353 });
   });
 });
 

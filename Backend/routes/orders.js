@@ -17,6 +17,7 @@ const express = require("express");
 const pool = require("../db");
 const { requireAuth, requireVerifiedEmail } = require("../middleware/auth");
 const { quoteOptions, REGIONS } = require("../services/shippingRates");
+const { encryptAddress, enc, logError } = require("../lib/pii");
 
 const router = express.Router();
 
@@ -92,7 +93,7 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     });
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ error: err.message });
-    console.error(err);
+    logError("Checkout quote failed", err);
     return res.status(500).json({ error: "Checkout failed." });
   }
 
@@ -113,7 +114,13 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     });
   }
 
-  const connection = await pool.getConnection();
+  let connection;
+  try {
+    connection = await pool.getConnection();
+  } catch (err) {
+    logError("Checkout failed (no database connection)", err);
+    return res.status(500).json({ error: "Checkout failed." });
+  }
 
   try {
     // Tags stock changes in ml_events (see migrations/003_ml_sync.sql).
@@ -156,17 +163,21 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     ) / 100;
     const totalAmount = Math.round((subtotal + shippingFee) * 100) / 100;
 
-    // --- Step 4: save the delivery address as its own row.
+    // --- Step 4: save the delivery address as its own row (personal fields encrypted).
+    const e = encryptAddress({
+      recipient_name: recipientName, recipient_phone: contact.phone, street: address.street, barangay: address.barangay,
+      city: address.city, postal_code: address.postalCode, landmark: address.landmark || null, lat: pin.lat, lng: pin.lng
+    });
     const [addressResult] = await connection.query(
       `INSERT INTO delivery_addresses
         (user_id, recipient_name, recipient_phone, street, barangay, city, province, region,
          postal_code, landmark, lat, lng, shipping_zone)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        userId, recipientName, contact.phone, address.street, address.barangay,
-        address.city, (quote.location.source === "pin" ? quote.location.province : address.province) || null,
-        quote.location.region, address.postalCode, address.landmark || null,
-        pin.lat, pin.lng, quote.zone
+        userId, e.recipient_name, e.recipient_phone, e.street, e.barangay,
+        e.city, (quote.location.source === "pin" ? quote.location.province : address.province) || null,
+        quote.location.region, e.postal_code, e.landmark,
+        e.lat, e.lng, quote.zone
       ]
     );
     const addressId = addressResult.insertId;
@@ -176,7 +187,7 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
       `INSERT INTO orders
         (user_id, address_id, contact_email, status, total_amount, payment_method, shipping_fee, courier)
        VALUES (?, ?, ?, 'pending_payment', ?, ?, ?, ?)`,
-      [userId, addressId, contact.email, totalAmount, paymentMethod, shippingFee, courier]
+      [userId, addressId, enc("orders", "contact_email", String(contact.email).trim()), totalAmount, paymentMethod, shippingFee, courier]
     );
     const orderId = orderResult.insertId;
 
@@ -226,7 +237,7 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     });
   } catch (err) {
     await connection.rollback();
-    console.error(err);
+    logError("Checkout failed", err);
     res.status(500).json({ error: "Checkout failed." });
   } finally {
     await connection.query("SET @app_user_id = NULL").catch(() => {});
@@ -260,7 +271,7 @@ router.get("/", requireAuth, async (req, res) => {
     }
     res.json(orders);
   } catch (err) {
-    console.error(err);
+    logError("Loading orders failed", err);
     res.status(500).json({ error: "Could not load your orders." });
   }
 });

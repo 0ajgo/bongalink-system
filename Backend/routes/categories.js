@@ -7,6 +7,7 @@
 
 const express = require("express");
 const pool = require("../db");
+const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
@@ -31,7 +32,7 @@ router.post("/", requireAdmin, async (req, res) => {
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ error: "That category already exists." });
     }
-    console.error(err);
+    logError("Categories request failed", err);
     res.status(500).json({ error: "Failed to create category." });
   }
 });

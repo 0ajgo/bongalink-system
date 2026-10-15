@@ -12,6 +12,7 @@
 
 const express = require("express");
 const pool = require("../db");
+const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
@@ -50,7 +51,7 @@ router.get("/status", async (req, res) => {
       active_model: model || null
     });
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load model status." });
   }
 });
@@ -80,7 +81,7 @@ router.get("/predictions", async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load predictions." });
   }
 });
@@ -98,7 +99,7 @@ router.get("/products", async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load products." });
   }
 });
@@ -185,7 +186,7 @@ router.get("/dashboard", async (req, res) => {
       top_products: top.map(t => ({ ...t, units: Number(t.units), revenue: Number(t.revenue) }))
     });
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load the dashboard." });
   }
 });
@@ -229,7 +230,7 @@ router.get("/history/:id", async (req, res) => {
 
     res.json({ product, days, series });
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load sales history." });
   }
 });
@@ -252,7 +253,7 @@ router.get("/events", async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load change log." });
   }
 });

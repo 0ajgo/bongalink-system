@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const { mail } = require('./mailer');
+const { PRIVACY_POLICY_VERSION } = require('../lib/privacy');
 
 const SETUP_HOURS = 72;
 const MIN_PASSWORD = 6;   // same rule as POST /api/auth/register
@@ -19,7 +20,7 @@ const setupLink = (token) =>
 // A password nobody knows, for accounts waiting for setup.
 const unusablePasswordHash = () => bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
 
-// user = { user_id, username, email, role }. Throws if the email can't be sent.
+// user = { user_id, username, email (decrypted), role }. Throws if the email can't be sent.
 async function sendSetupLink(user, adminId) {
   const token = crypto.randomBytes(32).toString('hex');
   await pool.query('UPDATE password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [user.user_id]);
@@ -59,6 +60,10 @@ async function completeSetup(token, password) {
       `UPDATE users SET password_hash = ?, must_set_password = 0, email_verified_at = COALESCE(email_verified_at, NOW())
         WHERE user_id = ?`, [passwordHash, setup.user_id]);
     await conn.query('UPDATE password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [setup.user_id]);
+    // The set-password page requires accepting the privacy notice (checked by the route).
+    await conn.query(
+      `INSERT INTO consent_records (user_id, consent_type, granted, policy_version, source)
+       VALUES (?, 'PRIVACY_NOTICE', 1, ?, 'account_setup')`, [setup.user_id, PRIVACY_POLICY_VERSION]);
     await conn.commit();
     return { username: setup.username };
   } catch (err) {

@@ -35,6 +35,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const pool = require("../db");
+const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
@@ -235,7 +236,7 @@ router.get("/:id(\\d+)", async (req, res) => {
     const gallery = (await productImages(p.id)).map(i => i.image_path);
     res.json({ ...p, images: [p.image, ...gallery].filter(Boolean) });
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the product." });
   }
 });
@@ -256,7 +257,7 @@ router.get("/:id(\\d+)/admin", requireAdmin, async (req, res) => {
     if (!p) return res.status(404).json({ error: "Product not found." });
     res.json({ ...p, is_active: Boolean(p.is_active), gallery: await productImages(p.id) });
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the product." });
   }
 });
@@ -275,7 +276,7 @@ router.get("/:id(\\d+)/history", requireAdmin, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the history." });
   }
 });
@@ -305,7 +306,7 @@ router.post("/", requireAdmin, photoUpload("image"), async (req, res) => {
     res.status(201).json({ productId: result.insertId, message: "Product successfully added." });
   } catch (err) {
     discardUpload(req);
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to add product." });
   }
 });
@@ -339,7 +340,7 @@ router.patch("/:id(\\d+)", requireAdmin, async (req, res) => {
     if (!found) return res.status(404).json({ error: "Product not found." });
     res.json({ message: "Product updated." });
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to update product." });
   }
 });
@@ -390,7 +391,7 @@ router.post("/:id(\\d+)/stock", requireAdmin, async (req, res) => {
 
     res.status(result.status).json(result.body);
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to adjust stock." });
   }
 });
@@ -411,7 +412,7 @@ router.post("/:id(\\d+)/image", requireAdmin, photoUpload("image"), async (req, 
     res.json({ image: uploadedPath(req) });
   } catch (err) {
     discardUpload(req);
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to save the photo." });
   }
 });
@@ -432,7 +433,7 @@ router.post("/:id(\\d+)/images", requireAdmin, photoUpload("image"), async (req,
     res.status(result.status).json(result.body);
   } catch (err) {
     discardUpload(req);
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to save the photo." });
   }
 });
@@ -444,7 +445,7 @@ router.delete("/:id(\\d+)/images/:imageId(\\d+)", requireAdmin, async (req, res)
     if (!result.affectedRows) return res.status(404).json({ error: "Photo not found." });
     res.json({ message: "Photo removed." });
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to remove the photo." });
   }
 });
@@ -467,7 +468,7 @@ router.delete("/:id(\\d+)", requireAdmin, async (req, res) => {
     if (!removed) return res.status(404).json({ error: "Product not found." });
     res.json({ message: "Product deleted." });
   } catch (err) {
-    console.error(err);
+    logError("Products request failed", err);
     res.status(500).json({ error: "Failed to delete product." });
   }
 });

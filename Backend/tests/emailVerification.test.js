@@ -1,6 +1,7 @@
 jest.mock("../services/mailer", () => require("./mailerMock")());
 
 const request = require("supertest");
+const { blindIndex } = require("../lib/dataProtection");
 const app = require("../server");
 const { mail } = require("../services/mailer");
 const { pool, resetDb } = require("./helpers");
@@ -10,7 +11,7 @@ const lastCode = () => mail.verificationCode.mock.calls.at(-1)[2];
 async function register(email = "new@example.com") {
   const res = await request(app)
     .post("/api/auth/register")
-    .send({ username: email.split("@")[0], email, password: "secret123" });
+    .send({ username: email.split("@")[0], email, password: "secret123", privacy_consent: true });
   return res;
 }
 
@@ -42,7 +43,7 @@ describe("email verification", () => {
     expect(ok.status).toBe(200);
     expect(ok.body.message).toBe("Email verified");
 
-    const [[user]] = await pool.query("SELECT email_verified_at FROM users WHERE email = 'new@example.com'");
+    const [[user]] = await pool.query("SELECT email_verified_at FROM users WHERE email_bidx = ?", [blindIndex("new@example.com")]);
     expect(user.email_verified_at).not.toBeNull();
   });
 

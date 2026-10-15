@@ -14,18 +14,24 @@ const { issueVerificationCode } = require("./emailVerification");
 const { rateLimit } = require("express-rate-limit");
 const { signToken, SUSPENDED } = require("../middleware/auth");
 const { findSetup, completeSetup } = require("../services/accountSetup");
+const { emailColumns, logError } = require("../lib/pii");
+const { blindIndex } = require("../lib/dataProtection");
+const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 
 const router = express.Router();
 
 /* ---------------------------------------------------------------------
    POST /api/auth/register
-   Body: { username, email, password }
+   Body: { username, email, password, privacy_consent: true }
+   The email is stored encrypted, found by its blind index (email_bidx).
+   Accepting the privacy notice is required and recorded in consent_records.
    Always creates a regular "user" account — admins are provisioned
    directly in the database, never through this endpoint.
    --------------------------------------------------------------------- */
 router.post("/register", async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, password } = req.body;
+    const email = String(req.body.email || "").trim();
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: "Please fill in all fields." });
@@ -33,21 +39,42 @@ router.post("/register", async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters." });
     }
+    if (req.body.privacy_consent !== true) {
+      return res.status(400).json({ error: "Please read and accept the privacy notice to create an account.", code: "PRIVACY_CONSENT_REQUIRED" });
+    }
 
     const [existing] = await pool.query(
-      "SELECT user_id FROM users WHERE username = ? OR email = ?",
-      [username, email]
+      "SELECT user_id FROM users WHERE username = ? OR email_bidx = ?",
+      [username, blindIndex(email)]
     );
     if (existing.length > 0) {
       return res.status(409).json({ error: "Username or email already in use." });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const stored = emailColumns(email);
 
-    const [result] = await pool.query(
-      "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
-      [username, email, passwordHash]
-    );
+    const connection = await pool.getConnection();
+    let result;
+    try {
+      await connection.beginTransaction();
+      [result] = await connection.query(
+        "INSERT INTO users (username, email, email_bidx, password_hash, role) VALUES (?, ?, ?, ?, 'user')",
+        [username, stored.email, stored.email_bidx, passwordHash]
+      );
+      await connection.query(
+        `INSERT INTO consent_records (user_id, consent_type, granted, policy_version, source)
+         VALUES (?, 'PRIVACY_NOTICE', 1, ?, 'registration')`,
+        [result.insertId, PRIVACY_POLICY_VERSION]
+      );
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      if (err.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "Username or email already in use." });
+      throw err;
+    } finally {
+      connection.release();
+    }
 
     // The account exists either way; if the email can't be sent now, the
     // user can ask for a new code from the verify step.
@@ -56,7 +83,7 @@ router.post("/register", async (req, res) => {
       await issueVerificationCode({ id: result.insertId, name: username, email });
     } catch (err) {
       emailSent = false;
-      console.error("Verification email failed:", err.message);
+      logError("Verification email failed", err);
     }
 
     res.status(201).json({
@@ -67,7 +94,7 @@ router.post("/register", async (req, res) => {
       emailSent
     });
   } catch (err) {
-    console.error(err);
+    logError("Registration failed", err);
     res.status(500).json({ error: "Registration failed." });
   }
 });
@@ -127,7 +154,7 @@ router.post("/login", async (req, res) => {
       user: { username: user.username, role: user.role }
     });
   } catch (err) {
-    console.error(err);
+    logError("Login failed", err);
     res.status(500).json({ error: "Login failed." });
   }
 });
@@ -147,18 +174,21 @@ router.get("/set-password", setupLimit, async (req, res) => {
     if (!setup) return res.status(400).json({ error: BAD_LINK });
     res.json({ username: setup.username });
   } catch (err) {
-    console.error(err);
+    logError("Set-password link check failed", err);
     res.status(500).json({ error: "Could not check the link." });
   }
 });
 
 router.post("/set-password", setupLimit, async (req, res) => {
   try {
+    if (req.body?.privacy_consent !== true) {
+      return res.status(400).json({ error: "Please read and accept the privacy notice to finish setting up your account.", code: "PRIVACY_CONSENT_REQUIRED" });
+    }
     const result = await completeSetup(req.body?.token, req.body?.password);
     if (result.error) return res.status(400).json({ error: result.error });
     res.json({ message: "Password set. You can log in now.", username: result.username });
   } catch (err) {
-    console.error(err);
+    logError("Set password failed", err);
     res.status(500).json({ error: "Could not set the password." });
   }
 });

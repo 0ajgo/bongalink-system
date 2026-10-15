@@ -3,7 +3,7 @@ jest.mock("../services/mailer", () => require("./mailerMock")());
 const request = require("supertest");
 const app = require("../server");
 const lalamove = require("../services/lalamove");
-const { pool, resetDb, createUser, createProduct, fillCart, orderBody, product } = require("./helpers");
+const { pool, resetDb, createUser, createProduct, fillCart, orderBody, product, addressRows } = require("./helpers");
 
 beforeEach(async () => {
   await resetDb();
@@ -26,8 +26,9 @@ describe("POST /api/orders — stock reservation", () => {
     const [[order]] = await pool.query("SELECT status, courier, shipping_fee, total_amount FROM orders");
     expect(order).toEqual({ status: "pending_payment", courier: "JNT", shipping_fee: "100.00", total_amount: "1099.00" });
 
-    const [[address]] = await pool.query("SELECT region, shipping_zone, lat, lng FROM delivery_addresses");
-    expect(address).toEqual({ region: "NCR", shipping_zone: "NCR", lat: null, lng: null });
+    const [address] = await addressRows();
+    expect(address).toMatchObject({ region: "NCR", shipping_zone: "NCR", lat: null, lng: null, recipient_name: "Juan Dela Cruz",
+      recipient_phone: "09171234567", street: "123 Street", city: "Makati", postal_code: "1218" });
 
     const [[delivery]] = await pool.query("SELECT status, courier, fee_charged FROM deliveries");
     expect(delivery).toEqual({ status: "PENDING", courier: "JNT", fee_charged: "100.00" });
@@ -95,8 +96,8 @@ describe("POST /api/orders — stock reservation", () => {
     expect(res.status).toBe(201);
     expect(res.body.shippingFee).toBe(187);
 
-    const [[address]] = await pool.query("SELECT lat, lng FROM delivery_addresses");
-    expect(address).toEqual({ lat: "14.5480000", lng: "121.0570000" });
+    const [address] = await addressRows();
+    expect(address).toMatchObject({ lat: 14.548, lng: 121.057 });
   });
 
   test("an island province is billed at the ISLAND_PROVINCE rate", async () => {

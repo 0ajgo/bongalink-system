@@ -16,6 +16,7 @@
 const { GoogleGenAI } = require('@google/genai');
 const pool = require('../db');
 const { DECLARATIONS, runTool } = require('./chatTools');
+const { enc, dec, logError } = require('../lib/pii');
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';   // lighter, usually free when Flash is busy
@@ -98,8 +99,8 @@ async function sessionHistory(sessionId, userId) {
       WHERE session_id = ? AND user_id <=> ? AND model IS NOT NULL AND created_at > NOW() - INTERVAL 1 DAY
       ORDER BY chat_id DESC LIMIT ?`, [sessionId, userId ?? null, HISTORY_TURNS]);
   return rows.reverse().flatMap((r) => [
-    { role: 'user', parts: [{ text: r.message }] },
-    { role: 'model', parts: [{ text: r.reply }] },
+    { role: 'user', parts: [{ text: dec('chat_logs', 'message', r.message) }] },
+    { role: 'model', parts: [{ text: dec('chat_logs', 'reply', r.reply) }] },
   ]);
 }
 
@@ -132,7 +133,7 @@ async function optional(what, promise, fallback) {
   try {
     return await promise;
   } catch (err) {
-    console.error(`Chat: ${what} not loaded (${err.code || 'error'}): ${err.message}`);
+    logError(`Chat: ${what} not loaded`, err);
     return fallback;
   }
 }
@@ -161,7 +162,7 @@ async function askGemini(ai, { modelName, contents, config, ctx, toolsUsed }) {
       try {
         result = await runTool(call.name, call.args || {}, ctx);
       } catch (err) {
-        console.error(`Chat tool ${call.name} failed:`, err.message);
+        logError(`Chat tool ${call.name} failed`, err);
         result = { error: 'lookup_failed', message: 'The shop database could not be reached for this.' };
       }
       parts.push({ functionResponse: { ...(call.id ? { id: call.id } : {}), name: call.name, response: { result } } });
@@ -209,24 +210,25 @@ async function handleMessage({ sessionId, message, user = null, productId = null
     ({ reply, products } = await checkProductLinks(text.slice(0, MAX_REPLY)));
     reason = state.unanswered;
   } catch (err) {
-    if (!err.quiet) console.error(`Gemini request failed: ${redact(err.status ? `${err.status} ` : '')}${redact(err.message)}`);
+    if (!err.quiet) logError('Gemini request failed', { code: err.status || err.name, message: redact(err.message) });
     reply = fallbackReply();
     reason = 'service_down';
   }
 
-  // Logging must never cost the customer their answer: if chat_logs can't be written
+  // Messages and replies are stored encrypted (customers type names, phones, addresses).
+// Logging must never cost the customer their answer: if chat_logs can't be written
   // (table missing, database down), the reply still goes out and only the server logs it.
   let chatId = null;
   try {
     const [r] = await pool.query(
       `INSERT INTO chat_logs (session_id, user_id, product_id, message, reply, tools_used, answered, unanswered_reason, model, response_ms)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [sessionId, user?.userId ?? null, productId || null, message, reply,
+      [sessionId, user?.userId ?? null, productId || null, enc('chat_logs', 'message', message), enc('chat_logs', 'reply', reply),
        toolsUsed.length ? JSON.stringify(toolsUsed.slice(0, 20).map(logEntry)) : null,
        reason ? 0 : 1, reason, usedModel, Date.now() - started]);
     chatId = r.insertId;
   } catch (err) {
-    console.error(`Chat log not saved (${err.code || 'error'}): ${err.message}`);
+    logError('Chat log not saved', err);
   }
 
   return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: chatId };

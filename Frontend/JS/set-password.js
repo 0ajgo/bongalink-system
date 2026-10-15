@@ -47,6 +47,10 @@ document.getElementById("toggleNew").addEventListener("click", (e) => {
   e.currentTarget.textContent = show ? "Hide" : "Show";
 });
 [newPassword, confirmPassword].forEach(i => i.addEventListener("input", () => fieldError(i, "")));
+document.getElementById("setConsent").addEventListener("change", (e) => {
+  document.getElementById("setConsentError").textContent = "";
+  e.target.removeAttribute("aria-invalid");
+});
 
 setForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -55,12 +59,18 @@ setForm.addEventListener("submit", async (event) => {
   fieldError(confirmPassword, password.length >= 6 && confirmPassword.value !== password ? "The two passwords don't match." : "");
   if (password.length < 6) return newPassword.focus();
   if (confirmPassword.value !== password) return confirmPassword.focus();
+  const consent = document.getElementById("setConsent");
+  if (!consent.checked) {
+    document.getElementById("setConsentError").textContent = "Please accept the Privacy Policy to finish setting up your account.";
+    consent.setAttribute("aria-invalid", "true");
+    return consent.focus();
+  }
 
   const submit = document.getElementById("setSubmit");
   submit.disabled = true;
   submit.classList.add("is-loading");
   try {
-    const { username } = await apiFetch("/auth/set-password", { method: "POST", body: JSON.stringify({ token: setToken, password }) });
+    const { username } = await apiFetch("/auth/set-password", { method: "POST", body: JSON.stringify({ token: setToken, password, privacy_consent: true }) });
     setForm.hidden = true;
     setLead.textContent = "All set.";
     setMessage(`Your password is set and your email is confirmed. <a href="login.html">Log in as ${escapeHTML(username)}</a>.`, "success");

@@ -34,6 +34,11 @@ document.querySelectorAll("[data-toggle]").forEach(button => {
   });
 });
 
+document.getElementById("regConsent").addEventListener("change", (e) => {
+  document.getElementById("regConsentError").textContent = "";
+  e.target.removeAttribute("aria-invalid");
+});
+
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const username = document.getElementById("regUsername").value.trim();
@@ -44,11 +49,17 @@ registerForm.addEventListener("submit", async (event) => {
   if (!username || !email || !password || !confirmPassword) return showAlert("registerMessage", "Please fill in all fields.", "error");
   if (password !== confirmPassword) return showAlert("registerMessage", "Passwords do not match.", "error");
   if (password.length < 6) return showAlert("registerMessage", "Password must be at least 6 characters.", "error");
+  const consent = document.getElementById("regConsent");
+  if (!consent.checked) {
+    document.getElementById("regConsentError").textContent = "Please accept the Privacy Policy to create an account.";
+    consent.setAttribute("aria-invalid", "true");
+    return consent.focus();
+  }
 
   const button = document.getElementById("registerSubmit");
   busy(button, true);
   try {
-    const result = await apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ username, email, password }) });
+    const result = await apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ username, email, password, privacy_consent: true }) });
     showVerifyStep(email, result);
   } catch (err) {
     showAlert("registerMessage", err.message || "Registration failed.", "error");

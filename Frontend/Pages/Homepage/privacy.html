@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Bongalink</title>
+<meta name="description" content="How Bongalink collects, uses, shares and protects your personal information under the Data Privacy Act of 2012.">
+<link rel="stylesheet" href="../../CSS/design-system.css">
+<link rel="stylesheet" href="../../CSS/chat.css">
+<style>
+  .policy { max-width: 760px; }
+  .policy h1 { margin-bottom: var(--space-2); }
+  .policy h2 { font-size: var(--text-xl); margin: var(--space-6) 0 var(--space-3); }
+  .policy p, .policy li { color: var(--color-ink-2); line-height: 1.65; }
+  .policy p + p { margin-top: var(--space-3); }
+  .policy ul { padding-left: var(--space-5); margin: var(--space-2) 0; }
+  .policy li + li { margin-top: var(--space-1); }
+  .policy table { margin-top: var(--space-2); }
+  .policy .placeholder { background: var(--color-warning-tint); color: var(--color-warning); padding: 0 4px; border-radius: 4px; font-weight: var(--weight-semibold); }
+</style>
+</head>
+<body class="app">
+<header id="site-header"></header>
+
+<!-- Privacy notice required by the Data Privacy Act of 2012 (RA 10173). Customers accept it
+     at registration and invited users at account setup; consent_records keeps the version.
+     When this text changes in substance, change PRIVACY_POLICY_VERSION in Backend/lib/privacy.js
+     and the version below. The highlighted contact details must be filled in by the shop. -->
+<main id="main" class="container page">
+  <article class="policy">
+    <h1>Privacy Policy</h1>
+    <p class="muted">Version 2026-10-16 · Applies to the Bongalink online store and its chat assistant.</p>
+
+    <h2>Who we are</h2>
+    <p>Bongalink sells computer, laptop and printer parts online. We are the personal information controller for the
+      information you give us through this website. Our data protection officer:
+      <span class="placeholder">[name, email and phone of the data protection officer]</span>.</p>
+
+    <h2>What we collect, and why</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Information</th><th scope="col">Why we need it</th></tr></thead>
+        <tbody>
+          <tr><td>Username, email address and password (stored only as a one-way hash)</td>
+              <td>To create and secure your account, verify your email and send order updates.</td></tr>
+          <tr><td>Recipient name, mobile number, delivery address, landmark and map pin</td>
+              <td>To compute shipping fees and deliver your orders. Saved addresses are kept only if you save them.</td></tr>
+          <tr><td>Orders and payments (items, amounts, payment status; not your card or wallet details)</td>
+              <td>To process, ship and keep records of your purchases.</td></tr>
+          <tr><td>Messages you send to the chat assistant</td>
+              <td>To answer your questions, and so the shop can review questions the assistant couldn't answer.</td></tr>
+          <tr><td>Login times and consent records</td>
+              <td>To keep accounts secure and to show when you accepted this policy.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>We don't sell your information or use it for anything else. Marketing messages are only sent if you tick the
+      optional box at checkout, and you can stop them at any time.</p>
+
+    <h2>Who we share it with</h2>
+    <ul>
+      <li><strong>PayMongo</strong> processes your payment (your name, email and mobile number, for the receipt).</li>
+      <li><strong>J&amp;T Express, LBC Express or Lalamove</strong> receive the recipient's name, phone and address to deliver your parcel.</li>
+      <li><strong>OpenStreetMap (Nominatim)</strong> receives the map pin's coordinates to find its region; nothing else is sent.</li>
+      <li><strong>Google (Gemini)</strong> receives your chat messages to write the assistant's replies.</li>
+      <li>Our <strong>email provider</strong> delivers verification codes and order emails.</li>
+    </ul>
+
+    <h2>How we protect it</h2>
+    <p>Your email, names, phone numbers, addresses, map pins and chat messages are stored <strong>encrypted</strong>
+      (AES-256-GCM) in our database, and passwords are stored only as one-way hashes. Only the shop's admin accounts can
+      see customer details, every change an admin makes to an account is logged, and admin lists hide most of your email
+      address where the full one isn't needed.</p>
+
+    <h2>How long we keep it</h2>
+    <p>We keep your account while it is active. If you ask us to delete it, we delete it completely if you have no
+      orders. If you have orders, we remove your personal details (name, email, phone, street and saved addresses) and
+      keep only the order amounts, items and city or province, so the shop's sales records stay correct. Unpaid orders
+      expire after 24 hours.</p>
+
+    <h2>Your rights</h2>
+    <p>Under the Data Privacy Act of 2012 you have the right to be informed, to access your data, to have it corrected,
+      to object to its processing, to have it erased or blocked, to data portability, and to claim damages. You can
+      update your email, username and saved addresses yourself in your profile. For anything else, message the shop
+      through the chat or contact our data protection officer above. You may also file a complaint with the
+      <strong>National Privacy Commission</strong> (privacy.gov.ph).</p>
+
+    <h2>Changes to this policy</h2>
+    <p>If we change how we use your information, we'll update this page and its version, and ask you to accept it again
+      where the law requires.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span>Bongalink — computer, laptop and printer parts since 2008.</span>
+    <span>Data Privacy Act of 2012 (RA 10173)</span>
+  </div>
+</footer>
+
+<script src="../../JS/api.js"></script>
+<script src="../../JS/icons.js"></script>
+<script src="../../JS/cart.js"></script>
+<script src="../../JS/ui.js"></script>
+<script src="../../JS/chat.js"></script>
+<script>renderHeader({ search: false });</script>
+</body>
+</html>

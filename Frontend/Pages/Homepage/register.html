@@ -23,7 +23,8 @@
         <form id="registerForm" novalidate>
           <div class="field">
             <label class="label" for="regUsername">Username</label>
-            <input class="input" id="regUsername" type="text" autocomplete="username" required>
+            <input class="input" id="regUsername" type="text" autocomplete="username" required aria-describedby="regUsernameHint">
+            <span class="hint" id="regUsernameHint">Shown to the shop. You don't need to use your real name.</span>
           </div>
           <div class="field">
             <label class="label" for="regEmail">Email</label>
@@ -44,6 +45,23 @@
               <input class="input" id="regConfirmPassword" type="password" autocomplete="new-password" required>
               <button class="btn btn--ghost btn--sm" type="button" data-toggle="regConfirmPassword">Show</button>
             </div>
+          </div>
+          <div class="privacy-notice" id="privacyNotice">
+            <h2>How we use your information</h2>
+            <p>We collect your <strong>username, email and password</strong> to create your account, and, when you order,
+              your <strong>name, mobile number, delivery address and map pin</strong> to deliver it. We use them only to run your
+              account, process payments (PayMongo), ship orders (J&amp;T, LBC or Lalamove) and answer your questions.
+              Your personal details are stored encrypted and only the shop can see them.</p>
+            <p>Under the Data Privacy Act of 2012 you can ask to see, correct or delete your data at any time.
+              <a href="privacy.html" target="_blank" rel="noopener">Read the Privacy Policy</a>.</p>
+          </div>
+          <div class="field">
+            <label class="check" for="regConsent">
+              <input type="checkbox" id="regConsent" required aria-describedby="regConsentError">
+              <span>I have read the <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a> and agree to Bongalink
+                collecting and using my information as described. <span class="required">(required)</span></span>
+            </label>
+            <span class="error-text" id="regConsentError" role="alert"></span>
           </div>
           <button class="btn btn--primary btn--lg btn--block" type="submit" id="registerSubmit">Create account</button>
         </form>

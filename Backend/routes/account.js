@@ -12,6 +12,9 @@
      DELETE /addresses/:id         delete      postal_code, landmark?, is_default? }
      POST   /addresses/:id/default make it the default
 
+   The email and the personal address fields are stored encrypted
+   (lib/pii.js); they are decrypted here for the owner only.
+
    Saved addresses live in delivery_addresses. Checkout always stores its
    own copy of the address with the order, so a "saved" address is one
    no order points to — editing or deleting it never changes an order.
@@ -25,6 +28,8 @@ const { requireAuth } = require("../middleware/auth");
 const { issueVerificationCode } = require("./emailVerification");
 const { REGIONS, zoneFor } = require("../services/shippingRates");
 const geocode = require("../services/geocode");
+const { encryptAddress, decryptAddress, dec, emailColumns, logError } = require("../lib/pii");
+const { blindIndex } = require("../lib/dataProtection");
 
 router.use(requireAuth);
 
@@ -39,7 +44,7 @@ async function profile(userId) {
     "SELECT user_id, username, email, role, created_at, email_verified_at FROM users WHERE user_id = ?",
     [userId]
   );
-  return u;
+  return u && { ...u, email: dec("users", "email", u.email) };
 }
 
 /* ---------------------------------------------------------------- profile */
@@ -70,17 +75,18 @@ router.patch("/me", ah(async (req, res) => {
   }
 
   const [taken] = await pool.query(
-    "SELECT username, email FROM users WHERE (username = ? OR email = ?) AND user_id <> ?",
-    [username, email, req.user.userId]
+    "SELECT username FROM users WHERE (username = ? OR email_bidx = ?) AND user_id <> ?",
+    [username, blindIndex(email), req.user.userId]
   );
   if (taken.length) {
     const what = taken.some(t => t.username.toLowerCase() === username.toLowerCase()) ? "That username" : "That email";
     return res.status(409).json({ error: `${what} is already in use.` });
   }
 
+  const stored = emailColumns(email);
   await pool.query(
-    `UPDATE users SET username = ?, email = ?, email_verified_at = IF(?, NULL, email_verified_at) WHERE user_id = ?`,
-    [username, email, emailChanged, req.user.userId]
+    `UPDATE users SET username = ?, email = ?, email_bidx = ?, email_verified_at = IF(?, NULL, email_verified_at) WHERE user_id = ?`,
+    [username, stored.email, stored.email_bidx, emailChanged, req.user.userId]
   );
 
   let emailSent = null;
@@ -90,7 +96,7 @@ router.patch("/me", ah(async (req, res) => {
       emailSent = true;
     } catch (err) {
       emailSent = false;
-      console.error("Verification email failed:", err.message);
+      logError("Verification email failed", err);
     }
   }
   res.json({ ...(await profile(req.user.userId)), email_changed: emailChanged, email_sent: emailSent });
@@ -126,7 +132,7 @@ async function savedAddresses(userId) {
      ORDER BY a.is_default DESC, a.address_id DESC`,
     [userId]
   );
-  return rows.map(r => ({ ...r, is_default: Boolean(r.is_default) }));
+  return rows.map(r => ({ ...decryptAddress(r), is_default: Boolean(r.is_default) }));
 }
 
 async function ownSavedAddress(userId, id) {
@@ -170,7 +176,7 @@ async function readAddress(body = {}) {
       a.shipping_zone = g.zone;
     } catch (e) {
       if (e.status === 400) return { error: e.message };
-      console.warn("Pin lookup failed, using the typed region:", e.message);
+      logError("Pin lookup failed, using the typed region", e);
     }
   }
   return { values: a };
@@ -190,13 +196,14 @@ router.post("/addresses", ah(async (req, res) => {
   const existing = await savedAddresses(req.user.userId);
   if (existing.length >= MAX_ADDRESSES) return res.status(400).json({ error: `You can save up to ${MAX_ADDRESSES} addresses.` });
 
+  const e = encryptAddress(values);
   const [r] = await pool.query(
     `INSERT INTO delivery_addresses
        (user_id, recipient_name, recipient_phone, street, barangay, city, province, region,
         postal_code, landmark, lat, lng, shipping_zone, is_default)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [req.user.userId, values.recipient_name, values.recipient_phone, values.street, values.barangay, values.city,
-     values.province, values.region, values.postal_code, values.landmark, values.lat, values.lng, values.shipping_zone]
+    [req.user.userId, e.recipient_name, e.recipient_phone, e.street, e.barangay, e.city,
+     values.province, values.region, e.postal_code, e.landmark, e.lat, e.lng, values.shipping_zone]
   );
   if (req.body.is_default || existing.length === 0) await setDefault(pool, req.user.userId, r.insertId);
   res.status(201).json((await savedAddresses(req.user.userId)).find(a => a.address_id === r.insertId));
@@ -206,12 +213,13 @@ router.patch("/addresses/:id", ah(async (req, res) => {
   if (!(await ownSavedAddress(req.user.userId, req.params.id))) return res.status(404).json({ error: "Address not found." });
   const { values, error } = await readAddress(req.body);
   if (error) return res.status(400).json({ error });
+  const e = encryptAddress(values);
   await pool.query(
     `UPDATE delivery_addresses SET recipient_name = ?, recipient_phone = ?, street = ?, barangay = ?, city = ?,
             province = ?, region = ?, postal_code = ?, landmark = ?, lat = ?, lng = ?, shipping_zone = ?
      WHERE address_id = ? AND user_id = ?`,
-    [values.recipient_name, values.recipient_phone, values.street, values.barangay, values.city, values.province,
-     values.region, values.postal_code, values.landmark, values.lat, values.lng, values.shipping_zone, req.params.id, req.user.userId]
+    [e.recipient_name, e.recipient_phone, e.street, e.barangay, e.city, values.province,
+     values.region, e.postal_code, e.landmark, e.lat, e.lng, values.shipping_zone, req.params.id, req.user.userId]
   );
   if (req.body.is_default) await setDefault(pool, req.user.userId, Number(req.params.id));
   res.json((await savedAddresses(req.user.userId)).find(a => a.address_id === Number(req.params.id)));

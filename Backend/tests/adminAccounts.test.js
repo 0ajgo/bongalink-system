@@ -7,7 +7,9 @@ const request = require("supertest");
 const jwt = require("jsonwebtoken");
 const app = require("../server");
 const { mail } = require("../services/mailer");
-const { pool, resetDb, createUser, createProduct } = require("./helpers");
+const { pool, resetDb, createUser, createProduct, insertAddress, addressRows, enc } = require("./helpers");
+const { dec } = require("../lib/pii");
+const { blindIndex } = require("../lib/dataProtection");
 
 const API = "/api/v1/admin/accounts";
 const as = (who) => ({ get: (u) => request(app).get(u).set("Authorization", who.auth),
@@ -15,7 +17,9 @@ const as = (who) => ({ get: (u) => request(app).get(u).set("Authorization", who.
   del: (u, b = {}) => request(app).delete(u).set("Authorization", who.auth).send(b) });
 const login = (username, password = "secret123") => request(app).post("/api/auth/login").send({ username, password });
 const userRow = async (id) => (await pool.query("SELECT * FROM users WHERE user_id = ?", [id]))[0][0];
-const auditRows = async () => (await pool.query("SELECT * FROM admin_audit_log ORDER BY audit_id"))[0];
+// Audit rows with the reason decrypted (it's stored encrypted).
+const auditRows = async () => (await pool.query("SELECT * FROM admin_audit_log ORDER BY audit_id"))[0]
+  .map((a) => ({ ...a, reason: dec("admin_audit_log", "reason", a.reason) }));
 
 // A user with a real password, so login can be tested.
 async function userWithPassword(opts = {}) {
@@ -27,14 +31,12 @@ async function userWithPassword(opts = {}) {
 // seller: the admin who listed the product (createProduct would otherwise make a new admin).
 async function orderFor(user, seller, { status = "delivered", total = 1950 } = {}) {
   const productId = await createProduct({ stock: 20, createdBy: seller.id });
-  const [a] = await pool.query(
-    `INSERT INTO delivery_addresses (user_id, recipient_name, recipient_phone, street, barangay, city, province, region, postal_code, landmark, lat, lng, shipping_zone)
-     VALUES (?, 'Juan Dela Cruz', '09171234567', '123 Mabini St', 'Pembo', 'Makati', NULL, 'NCR', '1218', 'Near the church', 14.55, 121.02, 'NCR')`, [user.id]);
+  const addressId = await insertAddress(user.id, { landmark: "Near the church", lat: 14.55, lng: 121.02 });
   const [o] = await pool.query(
     "INSERT INTO orders (user_id, address_id, contact_email, status, total_amount, shipping_fee) VALUES (?, ?, ?, ?, ?, 100)",
-    [user.id, a.insertId, user.email, status, total]);
+    [user.id, addressId, enc("orders", "contact_email", user.email), status, total]);
   await pool.query("INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, 2, 925)", [o.insertId, productId]);
-  return { orderId: o.insertId, addressId: a.insertId, productId };
+  return { orderId: o.insertId, addressId, productId };
 }
 
 beforeEach(async () => {
@@ -58,10 +60,13 @@ describe("list and details", () => {
     const all = (await get("sort=username&dir=asc")).body;
     expect(all.total).toBe(3);
     expect(all.accounts.map((a) => a.username)).toEqual([admin.username, maria.username, pedro.username].sort());
-    expect(all.accounts.find((a) => a.user_id === maria.id)).toMatchObject({ email: "maria@example.com", role: "user",
+    expect(all.accounts.find((a) => a.user_id === maria.id)).toMatchObject({ email: "m***@example.com", role: "user",
       status: "active", verified: true, order_count: 2 });
-    expect((await get("q=maria")).body.accounts.map((a) => a.user_id)).toEqual([maria.id]);
-    expect((await get("q=@shop.ph")).body.accounts.map((a) => a.user_id)).toEqual([admin.id]);
+    expect((await get("q=maria%40example.com")).body.accounts.map((a) => a.user_id)).toEqual([maria.id]);
+    expect((await get(`q=${maria.username.slice(0, -1)}`)).body.accounts.map((a) => a.user_id)).toContain(maria.id);   // part of a username
+    // Emails are encrypted: only an exact email matches (blind index), in any case.
+    expect((await get("q=OWNER%40shop.ph")).body.accounts.map((a) => a.user_id)).toEqual([admin.id]);
+    expect((await get("q=@shop.ph")).body.accounts).toEqual([]);
     expect((await get("role=admin")).body.accounts.map((a) => a.user_id)).toEqual([admin.id]);
     expect((await get("status=suspended")).body.accounts.map((a) => a.user_id)).toEqual([pedro.id]);
     expect((await get("verified=no")).body.accounts.map((a) => a.user_id)).toEqual([pedro.id]);
@@ -78,8 +83,7 @@ describe("list and details", () => {
     const admin = await createUser({ role: "admin" });
     const juan = await createUser();
     const { orderId } = await orderFor(juan, admin);
-    await pool.query(`INSERT INTO delivery_addresses (user_id, recipient_name, recipient_phone, street, barangay, city, region, postal_code, shipping_zone, is_default)
-      VALUES (?, 'Juan', '09171234567', 'Saved St', 'Poblacion', 'Taguig', 'NCR', '1630', 'NCR', 1)`, [juan.id]);
+    await insertAddress(juan.id, { recipient_name: "Juan", street: "Saved St", barangay: "Poblacion", city: "Taguig", postal_code: "1630", is_default: 1 });
     await as(admin).post(`${API}/${juan.id}/suspend`, { reason: "Chargeback dispute" });
 
     const { body } = await as(admin).get(`${API}/${juan.id}`);
@@ -131,16 +135,21 @@ describe("create account", () => {
     expect(early.body.code).toBe("PASSWORD_NOT_SET");
 
     expect((await request(app).get(`/api/auth/set-password?token=${token}`)).body).toEqual({ username: "ana.reyes" });
-    expect((await request(app).post("/api/auth/set-password").send({ token, password: "123" })).status).toBe(400);
-    const set = await request(app).post("/api/auth/set-password").send({ token, password: "newpass123" });
+    expect((await request(app).post("/api/auth/set-password").send({ token, password: "123", privacy_consent: true })).status).toBe(400);
+    // The privacy notice must be accepted, and the acceptance is recorded.
+    const noConsent = await request(app).post("/api/auth/set-password").send({ token, password: "newpass123" });
+    expect(noConsent.body.code).toBe("PRIVACY_CONSENT_REQUIRED");
+    const set = await request(app).post("/api/auth/set-password").send({ token, password: "newpass123", privacy_consent: true });
     expect(set.body).toMatchObject({ username: "ana.reyes" });
     expect((await userRow(id)).email_verified_at).not.toBeNull();
+    expect((await pool.query("SELECT consent_type, granted, source FROM consent_records WHERE user_id = ?", [id]))[0])
+      .toEqual([{ consent_type: "PRIVACY_NOTICE", granted: 1, source: "account_setup" }]);
     expect((await login("ana.reyes", "newpass123")).status).toBe(200);
     // Single use.
-    expect((await request(app).post("/api/auth/set-password").send({ token, password: "another123" })).status).toBe(400);
+    expect((await request(app).post("/api/auth/set-password").send({ token, password: "another123", privacy_consent: true })).status).toBe(400);
 
     expect((await auditRows()).map((a) => [a.action, a.target_user_id, a.new_value])).toEqual(
-      [["create_account", id, { username: "ana.reyes", email: "ana@example.com", role: "user" }]]);
+      [["create_account", id, { username: "ana.reyes", email: "a***@example.com", role: "user" }]]);   // masked in the log
   });
 
   test("validation, duplicates, expired links and resend (which cancels the old link)", async () => {
@@ -158,7 +167,7 @@ describe("create account", () => {
     const second = mail.accountInvite.mock.calls[1][3].split("token=")[1];
     expect((await request(app).get(`/api/auth/set-password?token=${first}`)).status).toBe(400);
     await pool.query("UPDATE password_setup_tokens SET expires_at = NOW() - INTERVAL 1 MINUTE WHERE used_at IS NULL");
-    expect((await request(app).post("/api/auth/set-password").send({ token: second, password: "newpass123" })).status).toBe(400);
+    expect((await request(app).post("/api/auth/set-password").send({ token: second, password: "newpass123", privacy_consent: true })).status).toBe(400);
     expect((await as(admin).post(`${API}/${juan.id}/resend-invite`)).body.error).toBe("This account has already set its password.");
   });
 
@@ -289,8 +298,7 @@ describe("delete and anonymize", () => {
   test("no orders: the account is deleted, with its cart and saved addresses; the username must be typed", async () => {
     const admin = await createUser({ role: "admin" });
     const temp = await createUser();
-    await pool.query(`INSERT INTO delivery_addresses (user_id, recipient_name, recipient_phone, street, barangay, city, region, postal_code, shipping_zone)
-      VALUES (?, 'Temp', '09170000000', 'St', 'Brgy', 'City', 'NCR', '1000', 'NCR')`, [temp.id]);
+    await insertAddress(temp.id, { recipient_name: "Temp" });
     expect((await as(admin).del(`${API}/${temp.id}`, { confirm_username: "wrong" })).body.error).toBe(`Type the username "${temp.username}" to confirm.`);
     const res = await as(admin).del(`${API}/${temp.id}`, { confirm_username: temp.username, reason: "Duplicate account" });
     expect(res.body).toMatchObject({ ok: true, result: "deleted" });
@@ -304,9 +312,9 @@ describe("delete and anonymize", () => {
     const admin = await createUser({ role: "admin" });
     const juan = await userWithPassword({ email: "juan.delacruz@example.com" });
     const { orderId, addressId, productId } = await orderFor(juan, admin);
-    await pool.query(`INSERT INTO delivery_addresses (user_id, recipient_name, recipient_phone, street, barangay, city, region, postal_code, shipping_zone)
-      VALUES (?, 'Juan', '09171234567', 'Saved St', 'Poblacion', 'Taguig', 'NCR', '1630', 'NCR')`, [juan.id]);
-    await pool.query("INSERT INTO chat_logs (session_id, user_id, message, reply, answered) VALUES ('s-12345678', ?, 'hi', 'hello', 1)", [juan.id]);
+    await insertAddress(juan.id, { recipient_name: "Juan", street: "Saved St", barangay: "Poblacion", city: "Taguig", postal_code: "1630" });
+    await pool.query("INSERT INTO chat_logs (session_id, user_id, message, reply, answered) VALUES ('s-12345678', ?, ?, ?, 1)",
+      [juan.id, enc("chat_logs", "message", "hi"), enc("chat_logs", "reply", "hello")]);
     await as(admin).post(`${API}/${juan.id}/suspend`, { reason: "Asked to close the account" });
     const salesBefore = (await pool.query("SELECT SUM(quantity * unit_price) s FROM order_items"))[0][0].s;
 
@@ -314,8 +322,9 @@ describe("delete and anonymize", () => {
     expect(res.body).toEqual({ ok: true, result: "anonymized", kept: { orders: 1, products_listed: 0, staff_records: 0 } });
 
     const u = await userRow(juan.id);
-    expect(u).toMatchObject({ username: `deleted-user-${juan.id}`, email: `deleted-user-${juan.id}@anonymized.invalid`, status: "deleted",
-      email_verified_at: null, last_login_at: null, suspended_reason: null });
+    expect(u).toMatchObject({ username: `deleted-user-${juan.id}`, status: "deleted",
+      email_verified_at: null, last_login_at: null, suspended_reason: null, email_bidx: blindIndex(`deleted-user-${juan.id}@anonymized.invalid`) });
+    expect(dec("users", "email", u.email)).toBe(`deleted-user-${juan.id}@anonymized.invalid`);
     expect(u.anonymized_at).not.toBeNull();
     // Orders and sales history stay.
     const [[order]] = await pool.query("SELECT user_id, status, total_amount, contact_email FROM orders WHERE order_id = ?", [orderId]);
@@ -323,7 +332,7 @@ describe("delete and anonymize", () => {
     expect((await pool.query("SELECT SUM(quantity * unit_price) s FROM order_items"))[0][0].s).toBe(salesBefore);
     expect((await pool.query("SELECT product_id FROM order_items WHERE order_id = ?", [orderId]))[0]).toEqual([{ product_id: productId }]);
     // The order's address keeps only the area; the saved address is gone.
-    const [addresses] = await pool.query("SELECT * FROM delivery_addresses WHERE user_id = ?", [juan.id]);
+    const addresses = await addressRows("user_id = ?", [juan.id]);
     expect(addresses).toHaveLength(1);
     expect(addresses[0]).toMatchObject({ address_id: addressId, recipient_name: "Deleted customer", recipient_phone: "", street: "",
       barangay: "", landmark: null, lat: null, lng: null, city: "Makati", region: "NCR" });

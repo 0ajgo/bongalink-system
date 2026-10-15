@@ -305,8 +305,13 @@ describe("set-password page", () => {
     expect(page.$("#confirmPasswordError").textContent).toBe("The two passwords don't match.");
     page.$("#confirmPassword").value = "goodpass1";
     submit(page, "#setForm");
+    // The privacy notice has to be accepted, with the error next to the checkbox.
+    expect(page.$("#setConsentError").textContent).toBe("Please accept the Privacy Policy to finish setting up your account.");
+    expect(page.calls).toHaveLength(1);
+    page.$("#setConsent").checked = true;
+    submit(page, "#setForm");
     await page.until(() => !page.$("#setMessage").hidden);
-    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass1" } });
+    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass1", privacy_consent: true } });
     expect(page.$("#setMessage").textContent).toContain("Your password is set and your email is confirmed.");
     expect(page.$("#setMessage a").getAttribute("href")).toBe("login.html");
     page.close();
@@ -318,6 +323,53 @@ describe("set-password page", () => {
     await page.until(() => !page.$("#setMessage").hidden);
     expect(page.$("#setForm").hidden).toBe(true);
     expect(page.$("#setMessage").textContent).toContain("Ask the shop to send a new one.");
+    page.close();
+  });
+});
+
+describe("registration privacy notice and the Privacy Policy page", () => {
+  const fill = (page) => {
+    page.$("#regUsername").value = "ana";
+    page.$("#regEmail").value = "ana@example.com";
+    page.$("#regPassword").value = "secret123";
+    page.$("#regConfirmPassword").value = "secret123";
+  };
+
+  test("the notice says what's collected and why, links the policy, and consent is required", async () => {
+    const page = await openPage("Pages/Homepage/register.html", { role: null, api: async () => ({ status: 201, body: { emailSent: true } }) });
+    const notice = page.$("#privacyNotice").textContent.replace(/\s+/g, " ");
+    expect(notice).toContain("username, email and password");
+    expect(notice).toContain("name, mobile number, delivery address and map pin");
+    expect(notice).toContain("stored encrypted");
+    expect(notice).toContain("Data Privacy Act of 2012");
+    expect(page.$('#privacyNotice a[href="privacy.html"]')).not.toBeNull();
+
+    fill(page);
+    submit(page, "#registerForm");
+    expect(page.$("#regConsentError").textContent).toBe("Please accept the Privacy Policy to create an account.");
+    expect(page.$("#regConsent").getAttribute("aria-invalid")).toBe("true");
+    expect(page.calls).toEqual([]);
+
+    page.$("#regConsent").checked = true;
+    page.$("#regConsent").dispatchEvent(new page.window.Event("change"));
+    expect(page.$("#regConsentError").textContent).toBe("");
+    submit(page, "#registerForm");
+    await page.until(() => page.calls.length);
+    expect(page.calls[0]).toEqual({ url: "/auth/register", method: "POST",
+      body: { username: "ana", email: "ana@example.com", password: "secret123", privacy_consent: true } });
+    await page.settle();
+    page.close();
+  });
+
+  test("the Privacy Policy page covers collection, sharing, protection, retention and rights", async () => {
+    const page = await openPage("Pages/Homepage/privacy.html", { role: null, api: async () => ({ body: [] }) });
+    expect(page.$$(".policy h2").map((h) => h.textContent)).toEqual(
+      ["Who we are", "What we collect, and why", "Who we share it with", "How we protect it", "How long we keep it", "Your rights", "Changes to this policy"]);
+    const text = page.$(".policy").textContent;
+    expect(text).toContain("AES-256-GCM");
+    expect(text).toContain("National Privacy Commission");
+    expect(page.$(".placeholder").textContent).toContain("data protection officer");
+    expect(page.$('#site-header .brand')).not.toBeNull();
     page.close();
   });
 });

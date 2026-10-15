@@ -15,6 +15,10 @@ What it does (see the report it prints):
 Destructive only for the target database: it is dropped and rebuilt from
 Backend/database/bongalink_schema.sql + migrations/003_ml_sync.sql every run.
 It refuses to touch the production database name ("bongalink").
+AFTER AN IMPORT, encrypt the personal data it wrote (the placeholder customer's email and the
+copied admin accounts): run migrations 004-009 on the new database, then
+    node Backend/scripts/encrypt-personal-data.js --apply --database <name>
+(the backend reads personal data only in encrypted form; see Backend/lib/dataProtection.js).
 
 KNOWN LIMITATIONS (also printed):
   * stock_quantity is NOT real: the sheet has sales, not stock counts. Every product gets

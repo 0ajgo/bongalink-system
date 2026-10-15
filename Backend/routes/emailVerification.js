@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const pool = require('../db');
 const ah = require('../lib/asyncHandler');
 const { mail } = require('../services/mailer');
+const { blindIndex } = require('../lib/dataProtection');
+const { dec } = require('../lib/pii');
 
 const CODE_TTL_MIN = 15;
 const MAX_ATTEMPTS = 5;
@@ -35,11 +37,13 @@ router.post('/send', ah(async (req, res) => {
   // Same reply whether or not the account exists, so emails can't be probed.
   const generic = { message: 'If that email is registered and not yet verified, a code has been sent.' };
 
-  const [[user]] = await pool.query(
-    'SELECT user_id AS id, username AS name, email, email_verified_at FROM users WHERE email = ?',
-    [email]
+  // Emails are stored encrypted; the blind index finds the account by exact email.
+  const [[row]] = await pool.query(
+    'SELECT user_id AS id, username AS name, email, email_verified_at FROM users WHERE email_bidx = ?',
+    [blindIndex(email)]
   );
-  if (!user || user.email_verified_at) return res.json(generic);
+  if (!row || row.email_verified_at) return res.json(generic);
+  const user = { ...row, email: dec('users', 'email', row.email) };
 
   const [[last]] = await pool.query(
     `SELECT TIMESTAMPDIFF(SECOND, created_at, NOW()) AS age FROM email_verifications
@@ -60,7 +64,7 @@ router.post('/confirm', ah(async (req, res) => {
   const code = String(req.body.code || '').trim();
   if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter the 6-digit code' });
 
-  const [[user]] = await pool.query('SELECT user_id AS id, email_verified_at FROM users WHERE email = ?', [email]);
+  const [[user]] = await pool.query('SELECT user_id AS id, email_verified_at FROM users WHERE email_bidx = ?', [blindIndex(email)]);
   if (!user) return res.status(400).json({ error: 'Invalid or expired code' });
   if (user.email_verified_at) return res.json({ message: 'Email already verified' });
 

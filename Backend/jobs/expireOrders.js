@@ -10,6 +10,7 @@
    ===================================================================== */
 
 const pool = require("../db");
+const { logError } = require("../lib/pii");
 
 const HOLD_HOURS = 24;
 const RUN_EVERY_MS = 5 * 60 * 1000;
@@ -75,7 +76,7 @@ function startOrderExpiryJob() {
   const run = () =>
     expireStaleOrders()
       .then((n) => { if (n) console.log(`Expired ${n} unpaid order(s) and released their stock.`); })
-      .catch((err) => console.error("Order expiry job failed:", err.message));
+      .catch((err) => logError("Order expiry job failed", err));
   run();
   return setInterval(run, RUN_EVERY_MS);
 }

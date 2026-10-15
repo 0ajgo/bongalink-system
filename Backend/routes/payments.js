@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const pool = require('../db');
 const ah = require('../lib/asyncHandler');
+const { decryptAddress, addressLine, orderEmail, logError } = require('../lib/pii');
 const paymongo = require('../services/paymongo');
 const { mail } = require('../services/mailer');
 const { COURIER_LABEL } = require('../services/shippingRates');
@@ -22,7 +23,7 @@ router.post('/checkout', requireAuth, requireRole('user'), requireVerifiedEmail,
   const orderId = Number(req.body.order_id);
   const [[order]] = await pool.query(
     `SELECT o.order_id, o.status, o.shipping_fee, u.username AS name,
-            COALESCE(o.contact_email, u.email) AS email, a.recipient_name, a.recipient_phone
+            o.contact_email, u.email AS account_email, a.recipient_name, a.recipient_phone
        FROM orders o
        JOIN users u ON u.user_id = o.user_id
        LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
@@ -30,6 +31,7 @@ router.post('/checkout', requireAuth, requireRole('user'), requireVerifiedEmail,
     [orderId, req.user.userId]
   );
   if (!order) return res.status(404).json({ error: 'Order not found' });
+  const recipient = decryptAddress(order);   // name and phone are stored encrypted
   if (order.status !== 'pending_payment') return res.status(409).json({ error: `Order is already ${order.status}` });
 
   const [items] = await pool.query(
@@ -51,7 +53,7 @@ router.post('/checkout', requireAuth, requireRole('user'), requireVerifiedEmail,
     referenceNumber: `BL-${order.order_id}`,
     description: `Bongalink order #${order.order_id}`,
     lineItems,
-    customer: { name: order.recipient_name || order.name, email: order.email, phone: order.recipient_phone },
+    customer: { name: recipient.recipient_name || order.name, email: orderEmail(order), phone: recipient.recipient_phone },
     successUrl: returnUrl(order.order_id, 'success'),
     cancelUrl: returnUrl(order.order_id, 'cancelled'),
   });
@@ -173,7 +175,7 @@ async function paymongoWebhook(req, res) {
     await conn.commit();
   } catch (err) {
     await conn.rollback();
-    console.error('PayMongo webhook failed:', err.message);
+    logError('PayMongo webhook failed', err);
     return res.status(500).end();
   } finally {
     conn.release();
@@ -181,12 +183,12 @@ async function paymongoWebhook(req, res) {
 
   if (result) {
     const [[c]] = await pool.query(
-      `SELECT u.username AS name, COALESCE(o.contact_email, u.email) AS email
+      `SELECT u.username AS name, o.contact_email, u.email AS account_email
          FROM orders o JOIN users u ON u.user_id = o.user_id WHERE o.order_id = ?`,
       [result.orderId]
     );
-    mail.paymentReceived(c.email, c.name, result.orderId, result.amount).catch((e) => console.error('Mail failed:', e.message));
-    await alertShop(result).catch((e) => console.error('Shop alert failed:', e.message));
+    mail.paymentReceived(orderEmail(c), c.name, result.orderId, result.amount).catch((e) => logError('Mail failed', e));
+    await alertShop(result).catch((e) => logError('Shop alert failed', e));
   }
   res.status(200).json({ received: true });
 }
@@ -197,13 +199,13 @@ async function paymongoWebhook(req, res) {
 async function alertShop({ orderId, amount }) {
   const to = process.env.ADMIN_ALERT_EMAIL;
   if (!to) return;
-  const [[o]] = await pool.query(
-    `SELECT o.courier, a.recipient_name, a.recipient_phone,
-            CONCAT_WS(', ', a.street, a.barangay, a.city, a.province, a.postal_code) AS address
+  const [[row]] = await pool.query(
+    `SELECT o.courier, a.recipient_name, a.recipient_phone, a.street, a.barangay, a.city, a.province, a.postal_code
        FROM orders o LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
       WHERE o.order_id = ?`,
     [orderId]
   );
+  const o = decryptAddress(row);
   const [items] = await pool.query(
     `SELECT p.name, oi.quantity FROM order_items oi JOIN products p ON p.product_id = oi.product_id
       WHERE oi.order_id = ? ORDER BY oi.order_item_id`,
@@ -212,8 +214,8 @@ async function alertShop({ orderId, amount }) {
   mail.orderPaidAlert(to, {
     orderId, amount, items,
     courierLabel: COURIER_LABEL[o.courier] || o.courier || 'Not chosen',
-    shipName: o.recipient_name, shipPhone: o.recipient_phone, shipAddress: o.address,
-  }).catch((e) => console.error('Shop alert failed:', e.message));
+    shipName: o.recipient_name, shipPhone: o.recipient_phone, shipAddress: addressLine(o),
+  }).catch((e) => logError('Shop alert failed', e));
 }
 
 module.exports = { router, paymongoWebhook };

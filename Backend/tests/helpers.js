@@ -2,6 +2,7 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
+const { emailColumns, encryptAddress, decryptAddress, enc } = require("../lib/pii");
 
 const TABLES = [
   "admin_audit_log", "password_setup_tokens", "chat_logs", "faqs", "product_changes", "product_images", "shipment_events", "payment_events", "payments", "inventory_movements", "email_verifications",
@@ -26,9 +27,11 @@ let seq = 0;
 async function createUser({ role = "user", verified = true, email } = {}) {
   seq++;
   const username = `${role}${seq}`;
+  // Stored the way the app stores it: encrypted, with the blind index.
+  const stored = emailColumns(email || `${username}@example.com`);
   const [r] = await pool.query(
-    "INSERT INTO users (username, email, password_hash, role, email_verified_at) VALUES (?, ?, 'x', ?, ?)",
-    [username, email || `${username}@example.com`, role, verified ? new Date() : null]
+    "INSERT INTO users (username, email, email_bidx, password_hash, role, email_verified_at) VALUES (?, ?, ?, 'x', ?, ?)",
+    [username, stored.email, stored.email_bidx, role, verified ? new Date() : null]
   );
   const token = jwt.sign({ userId: r.insertId, username, role }, process.env.JWT_SECRET);
   return { id: r.insertId, username, email: email || `${username}@example.com`, token, auth: `Bearer ${token}` };
@@ -47,6 +50,26 @@ async function createProduct({ price = 500, stock = 10, reserved = 0, weightKg =
     [`Product ${++seq}`, categoryId, price, stock, reserved, weightKg, owner]
   );
   return r.insertId;
+}
+
+// A delivery address row, encrypted like the app writes it. -> address_id
+async function insertAddress(userId, overrides = {}) {
+  const a = { recipient_name: "Juan Dela Cruz", recipient_phone: "09171234567", street: "123 Mabini St", barangay: "Pembo",
+    city: "Makati", postal_code: "1218", landmark: null, lat: null, lng: null, province: null, region: "NCR", shipping_zone: "NCR",
+    is_default: 0, ...overrides };
+  const e = encryptAddress(a);
+  const [r] = await pool.query(
+    `INSERT INTO delivery_addresses (user_id, recipient_name, recipient_phone, street, barangay, city, province, region,
+       postal_code, landmark, lat, lng, shipping_zone, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, e.recipient_name, e.recipient_phone, e.street, e.barangay, e.city, a.province, a.region,
+     e.postal_code, e.landmark, e.lat, e.lng, a.shipping_zone, a.is_default]);
+  return r.insertId;
+}
+
+// Reads delivery_addresses rows back decrypted.
+async function addressRows(where = "1 = 1", params = []) {
+  const [rows] = await pool.query(`SELECT * FROM delivery_addresses WHERE ${where} ORDER BY address_id`, params);
+  return rows.map((r) => decryptAddress(r));
 }
 
 async function fillCart(userId, items) {
@@ -102,4 +125,5 @@ function signPaymongo(body, secret = process.env.PAYMONGO_WEBHOOK_SECRET) {
   return `t=${t},te=${te},li=`;
 }
 
-module.exports = { pool, resetDb, createUser, createProduct, fillCart, orderBody, product, paymongoEvent, signPaymongo };
+module.exports = { pool, resetDb, createUser, createProduct, fillCart, orderBody, product, paymongoEvent, signPaymongo,
+                   insertAddress, addressRows, enc };

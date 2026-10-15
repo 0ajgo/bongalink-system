@@ -19,6 +19,10 @@
    - the last active admin can't be suspended, demoted or deleted;
    - every action is written to admin_audit_log (who, when, action, target,
      reason, old -> new).
+
+   Emails, reasons and addresses are stored encrypted (lib/pii.js). The list
+   shows masked emails; search matches usernames, or an exact email through
+   the blind index (users.email_bidx).
    ===================================================================== */
 
 const express = require("express");
@@ -26,6 +30,8 @@ const pool = require("../db");
 const ah = require("../lib/asyncHandler");
 const { requireAdmin } = require("../middleware/auth");
 const { sendSetupLink, unusablePasswordHash } = require("../services/accountSetup");
+const { enc, dec, emailColumns, decryptAddress, maskEmail, logError } = require("../lib/pii");
+const { blindIndex } = require("../lib/dataProtection");
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -40,8 +46,10 @@ const fail = (status, error, code) => Object.assign(new Error(error), { status, 
 const displayStatus = (u) =>
   u.status === "deleted" ? "deleted" : u.status === "suspended" ? "suspended" : u.must_set_password ? "invited" : "active";
 
-const accountRow = (u) => ({
-  user_id: u.user_id, username: u.username, email: u.email, role: u.role, status: displayStatus(u),
+// List rows show a masked email; the details view shows it whole.
+const accountRow = (u, { fullEmail = false } = {}) => ({
+  user_id: u.user_id, username: u.username,
+  email: fullEmail ? dec("users", "email", u.email) : maskEmail(dec("users", "email", u.email)), role: u.role, status: displayStatus(u),
   verified: Boolean(u.email_verified_at), created_at: u.created_at, last_login_at: u.last_login_at,
   order_count: Number(u.order_count || 0),
 });
@@ -77,7 +85,7 @@ async function audit(conn, admin, action, target, { reason = null, oldValue = nu
   await conn.query(
     `INSERT INTO admin_audit_log (admin_id, admin_label, action, target_user_id, target_label, reason, old_value, new_value)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [admin.userId, admin.username, action, target.user_id, target.username, reason,
+    [admin.userId, admin.username, action, target.user_id, target.username, enc("admin_audit_log", "reason", reason),
      oldValue ? JSON.stringify(oldValue) : null, newValue ? JSON.stringify(newValue) : null]);
 }
 
@@ -101,6 +109,7 @@ async function lockForAction(conn, id, actor) {
     `SELECT user_id, username, email, role, status, must_set_password, token_version
        FROM users WHERE user_id = ? FOR UPDATE`, [id]);
   if (!target) throw fail(404, "Account not found.");
+  target.email = dec("users", "email", target.email);
   return { target, others: admins.filter((a) => a.user_id !== target.user_id).length };
 }
 const otherActiveAdmins = async (conn, targetId) =>
@@ -172,7 +181,8 @@ router.get("/summary", ah(async (req, res) => {
   res.json(Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v)])));
 }));
 
-const SORTS = { username: "u.username", email: "u.email", role: "u.role", status: "u.status", created_at: "u.created_at",
+// No sorting by email: it's encrypted, so the database can't order it.
+const SORTS = { username: "u.username", role: "u.role", status: "u.status", created_at: "u.created_at",
                 last_login_at: "u.last_login_at", order_count: "order_count" };
 
 router.get("/", ah(async (req, res) => {
@@ -180,8 +190,9 @@ router.get("/", ah(async (req, res) => {
   const where = [];
   const params = [];
   if (q.trim()) {
-    where.push("(u.username LIKE ? OR u.email LIKE ?)");
-    params.push(`%${q.trim()}%`, `%${q.trim()}%`);
+    // Partial match on the username; an email only matches exactly (blind index).
+    where.push("(u.username LIKE ? OR u.email_bidx = ?)");
+    params.push(`%${q.trim()}%`, blindIndex(q));
   }
   if (role !== "all") {
     if (!["user", "admin"].includes(role)) throw fail(400, "Unknown role.");
@@ -211,12 +222,12 @@ router.get("/", ah(async (req, res) => {
        ${from}
       ORDER BY ${SORTS[sort]} IS NULL, ${SORTS[sort]} ${direction}, u.user_id ${direction}
       LIMIT ? OFFSET ?`, [...params, perPage, (page - 1) * perPage]);
-  res.json({ accounts: rows.map(accountRow), total: Number(total), page, per_page: perPage });
+  res.json({ accounts: rows.map((u) => accountRow(u)), total: Number(total), page, per_page: perPage });
 }));
 
 const auditRow = (a) => ({
   audit_id: a.audit_id, admin_id: a.admin_id, admin: a.admin_label, action: a.action, target_user_id: a.target_user_id,
-  target: a.target_label, reason: a.reason, old_value: a.old_value, new_value: a.new_value, created_at: a.created_at,
+  target: a.target_label, reason: dec("admin_audit_log", "reason", a.reason), old_value: a.old_value, new_value: a.new_value, created_at: a.created_at,
 });
 
 router.get("/audit-log", ah(async (req, res) => {
@@ -239,11 +250,12 @@ router.get("/:id(\\d+)", ah(async (req, res) => {
     `SELECT u.*, c.username AS created_by_username FROM users u LEFT JOIN users c ON c.user_id = u.created_by WHERE u.user_id = ?`, [id]);
   if (!u) throw fail(404, "Account not found.");
 
-  const [addresses] = await pool.query(
+  const [savedRows] = await pool.query(
     `SELECT address_id, recipient_name, recipient_phone, street, barangay, city, province, region, postal_code, landmark, is_default
        FROM delivery_addresses a
       WHERE a.user_id = ? AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.address_id = a.address_id)
       ORDER BY is_default DESC, address_id`, [id]);
+  const addresses = savedRows.map((a) => decryptAddress(a));
   const [orders] = await pool.query(
     `SELECT o.order_id, o.status, o.total_amount, o.shipping_fee, o.courier, o.created_at, o.paid_at,
             (SELECT COALESCE(SUM(quantity), 0) FROM order_items i WHERE i.order_id = o.order_id) AS units
@@ -265,8 +277,8 @@ router.get("/:id(\\d+)", ah(async (req, res) => {
 
   res.json({
     account: {
-      ...accountRow({ ...u, order_count: spend.orders }),
-      email_verified_at: u.email_verified_at, suspended_at: u.suspended_at, suspended_reason: u.suspended_reason,
+      ...accountRow({ ...u, order_count: spend.orders }, { fullEmail: true }),
+      email_verified_at: u.email_verified_at, suspended_at: u.suspended_at, suspended_reason: dec("users", "suspended_reason", u.suspended_reason),
       created_by: u.created_by_username || null, anonymized_at: u.anonymized_at, is_you: u.user_id === req.user.userId,
     },
     addresses,
@@ -292,16 +304,18 @@ router.post("/", ah(async (req, res) => {
 
   const passwordHash = await unusablePasswordHash();
   const account = await withTransaction(async (conn) => {
-    const [taken] = await conn.query("SELECT username, email FROM users WHERE username = ? OR email = ?", [username, email]);
+    const [taken] = await conn.query("SELECT username FROM users WHERE username = ? OR email_bidx = ?", [username, blindIndex(email)]);
     if (taken.length) {
       throw fail(409, taken.some((t) => t.username.toLowerCase() === username.toLowerCase())
         ? "That username is already taken." : "An account with that email already exists.");
     }
+    const stored = emailColumns(email);
     const [r] = await conn.query(
-      `INSERT INTO users (username, email, password_hash, role, must_set_password, created_by) VALUES (?, ?, ?, ?, 1, ?)`,
-      [username, email, passwordHash, role, req.user.userId]);
+      `INSERT INTO users (username, email, email_bidx, password_hash, role, must_set_password, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)`,
+      [username, stored.email, stored.email_bidx, passwordHash, role, req.user.userId]);
     const created = { user_id: r.insertId, username, email, role };
-    await audit(conn, req.user, "create_account", created, { newValue: { username, email, role } });
+    // The log keeps a masked email only.
+    await audit(conn, req.user, "create_account", created, { newValue: { username, email: maskEmail(email), role } });
     return created;
   });
 
@@ -311,7 +325,7 @@ router.post("/", ah(async (req, res) => {
     await sendSetupLink(account, req.user.userId);
   } catch (err) {
     emailSent = false;
-    console.error("Account invite email failed:", err.message);
+    logError("Account invite email failed", err);
   }
   res.status(201).json({ account: { ...account, status: "invited", verified: false }, email_sent: emailSent });
 }));
@@ -327,7 +341,7 @@ router.post("/:id(\\d+)/resend-invite", ah(async (req, res) => {
   try {
     await sendSetupLink(target, req.user.userId);
   } catch (err) {
-    console.error("Account invite email failed:", err.message);
+    logError("Account invite email failed", err);
     throw fail(502, "The email could not be sent. Check the email settings and try again.");
   }
   res.json({ ok: true });
@@ -345,7 +359,7 @@ router.post("/:id(\\d+)/suspend", ah(async (req, res) => {
     // token_version + 1: every token the user holds stops working now.
     await conn.query(
       `UPDATE users SET status = 'suspended', suspended_at = NOW(), suspended_reason = ?, token_version = token_version + 1
-        WHERE user_id = ?`, [reason, t.user_id]);
+        WHERE user_id = ?`, [enc("users", "suspended_reason", reason), t.user_id]);
     await audit(conn, req.user, "suspend", t, { reason, oldValue: { status: t.status }, newValue: { status: "suspended" } });
   });
   res.json({ ok: true });
@@ -403,15 +417,16 @@ async function scrubAuditLabels(conn, id, label) {
 
 async function anonymize(conn, id, label) {
   await conn.query(
-    `UPDATE users SET username = ?, email = ?, password_hash = '!', role = 'user', status = 'deleted',
+    `UPDATE users SET username = ?, email = ?, email_bidx = ?, password_hash = '!', role = 'user', status = 'deleted',
             suspended_at = NULL, suspended_reason = NULL, token_version = token_version + 1, must_set_password = 0,
             email_verified_at = NULL, last_login_at = NULL, anonymized_at = NOW()
-      WHERE user_id = ?`, [label, `${label}@anonymized.invalid`, id]);
+      WHERE user_id = ?`, [label, ...Object.values(emailColumns(`${label}@anonymized.invalid`)), id]);
   await conn.query("UPDATE orders SET contact_email = NULL WHERE user_id = ?", [id]);
   await conn.query(
-    `UPDATE delivery_addresses a SET recipient_name = 'Deleted customer', recipient_phone = '', street = '', barangay = '',
+    `UPDATE delivery_addresses a SET recipient_name = ?, recipient_phone = '', street = '', barangay = '',
             landmark = NULL, lat = NULL, lng = NULL, is_default = 0
-      WHERE a.user_id = ? AND EXISTS (SELECT 1 FROM orders o WHERE o.address_id = a.address_id)`, [id]);
+      WHERE a.user_id = ? AND EXISTS (SELECT 1 FROM orders o WHERE o.address_id = a.address_id)`,
+    [enc("delivery_addresses", "recipient_name", "Deleted customer"), id]);
   await conn.query(
     "DELETE a FROM delivery_addresses a WHERE a.user_id = ? AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.address_id = a.address_id)", [id]);
   await conn.query("DELETE FROM carts WHERE user_id = ?", [id]);

@@ -51,7 +51,7 @@ describe("GET /api/v1/admin/orders/awaiting-shipment", () => {
       shipping_fee: "100.00",
       total_amount: "600.00",
       customer_username: customer.username,
-      customer_email: "buyer@example.com",
+      customer_email: "b***@example.com",   // masked in the list
       ship_name: "Juan Dela Cruz",
       ship_phone: "09171234567",
       ship_address: "123 Street, Pembo, Makati, 1218",

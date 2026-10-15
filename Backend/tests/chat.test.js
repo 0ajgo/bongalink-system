@@ -10,6 +10,7 @@ const request = require("supertest");
 const app = require("../server");
 const chatRoutes = require("../routes/chat");
 const { pool, resetDb, createUser, createProduct } = require("./helpers");
+const { dec } = require("../lib/pii");
 
 // Fake Gemini responses: a tool call, or the final text.
 const toolCall = (name, args = {}) => ({
@@ -33,7 +34,11 @@ const send = (message, { session = newSession(), auth, productId } = {}) => {
   if (auth) req.set("Authorization", auth);
   return req.send({ session_id: session, message, ...(productId ? { product_id: productId } : {}) });
 };
-const lastLog = async () => (await pool.query("SELECT * FROM chat_logs ORDER BY chat_id DESC LIMIT 1"))[0][0];
+// The newest chat_logs row, with message and reply decrypted (they're stored encrypted).
+const lastLog = async () => {
+  const [[row]] = await pool.query("SELECT * FROM chat_logs ORDER BY chat_id DESC LIMIT 1");
+  return row && { ...row, message: dec("chat_logs", "message", row.message), reply: dec("chat_logs", "reply", row.reply) };
+};
 
 async function product(name, { stock = 10, reserved = 0, active = 1, price = 500, weightKg = 0.5, description = null } = {}) {
   const id = await createProduct({ stock, reserved, price, weightKg });

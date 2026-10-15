@@ -10,27 +10,32 @@ const FULL = {
   PAYMONGO_SECRET_KEY: "sk_test_PAYMONGO333", PAYMONGO_WEBHOOK_SECRET: "whsk_WEBHOOK444", APP_URL: "http://localhost:5500/Frontend",
   SMTP_USER: "shop@example.com", SMTP_PASS: "app password 555", MAIL_FROM: "Bongalink <shop@example.com>",
   VERIFICATION_SECRET: "verification-666", ADMIN_ALERT_EMAIL: "owner@example.com",
-  GEMINI_API_KEY: "AIzaGEMINI777"
+  GEMINI_API_KEY: "AIzaGEMINI777",
+  DATA_ENCRYPTION_KEY: Buffer.from("test-encryption-key-of-32-bytes!").toString("base64"),
+  DATA_INDEX_KEY: Buffer.from("test-blind-index-key-of-32-bytes").toString("base64")
 };
 const SECRETS = ["SECRETKEY111", "SECRETSECRET222", "PAYMONGO333", "WEBHOOK444", "app password 555", "verification-666",
-                 "shop@example.com", "owner@example.com", "14.5547", "121.0244", "AIzaGEMINI777"];
+                 "shop@example.com", "owner@example.com", "14.5547", "121.0244", "AIzaGEMINI777", Buffer.from("test-encryption-key-of-32-bytes!").toString("base64"),
+                 Buffer.from("test-blind-index-key-of-32-bytes").toString("base64")];
 
 describe("integration status", () => {
   test("everything set: enabled, with non-secret details", () => {
     expect(statusLines(FULL)).toEqual([
-      "Lalamove: enabled (sandbox; areas NCR, Bulacan, Cavite, Laguna, Rizal)",
-      "PayMongo: enabled (test mode; methods gcash,qrph,dob,dob_ubp)",
-      "Email:    enabled (smtp.gmail.com:465; shop alerts on)",
-      "Gemini:   enabled (model gemini-3.8-flash, fallback gemini-3.5-flash-lite)"
+      "Lalamove:   enabled (sandbox; areas NCR, Bulacan, Cavite, Laguna, Rizal)",
+      "PayMongo:   enabled (test mode; methods gcash,qrph,dob,dob_ubp)",
+      "Email:      enabled (smtp.gmail.com:465; shop alerts on)",
+      "Gemini:     enabled (model gemini-3.8-flash, fallback gemini-3.5-flash-lite)",
+      "Encryption: enabled (AES-256-GCM, key v1)"
     ]);
   });
 
   test("nothing set: off, naming the keys", () => {
     expect(statusLines({})).toEqual([
-      "Lalamove: off, keys not set (LALAMOVE_API_KEY, LALAMOVE_API_SECRET, STORE_LAT, STORE_LNG)",
-      "PayMongo: off, keys not set (PAYMONGO_SECRET_KEY, PAYMONGO_WEBHOOK_SECRET, APP_URL)",
-      "Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)",
-      "Gemini:   off, keys not set (GEMINI_API_KEY)"
+      "Lalamove:   off, keys not set (LALAMOVE_API_KEY, LALAMOVE_API_SECRET, STORE_LAT, STORE_LNG)",
+      "PayMongo:   off, keys not set (PAYMONGO_SECRET_KEY, PAYMONGO_WEBHOOK_SECRET, APP_URL)",
+      "Email:      off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)",
+      "Gemini:     off, keys not set (GEMINI_API_KEY)",
+      "Encryption: off, keys not set (DATA_ENCRYPTION_KEY, DATA_INDEX_KEY)"
     ]);
   });
 
@@ -39,17 +44,17 @@ describe("integration status", () => {
     const byName = Object.fromEntries(integrationStatus(env).map(s => [s.name, s]));
     expect(byName.Lalamove).toMatchObject({ state: "incomplete", missing: ["STORE_LAT", "STORE_LNG"], detail: null });
     expect(byName.PayMongo).toMatchObject({ state: "incomplete", missing: ["PAYMONGO_WEBHOOK_SECRET"] });
-    expect(statusLines(env)[1]).toBe("PayMongo: incomplete, not set: PAYMONGO_WEBHOOK_SECRET");
+    expect(statusLines(env)[1]).toBe("PayMongo:   incomplete, not set: PAYMONGO_WEBHOOK_SECRET");
   });
 
   test("modes are labelled from the key type and LALAMOVE_ENV, not shown", () => {
     const live = statusLines({ ...FULL, PAYMONGO_SECRET_KEY: "sk_live_ABC", LALAMOVE_ENV: "production",
                                LALAMOVE_SERVICE_AREAS: "NCR, Cebu", ADMIN_ALERT_EMAIL: "" });
-    expect(live[0]).toBe("Lalamove: enabled (PRODUCTION; areas NCR, Cebu)");
-    expect(live[1]).toMatch(/^PayMongo: enabled \(LIVE mode;/);
-    expect(live[2]).toBe("Email:    enabled (smtp.gmail.com:465; shop alerts off (ADMIN_ALERT_EMAIL not set))");
-    expect(statusLines({ ...FULL, GEMINI_MODEL: " gemini-3.5-flash-lite " })[3]).toBe("Gemini:   enabled (model gemini-3.5-flash-lite)");
-    expect(statusLines({ ...FULL, GEMINI_FALLBACK_MODEL: "gemini-3.8-flash" })[3]).toBe("Gemini:   enabled (model gemini-3.8-flash)");
+    expect(live[0]).toBe("Lalamove:   enabled (PRODUCTION; areas NCR, Cebu)");
+    expect(live[1]).toMatch(/^PayMongo: +enabled \(LIVE mode;/);
+    expect(live[2]).toBe("Email:      enabled (smtp.gmail.com:465; shop alerts off (ADMIN_ALERT_EMAIL not set))");
+    expect(statusLines({ ...FULL, GEMINI_MODEL: " gemini-3.5-flash-lite " })[3]).toBe("Gemini:     enabled (model gemini-3.5-flash-lite)");
+    expect(statusLines({ ...FULL, GEMINI_FALLBACK_MODEL: "gemini-3.8-flash" })[3]).toBe("Gemini:     enabled (model gemini-3.8-flash)");
   });
 
   test("no line ever contains a value", () => {
@@ -65,7 +70,7 @@ describe("server startup output", () => {
     // settings the status lines are meant to show.
     const SHOWN = new Set(["LALAMOVE_ENV", "LALAMOVE_SERVICE_AREAS", "PAYMONGO_METHODS", "SMTP_HOST", "SMTP_PORT",
                            "LALAMOVE_SERVICE_TYPE", "NODE_ENV", "PORT", "DB_NAME", "DB_HOST", "DB_PORT",
-                           "STORE_CONTACT_NAME", "GEMINI_MODEL", "GEMINI_FALLBACK_MODEL"]);   // "Bongalink", also in the "Bongalink API running" line
+                           "STORE_CONTACT_NAME", "GEMINI_MODEL", "GEMINI_FALLBACK_MODEL", "DATA_ENCRYPTION_KEY_VERSION"]);   // "Bongalink", also in the "Bongalink API running" line
     const realValues = Object.entries(require("dotenv").parse(fs.readFileSync(path.join(backend, ".env"))))
       .filter(([k, v]) => !SHOWN.has(k) && v && v.length >= 6)
       .map(([, v]) => v);
@@ -84,10 +89,11 @@ describe("server startup output", () => {
     child.kill();
 
     expect(out).toContain("Integrations (from .env; restart after changing it):");
-    expect(out).toContain("  Lalamove: enabled (sandbox;");
-    expect(out).toContain("  PayMongo: enabled (test mode;");
-    expect(out).toContain("  Email:    enabled (");
-    expect(out).toContain("  Gemini:   enabled (model ");
+    expect(out).toContain("  Lalamove:   enabled (sandbox;");
+    expect(out).toContain("  PayMongo:   enabled (test mode;");
+    expect(out).toContain("  Email:      enabled (");
+    expect(out).toContain("  Gemini:     enabled (model ");
+    expect(out).toContain("  Encryption: enabled (AES-256-GCM, key v1)");
     for (const secret of [...SECRETS, ...realValues]) expect(out).not.toContain(secret);
   }, 20000);
 });

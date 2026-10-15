@@ -23,6 +23,9 @@ Object.assign(process.env, {
   GEMINI_API_KEY: "test-gemini-key",
   GEMINI_MODEL: "gemini-test-model",
   GEMINI_FALLBACK_MODEL: "gemini-test-fallback",
+  // Test-only encryption keys (32 bytes each, base64). The real ones stay in Backend/.env.
+  DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+  DATA_INDEX_KEY: Buffer.alloc(32, 9).toString("base64"),
   // Uploaded photos go to a throwaway folder, never Backend/uploads.
   UPLOAD_DIR: path.join(require("os").tmpdir(), "bongalink-test-uploads")
 });

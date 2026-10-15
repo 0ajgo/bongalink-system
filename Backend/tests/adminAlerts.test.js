@@ -85,7 +85,7 @@ describe("shop email when an order is paid", () => {
     const { amountCentavos } = await placeOrder();
     expect((await pay({ amount: amountCentavos })).status).toBe(200);
     await new Promise(r => setImmediate(r));
-    expect(errors).toHaveBeenCalledWith("Shop alert failed:", "SMTP down");
+    expect(errors).toHaveBeenCalledWith("Shop alert failed (Error): SMTP down");
   });
 });
 

@@ -3,6 +3,7 @@
 //   PayMongo: incomplete, not set: PAYMONGO_WEBHOOK_SECRET
 //   Email:    off, keys not set (SMTP_USER, SMTP_PASS, MAIL_FROM, VERIFICATION_SECRET)
 //   Gemini:   enabled (model gemini-3.8-flash, fallback gemini-3.5-flash-lite)
+//   Encryption: enabled (AES-256-GCM, key v1)
 // Only variable NAMES and labels derived from them (test/live, sandbox/production)
 // are ever printed, never values. Remember: .env is read at startup, so restart the
 // server after changing it.
@@ -48,6 +49,16 @@ const INTEGRATIONS = [
       const model = isSet(env.GEMINI_MODEL) ? env.GEMINI_MODEL.trim() : DEFAULT_GEMINI_MODEL;
       const fallback = isSet(env.GEMINI_FALLBACK_MODEL) ? env.GEMINI_FALLBACK_MODEL.trim() : DEFAULT_GEMINI_FALLBACK;
       return `model ${model}${fallback !== model ? `, fallback ${fallback}` : ""}`;
+    },
+  },
+  {
+    // Personal information at rest (lib/dataProtection.js). The server won't start without it.
+    name: "Encryption",
+    required: ["DATA_ENCRYPTION_KEY", "DATA_INDEX_KEY"],
+    detail: (env) => {
+      const older = Object.keys(env).filter((k) => /^DATA_ENCRYPTION_KEY_V\d+$/.test(k) && isSet(env[k]))
+        .map((k) => `v${k.slice("DATA_ENCRYPTION_KEY_V".length)}`).sort();
+      return `AES-256-GCM, key v${String(env.DATA_ENCRYPTION_KEY_VERSION || "").trim() || 1}${older.length ? `; can also read ${older.join(", ")}` : ""}`;
     },
   },
 ];

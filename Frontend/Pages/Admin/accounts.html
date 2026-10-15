@@ -55,7 +55,8 @@
     <form class="acc-filters" id="accFilters" role="search">
       <div class="field">
         <label class="label" for="fSearch">Search</label>
-        <input class="input" id="fSearch" type="search" placeholder="Username or email" autocomplete="off">
+        <input class="input" id="fSearch" type="search" placeholder="Username, or a full email" autocomplete="off" aria-describedby="fSearchHint">
+        <span class="hint" id="fSearchHint">Emails are encrypted, so type the whole address to find one.</span>
       </div>
       <div class="field">
         <label class="label" for="fRole">Role</label>
@@ -79,7 +80,7 @@
         <thead>
           <tr>
             <th scope="col" data-sort="username">Username</th>
-            <th scope="col" data-sort="email">Email</th>
+            <th scope="col">Email</th>
             <th scope="col" data-sort="role">Role</th>
             <th scope="col" data-sort="status">Status</th>
             <th scope="col">Verified</th>

@@ -31,3 +31,9 @@
   .auth__main { padding: var(--space-6) var(--space-4); }
 }
 .auth__card form > .btn, .auth__card form > .stack { margin-top: var(--space-5); }
+
+/* Privacy notice above the consent checkbox (register). */
+.privacy-notice { margin-top: var(--space-5); padding: var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius); background: var(--color-surface-2); font-size: var(--text-sm); color: var(--color-ink-2); }
+.privacy-notice h2 { font-size: var(--text-base); margin-bottom: var(--space-2); color: var(--color-ink); }
+.privacy-notice p + p { margin-top: var(--space-2); }
+.auth__card .check a { text-decoration: underline; text-underline-offset: 2px; }

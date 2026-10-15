@@ -3,6 +3,7 @@
 // fees come from the admin-encoded rate table, as the paper's Limitations section allows.
 const pool = require('../db');
 const lalamove = require('./lalamove');
+const { logError } = require('../lib/pii');
 
 // PSGC regions -> courier rate zone
 const ZONE_BY_REGION = {
@@ -95,7 +96,7 @@ async function resolveLocation(address) {
                lat: Number(address.lat), lng: Number(address.lng) };
     } catch (e) {
       if (e.status === 400) throw e;   // outside the Philippines
-      console.warn('Pin lookup failed, using the typed region:', e.message);
+      logError('Pin lookup failed, using the typed region', e);
     }
   }
   const zone = zoneFor(address.region, address.province);
@@ -142,7 +143,7 @@ async function quoteOptions(items, address) {
         basis: distance === null ? 'Live Lalamove quote' : `Live Lalamove quote, ${distance} km${q.distanceKm == null ? ' (straight line)' : ''}`,
       });
     } catch (e) {
-      console.warn('Lalamove quote failed or out of service area, offering J&T/LBC only:', e.message);
+      logError('Lalamove quote failed or out of service area, offering J&T/LBC only', e);
     }
   }
   return { zone, weight_kg: weightKg, location, options };
