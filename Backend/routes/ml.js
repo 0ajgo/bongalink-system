@@ -106,86 +106,163 @@ router.get("/products", async (req, res) => {
 });
 
 /* ---------------------------------------------------------------------
-   GET /api/admin/ml/dashboard?days=30 — read-only numbers for the admin
-   Dashboard page (Pages/Admin/dashboard.html):
+   GET /api/admin/ml/dashboard?group=day|week|month&range=N — read-only
+   numbers for the admin Dashboard page (Pages/Admin/dashboard.html):
      stock        active products, low (1..LOW_STOCK available) and out
                   of stock, using AVAILABLE stock (on hand - reserved)
+     sales        item revenue today / this week (from Monday) / this
+                  month, each with the previous whole day / week / month
+                  and the change in % (null when there's nothing to
+                  compare with)
      month        sales this calendar month: orders, units, item revenue
-     trend        item revenue + units per day for the last `days` days
-                  (oldest first, zero-filled, today excluded like /history)
+     trend        item revenue + units per day, ISO week or calendar month
+                  for the last `range` complete periods (oldest first,
+                  zero-filled; the current day/week/month is left out, the
+                  tiles show it). Each row's `day` is the period's first day.
      top_products best sellers by units over the same window
    Sales = orders in SOLD_STATUSES, the same definition the forecasts use.
+   ?days=30|90|180 still works for the daily view.
+
+   Dates are Philippine dates (Asia/Manila), whatever time zone the MySQL
+   server runs in (UTC in Docker): see withPhilippineTime().
    --------------------------------------------------------------------- */
 const LOW_STOCK = 3;   // same threshold as the storefront's "Low stock" badge (Frontend/JS/ui.js)
 
-const dayKey = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Ranges offered per grouping; the first one is the default.
+const TREND_GROUPS = { day: [30, 90, 180], week: [12, 26, 52], month: [6, 12, 24] };
+
+// The Philippines is UTC+8 all year (no daylight saving). orders.created_at is a TIMESTAMP,
+// so on a connection set to +08:00, CURDATE(), DATE(created_at) and date strings compared
+// with it are all Philippine time. The setting is put back before the connection is reused.
+const PH_TIME_ZONE = "+08:00";
+
+async function withPhilippineTime(work) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.query("SET time_zone = ?", [PH_TIME_ZONE]);
+    return await work(conn);
+  } finally {
+    await conn.query("SET time_zone = DEFAULT").then(() => conn.release(), () => conn.destroy());
+  }
+}
+
+// Calendar arithmetic on "YYYY-MM-DD" strings (UTC dates, so the server's own zone can't shift them).
+function shiftDate(day, { days = 0, months = 0 }) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + months, d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+const STEP = { day: (d, n) => shiftDate(d, { days: n }), week: (d, n) => shiftDate(d, { days: 7 * n }), month: (d, n) => shiftDate(d, { months: n }) };
+
+// Period start of each order, as "YYYY-MM-DD" (weeks start on Monday). Constant SQL, no user input.
+const PERIOD_OF = {
+  day: "DATE_FORMAT(o.created_at, '%Y-%m-%d')",
+  week: "DATE_FORMAT(DATE(o.created_at) - INTERVAL WEEKDAY(o.created_at) DAY, '%Y-%m-%d')",
+  month: "DATE_FORMAT(o.created_at, '%Y-%m-01')"
+};
+
+// Orders, units and item revenue of the sales in [from, to).
+async function salesBetween(conn, from, to) {
+  const [[r]] = await conn.query(
+    `SELECT COUNT(DISTINCT o.order_id) AS orders,
+            COALESCE(SUM(oi.quantity), 0) AS units,
+            COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
+     FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
+     WHERE o.status IN (?) AND o.created_at >= ? AND o.created_at < ?`,
+    [SOLD_STATUSES, from, to]
+  );
+  return { orders: Number(r.orders), units: Number(r.units), revenue: Number(r.revenue) };
+}
+
+// A summary tile: this period so far vs the whole previous one.
+async function salesTile(conn, start, next, previous) {
+  const current = await salesBetween(conn, start, next);
+  const before = await salesBetween(conn, previous, start);
+  return {
+    ...current, start,
+    previous_revenue: before.revenue,
+    change_pct: before.revenue > 0 ? Math.round(((current.revenue - before.revenue) / before.revenue) * 1000) / 10 : null
+  };
+}
 
 router.get("/dashboard", async (req, res) => {
   try {
-    const days = [30, 90, 180].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const group = TREND_GROUPS[req.query.group] ? req.query.group : "day";
+    const asked = Number(req.query.range ?? (group === "day" ? req.query.days : undefined));
+    const range = TREND_GROUPS[group].includes(asked) ? asked : TREND_GROUPS[group][0];
 
-    const [[stock]] = await pool.query(
-      `SELECT COUNT(*) AS active_products,
-              SUM(available = 0) AS out_of_stock,
-              SUM(available BETWEEN 1 AND ?) AS low_stock
-       FROM (SELECT stock_quantity - LEAST(reserved, stock_quantity) AS available
-             FROM products WHERE is_active = 1) p`,
-      [LOW_STOCK]
-    );
+    const body = await withPhilippineTime(async (conn) => {
+      const [[stock]] = await conn.query(
+        `SELECT COUNT(*) AS active_products,
+                SUM(available = 0) AS out_of_stock,
+                SUM(available BETWEEN 1 AND ?) AS low_stock
+         FROM (SELECT stock_quantity - LEAST(reserved, stock_quantity) AS available
+               FROM products WHERE is_active = 1) p`,
+        [LOW_STOCK]
+      );
 
-    const [[month]] = await pool.query(
-      `SELECT COUNT(DISTINCT o.order_id) AS orders,
-              COALESCE(SUM(oi.quantity), 0) AS units,
-              COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
-       FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
-       WHERE o.status IN (?) AND o.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
-      [SOLD_STATUSES]
-    );
+      // Today in the Philippines, and the first day of this week (Monday) and month.
+      const [[clock]] = await conn.query(
+        `SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today,
+                DATE_FORMAT(CURDATE() - INTERVAL WEEKDAY(CURDATE()) DAY, '%Y-%m-%d') AS week,
+                DATE_FORMAT(CURDATE(), '%Y-%m-01') AS month`
+      );
+      const sales = {
+        today: await salesTile(conn, clock.today, STEP.day(clock.today, 1), STEP.day(clock.today, -1)),
+        week: await salesTile(conn, clock.week, STEP.week(clock.week, 1), STEP.week(clock.week, -1)),
+        month: await salesTile(conn, clock.month, STEP.month(clock.month, 1), STEP.month(clock.month, -1))
+      };
 
-    const [daily] = await pool.query(
-      `SELECT DATE_FORMAT(DATE(o.created_at), '%Y-%m-%d') AS day,
-              SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
-       FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
-       WHERE o.status IN (?) AND o.created_at >= CURDATE() - INTERVAL ? DAY AND o.created_at < CURDATE()
-       GROUP BY day`,
-      [SOLD_STATUSES, days]
-    );
-    const byDay = new Map(daily.map(r => [r.day, r]));
-    const trend = [];
-    const today = new Date();
-    for (let i = days; i >= 1; i--) {
-      const key = dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
-      const r = byDay.get(key);
-      trend.push({ day: key, units: r ? Number(r.units) : 0, revenue: r ? Number(r.revenue) : 0 });
-    }
+      // The last `range` complete periods: [from, to), to = the start of the current one.
+      const to = clock[group === "day" ? "today" : group];
+      const from = STEP[group](to, -range);
+      const [rows] = await conn.query(
+        `SELECT ${PERIOD_OF[group]} AS period,
+                SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
+         FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
+         WHERE o.status IN (?) AND o.created_at >= ? AND o.created_at < ?
+         GROUP BY period`,
+        [SOLD_STATUSES, from, to]
+      );
+      const byPeriod = new Map(rows.map(r => [r.period, r]));
+      const trend = [];
+      for (let i = range; i >= 1; i--) {
+        const key = STEP[group](to, -i);
+        const r = byPeriod.get(key);
+        trend.push({ day: key, units: r ? Number(r.units) : 0, revenue: r ? Number(r.revenue) : 0 });
+      }
 
-    const [top] = await pool.query(
-      `SELECT p.product_id, p.name, c.name AS category,
-              SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
-       FROM orders o
-       JOIN order_items oi ON oi.order_id = o.order_id
-       JOIN products p ON p.product_id = oi.product_id
-       JOIN categories c ON c.category_id = p.category_id
-       WHERE o.status IN (?) AND o.created_at >= CURDATE() - INTERVAL ? DAY AND o.created_at < CURDATE()
-       GROUP BY p.product_id, p.name, c.name
-       ORDER BY units DESC, revenue DESC
-       LIMIT 5`,
-      [SOLD_STATUSES, days]
-    );
+      const [top] = await conn.query(
+        `SELECT p.product_id, p.name, c.name AS category,
+                SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.order_id
+         JOIN products p ON p.product_id = oi.product_id
+         JOIN categories c ON c.category_id = p.category_id
+         WHERE o.status IN (?) AND o.created_at >= ? AND o.created_at < ?
+         GROUP BY p.product_id, p.name, c.name
+         ORDER BY units DESC, revenue DESC
+         LIMIT 5`,
+        [SOLD_STATUSES, from, to]
+      );
 
-    res.json({
-      days,
-      low_stock_threshold: LOW_STOCK,
-      stock: {
-        active_products: Number(stock.active_products),
-        low_stock: Number(stock.low_stock) || 0,
-        out_of_stock: Number(stock.out_of_stock) || 0
-      },
-      month: { orders: Number(month.orders), units: Number(month.units), revenue: Number(month.revenue) },
-      trend,
-      top_products: top.map(t => ({ ...t, units: Number(t.units), revenue: Number(t.revenue) }))
+      return {
+        group, range, from, to,
+        days: Math.round((Date.parse(to) - Date.parse(from)) / 86400000),
+        today: clock.today,
+        low_stock_threshold: LOW_STOCK,
+        stock: {
+          active_products: Number(stock.active_products),
+          low_stock: Number(stock.low_stock) || 0,
+          out_of_stock: Number(stock.out_of_stock) || 0
+        },
+        sales,
+        month: { orders: sales.month.orders, units: sales.month.units, revenue: sales.month.revenue },
+        trend,
+        top_products: top.map(t => ({ ...t, units: Number(t.units), revenue: Number(t.revenue) }))
+      };
     });
+    res.json(body);
   } catch (err) {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load the dashboard." });

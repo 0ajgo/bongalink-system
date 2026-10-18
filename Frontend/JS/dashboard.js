@@ -6,12 +6,31 @@
 renderHeader({ active: "dashboard" });
 
 const $ = (id) => document.getElementById(id);
-const state = { data: null, metric: "revenue", days: 30 };
+const state = { data: null, metric: "revenue", group: "day", range: 30 };
 const METRIC = {
-  revenue: { label: "Item revenue per day", header: "Revenue", format: (v) => formatMoney(v),
+  revenue: { label: "Item revenue", header: "Revenue", format: (v) => formatMoney(v),
              axis: (v) => v >= 1000 ? `₱${Math.round(v / 100) / 10}k` : `₱${Math.round(v)}` },
-  units: { label: "Units sold per day", header: "Units", format: (v) => `${v} unit${v === 1 ? "" : "s"}`, axis: (v) => String(Math.round(v * 10) / 10) }
+  units: { label: "Units sold", header: "Units", format: (v) => `${v} unit${v === 1 ? "" : "s"}`, axis: (v) => String(Math.round(v * 10) / 10) }
 };
+
+// Trend groupings. Each bar's `day` is the first day of its period ("YYYY-MM-DD", Philippine date);
+// weeks are ISO weeks (Monday to Sunday). The ranges match the API's.
+const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+function isoWeek(day) {
+  const thursday = new Date(Date.parse(`${addDays(day, 3)}T00:00:00Z`));   // `day` is a Monday
+  return 1 + Math.floor((thursday - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / (7 * 86400000));
+}
+const monthName = (day, month) => new Date(`${day}T00:00:00`).toLocaleDateString("en-PH", { month, year: "numeric" });
+const GROUP = {
+  day: { ranges: [30, 90, 180], unit: "day", header: "Day", current: "today", axis: chartDate, label: chartDate,
+         empty: "Paid orders appear here the day after they're placed." },
+  week: { ranges: [12, 26, 52], unit: "week", header: "Week", current: "this week", axis: chartDate,
+          label: (d) => `Week ${isoWeek(d)} · ${chartDate(d)}–${chartDate(addDays(d, 6))}`,
+          empty: "Paid orders appear here once their week (Monday to Sunday) is over." },
+  month: { ranges: [6, 12, 24], unit: "month", header: "Month", current: "this month", axis: (d) => monthName(d, "short"),
+           label: (d) => monthName(d, "long"), empty: "Paid orders appear here once their month is over." }
+};
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function setStat(id, value, sub) {
   const tile = $(id);
@@ -66,9 +85,30 @@ async function loadModel() {
 function renderSummary(d) {
   setStat("statLow", String(d.stock.low_stock), `1–${d.low_stock_threshold} available · of ${d.stock.active_products} active parts`);
   setStat("statOut", String(d.stock.out_of_stock), "0 available (on hand minus unpaid orders)");
-  const month = new Date().toLocaleDateString("en-PH", { month: "long" });
-  setStat("statSales", formatMoney(d.month.revenue).replace(/\.00$/, ""),
-    `${month}: ${d.month.orders} order${d.month.orders === 1 ? "" : "s"}, ${d.month.units} unit${d.month.units === 1 ? "" : "s"}`);
+  const month = new Date(`${d.today}T00:00:00`).toLocaleDateString("en-PH", { month: "long" });
+  setStat("statOrders", String(d.month.orders), `${month}: ${plural(d.month.units, "unit")} sold`);
+}
+
+/* Revenue today / this week / this month, each vs the whole previous period, e.g.
+   "₱12,400" and "+18% vs last week · 5 orders". */
+const REVENUE_TILES = [["revToday", "today", "yesterday"], ["revWeek", "week", "last week"], ["revMonth", "month", "last month"]];
+const wholePesos = (v) => formatMoney(v).replace(/\.00$/, "");
+
+function changeText(t, vs) {
+  if (t.change_pct === null) return escapeHTML(`No sales ${vs}`);
+  const pct = t.change_pct;
+  const tone = pct > 0 ? " delta--up" : pct < 0 ? " delta--down" : "";
+  return `<span class="delta${tone}">${pct > 0 ? "+" : pct < 0 ? "-" : "±"}${Math.abs(pct)}%</span> vs ${escapeHTML(vs)}`;
+}
+
+function renderRevenue(sales) {
+  for (const [id, key, vs] of REVENUE_TILES) {
+    const t = sales[key];
+    const tile = $(id);
+    tile.querySelector(".stat__value").textContent = wholePesos(t.revenue);
+    tile.querySelector(".stat__sub").innerHTML = `${changeText(t, vs)} · ${plural(t.orders, "order")}`;
+    tile.title = `${vs[0].toUpperCase()}${vs.slice(1)}: ${wholePesos(t.previous_revenue)}`;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -77,23 +117,25 @@ function renderSummary(d) {
 function renderTrend() {
   const d = state.data;
   const m = METRIC[state.metric];
+  const g = GROUP[d.group] || GROUP.day;
+  const period = `last ${plural(d.range, g.unit)}`;
   const points = d.trend.map(t => ({ day: t.day, value: t[state.metric] }));
   const total = points.reduce((s, p) => s + p.value, 0);
   if (total === 0) {
-    $("trendChart").innerHTML = UIState.empty({ icon: "clipboard-list", title: "No sales in this period",
-      text: "Paid orders appear here the day after they're placed." });
+    $("trendChart").innerHTML = UIState.empty({ icon: "clipboard-list", title: "No sales in this period", text: g.empty });
     $("trendNote").textContent = "";
     $("trendTable").innerHTML = "";
     return;
   }
-  barChart($("trendChart"), points, { label: `${m.label}, last ${d.days} days`, format: m.format, axis: m.axis });
-  $("trendNote").textContent = `${m.header} in the last ${d.days} days: ${m.format(state.metric === "revenue" ? Math.round(total * 100) / 100 : total)}. Excludes today and unpaid or expired orders.`;
-  $("trendTable").innerHTML = chartTable(points, { valueHeader: m.header, format: m.format });
+  barChart($("trendChart"), points, { label: `${m.label} per ${g.unit}, ${period}`, format: m.format, axis: m.axis,
+                                      dayLabel: g.axis, tipLabel: g.label });
+  $("trendNote").textContent = `${m.header} in the ${period}: ${m.format(state.metric === "revenue" ? Math.round(total * 100) / 100 : total)}. Excludes ${g.current} and unpaid or expired orders.`;
+  $("trendTable").innerHTML = chartTable(points, { valueHeader: m.header, format: m.format, periodHeader: g.header, dayLabel: g.label });
 }
 
 function renderTop() {
   const top = state.data.top_products;
-  $("topPeriod").textContent = `Last ${state.data.days} days`;
+  $("topPeriod").textContent = `Last ${plural(state.data.range, (GROUP[state.data.group] || GROUP.day).unit)}`;
   $("topProducts").innerHTML = top.length ? `
     <table class="table">
       <thead><tr><th>Part</th><th class="num">Units</th><th class="num">Revenue</th></tr></thead>
@@ -108,13 +150,15 @@ async function loadDashboard() {
   $("trendChart").innerHTML = `<span class="skeleton skeleton--media"></span>`;
   $("topProducts").innerHTML = `<table class="table"><tbody>${UIState.rowSkeletons(3, 4)}</tbody></table>`;
   try {
-    state.data = await apiFetch(`/admin/ml/dashboard?days=${state.days}`);
+    state.data = await apiFetch(`/admin/ml/dashboard?group=${state.group}&range=${state.range}`);
     renderSummary(state.data);
+    renderRevenue(state.data.sales);
     renderTrend();
     renderTop();
   } catch (err) {
     $("trendChart").innerHTML = UIState.error(err.message, "retryDashboard");
     $("topProducts").innerHTML = "";
+    REVENUE_TILES.forEach(([id]) => { if ($(id).querySelector(".skeleton")) setStat(id, "—", `Couldn't load: ${err.message}`); });
     $("retryDashboard").addEventListener("click", loadDashboard);
   }
 }
@@ -124,7 +168,21 @@ document.querySelectorAll("[data-metric]").forEach(b => b.addEventListener("clic
   document.querySelectorAll("[data-metric]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
   if (state.data) renderTrend();
 }));
-$("trendDays").addEventListener("change", () => { state.days = Number($("trendDays").value); loadDashboard(); });
+// Day / Week / Month: each grouping has its own ranges (e.g. 12/26/52 weeks); switching starts at the first.
+function paintRangeOptions() {
+  const g = GROUP[state.group];
+  $("trendRange").innerHTML = g.ranges.map(n => `<option value="${n}">Last ${plural(n, g.unit)}</option>`).join("");
+  $("trendRange").value = String(state.range);
+}
+document.querySelectorAll("[data-group]").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.group === state.group) return;
+  state.group = b.dataset.group;
+  state.range = GROUP[state.group].ranges[0];
+  document.querySelectorAll("[data-group]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  paintRangeOptions();
+  loadDashboard();
+}));
+$("trendRange").addEventListener("change", () => { state.range = Number($("trendRange").value); loadDashboard(); });
 window.addEventListener("resize", () => {
   clearTimeout(renderTrend.t);
   renderTrend.t = setTimeout(() => state.data && renderTrend(), 200);

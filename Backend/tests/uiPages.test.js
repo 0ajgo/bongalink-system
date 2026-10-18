@@ -253,15 +253,28 @@ describe("profile page", () => {
 
 describe("admin dashboard", () => {
   const days = Array.from({ length: 30 }, (_, i) => ({ day: `2026-09-${String(i + 1).padStart(2, "0")}`, units: i % 7 === 0 ? 2 : 0, revenue: i % 7 === 0 ? 500 : 0 }));
+  // 12 ISO weeks (Mondays) ending with the week of Oct 5, 2026, and 6 months ending September 2026.
+  const weeks = Array.from({ length: 12 }, (_, i) => ({ day: new Date(Date.UTC(2026, 6, 20 + 7 * i)).toISOString().slice(0, 10), units: i === 11 ? 4 : 0, revenue: i === 11 ? 1200 : 0 }));
+  const months = ["2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01"].map((day, i) => ({ day, units: i, revenue: i * 100 }));
+  const tile = (revenue, previous, orders) => ({ revenue, previous_revenue: previous, orders, units: orders,
+    change_pct: previous ? Math.round(((revenue - previous) / previous) * 1000) / 10 : null });
+  const sales = { today: tile(0, 0, 0), week: tile(12400, 10508.47, 5), month: tile(30000, 40000, 12) };
   const api = (dashboard) => async ({ url }) => {
-    if (url.startsWith("/admin/ml/dashboard")) return { body: dashboard };
+    if (url.startsWith("/admin/ml/dashboard")) {
+      const params = new URL(url, "http://x").searchParams;
+      const group = params.get("group") || "day";
+      const range = Number(params.get("range"));
+      if (group === "week") return { body: { ...dashboard, group, range, trend: weeks } };
+      if (group === "month") return { body: { ...dashboard, group, range, trend: months } };
+      return { body: dashboard };
+    }
     if (url === "/v1/admin/orders/to-ship") return { body: { count: 3 } };
     if (url === "/admin/ml/status") return { body: { state: "up_to_date", worker_online: true, last_update_at: "2026-10-14T08:00:00Z", active_model: { version: "v7" } } };
     return { body: {} };
   };
   const data = {
-    days: 30, low_stock_threshold: 3, stock: { active_products: 66, low_stock: 4, out_of_stock: 60 },
-    month: { orders: 2, units: 3, revenue: 1500 }, trend: days,
+    group: "day", range: 30, days: 30, today: "2026-10-14", low_stock_threshold: 3, stock: { active_products: 66, low_stock: 4, out_of_stock: 60 },
+    sales, month: { orders: 12, units: 12, revenue: 30000 }, trend: days,
     top_products: [{ product_id: 1, name: "Printhead L3210", category: "Printer Parts", units: 6, revenue: 16800 }]
   };
 
@@ -272,16 +285,75 @@ describe("admin dashboard", () => {
     expect(value("statToShip")).toBe("3");
     expect(value("statLow")).toBe("4");
     expect(value("statOut")).toBe("60");
-    expect(value("statSales")).toBe("₱1,500");
+    expect(value("statOrders")).toBe("12");
+    expect(page.$("#statOrders .stat__sub").textContent).toBe("October: 12 units sold");
     expect(value("statModel")).toBe("Up to date");
     expect(page.$$("#trendChart .bar")).toHaveLength(30);
     expect(page.$("#trendTable table").rows).toHaveLength(31);
+    expect(page.$("#trendTable th").textContent).toBe("Day");
     expect(page.$("#topProducts").textContent).toContain("Printhead L3210");
+    expect(page.$("#topPeriod").textContent).toBe("Last 30 days");
     expect(page.$$(".page-head a").map(a => a.getAttribute("href"))).toEqual(["inventory.html", "deliveries.html", "accounts.html", "inventory.html#forecasts"]);
 
     page.$('[data-metric="units"]').click();
     expect(page.$('[data-metric="units"]').getAttribute("aria-pressed")).toBe("true");
     expect(page.$("#trendNote").textContent).toMatch(/^Units in the last 30 days: 10 units/);
+    page.close();
+  });
+
+  test("revenue tiles: today, this week and this month with the change vs the previous period", async () => {
+    const page = await openPage("Pages/Admin/dashboard.html", { role: "admin", api: api(data) });
+    await page.until(() => !page.$("#revWeek .skeleton"));
+    const tileText = (id) => [page.$(`#${id} .stat__label`).textContent.trim(), page.$(`#${id} .stat__value`).textContent.trim(),
+                              page.$(`#${id} .stat__sub`).textContent.trim()];
+    expect(tileText("revToday")).toEqual(["Revenue today", "₱0", "No sales yesterday · 0 orders"]);
+    expect(tileText("revWeek")).toEqual(["Revenue this week", "₱12,400", "+18% vs last week · 5 orders"]);
+    expect(tileText("revMonth")).toEqual(["Revenue this month", "₱30,000", "-25% vs last month · 12 orders"]);
+    expect(page.$("#revWeek .delta").className).toBe("delta delta--up");
+    expect(page.$("#revMonth .delta").className).toBe("delta delta--down");
+    expect(page.$("#revMonth").title).toBe("Last month: ₱40,000");
+    page.close();
+  });
+
+  test("Day / Week / Month switch: grouped bars, per-grouping ranges, and a table that follows", async () => {
+    const page = await openPage("Pages/Admin/dashboard.html", { role: "admin", api: api(data) });
+    await page.until(() => page.$("#trendChart svg"));
+    const options = () => page.$$("#trendRange option").map(o => o.textContent);
+    const lastDashboardCall = () => page.calls.filter(c => c.url.startsWith("/admin/ml/dashboard")).at(-1).url;
+    expect(options()).toEqual(["Last 30 days", "Last 90 days", "Last 180 days"]);
+    expect(lastDashboardCall()).toBe("/admin/ml/dashboard?group=day&range=30");
+
+    page.$('[data-group="week"]').click();
+    await page.until(() => page.$$("#trendChart .bar").length === 12);
+    expect(lastDashboardCall()).toBe("/admin/ml/dashboard?group=week&range=12");
+    expect(page.$('[data-group="week"]').getAttribute("aria-pressed")).toBe("true");
+    expect(page.$('[data-group="day"]').getAttribute("aria-pressed")).toBe("false");
+    expect(options()).toEqual(["Last 12 weeks", "Last 26 weeks", "Last 52 weeks"]);
+    expect(page.$("#trendNote").textContent).toBe("Revenue in the last 12 weeks: ₱1,200.00. Excludes this week and unpaid or expired orders.");
+    expect(page.$("#trendTable th").textContent).toBe("Week");
+    // Newest first, with the ISO week number and its Monday to Sunday; empty weeks are rows too.
+    expect(page.$("#trendTable tbody tr").cells[0].textContent).toBe("Week 41 · Oct 5–Oct 11");
+    expect(page.$("#trendTable tbody tr").cells[1].textContent).toBe("₱1,200.00");
+    expect(page.$$("#trendTable tbody tr")).toHaveLength(12);
+    expect(page.$("#topPeriod").textContent).toBe("Last 12 weeks");
+
+    page.$("#trendRange").value = "52";
+    page.$("#trendRange").dispatchEvent(new page.window.Event("change"));
+    await page.until(() => lastDashboardCall() === "/admin/ml/dashboard?group=week&range=52");
+
+    page.$('[data-group="month"]').click();
+    await page.until(() => page.$$("#trendChart .bar").length === 6);
+    expect(lastDashboardCall()).toBe("/admin/ml/dashboard?group=month&range=6");
+    expect(options()).toEqual(["Last 6 months", "Last 12 months", "Last 24 months"]);
+    expect(page.$("#trendTable th").textContent).toBe("Month");
+    expect(page.$$("#trendTable tbody tr").map(r => r.cells[0].textContent)).toEqual(
+      ["September 2026", "August 2026", "July 2026", "June 2026", "May 2026", "April 2026"]);
+    expect(page.$("#trendTable tbody tr").cells[1].textContent).toBe("₱500.00");
+    expect(page.$("#trendNote").textContent).toMatch(/Excludes this month/);
+
+    page.$('[data-group="day"]').click();
+    await page.until(() => page.$$("#trendChart .bar").length === 30);
+    expect(lastDashboardCall()).toBe("/admin/ml/dashboard?group=day&range=30");
     page.close();
   });
 

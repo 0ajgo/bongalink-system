@@ -12,7 +12,8 @@
 
 <!-- Integrated Dashboard (Sprint 3 "ERP Dashboard"): the owner's view of
      sales, orders and inventory. Read-only, from existing endpoints:
-       GET /api/admin/ml/dashboard   stock counts, month sales, trend, top products
+       GET /api/admin/ml/dashboard   stock counts, revenue today / this week / this month,
+                                     sales trend per day, week or month, top products
        GET /api/v1/admin/orders/to-ship
        GET /api/admin/ml/status      forecast model status
        GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer
@@ -28,6 +29,25 @@
       <a class="btn btn--secondary" href="deliveries.html"><i data-icon="truck" data-size="18"></i> Deliveries</a>
       <a class="btn btn--secondary" href="accounts.html"><i data-icon="users" data-size="18"></i> Accounts</a>
       <a class="btn btn--secondary" href="inventory.html#forecasts"><i data-icon="layout-dashboard" data-size="18"></i> Forecasts</a>
+    </div>
+  </div>
+
+  <!-- Revenue (REQ001): Philippine dates, weeks from Monday; each vs the previous whole day / week / month -->
+  <div class="stat-grid stat-grid--3" aria-live="polite" id="revenueTiles">
+    <div class="card stat" id="revToday">
+      <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Revenue today</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <div class="card stat" id="revWeek">
+      <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Revenue this week</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
+    </div>
+    <div class="card stat" id="revMonth">
+      <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Revenue this month</span>
+      <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
+      <span class="stat__sub">&nbsp;</span>
     </div>
   </div>
 
@@ -47,8 +67,8 @@
       <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
       <span class="stat__sub">&nbsp;</span>
     </a>
-    <div class="card stat" id="statSales">
-      <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Sales this month</span>
+    <div class="card stat" id="statOrders">
+      <span class="stat__label"><i data-icon="clipboard-list" data-size="16"></i> Orders this month</span>
       <span class="stat__value"><span class="skeleton skeleton--title"></span></span>
       <span class="stat__sub">&nbsp;</span>
     </div>
@@ -81,8 +101,13 @@
             <button type="button" data-metric="revenue" aria-pressed="true">Revenue</button>
             <button type="button" data-metric="units" aria-pressed="false">Units</button>
           </div>
-          <label class="sr-only" for="trendDays">Period</label>
-          <select class="select select--sm" id="trendDays">
+          <div class="segmented" role="group" aria-label="Group by">
+            <button type="button" data-group="day" aria-pressed="true">Day</button>
+            <button type="button" data-group="week" aria-pressed="false">Week</button>
+            <button type="button" data-group="month" aria-pressed="false">Month</button>
+          </div>
+          <label class="sr-only" for="trendRange">Period</label>
+          <select class="select select--sm" id="trendRange">
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
             <option value="180">Last 180 days</option>

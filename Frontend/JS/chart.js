@@ -8,6 +8,8 @@
        options: { label: "Units sold per day",       accessible name
                   format: v => `${v} units`,          tooltip text
                   axis: v => `${v}`,                  y-axis tick text (optional)
+                  dayLabel: day => "Oct 13",          x-axis text (default: the date)
+                  tipLabel: day => "Week of Oct 13",  tooltip text (default: dayLabel)
                   overlay: { value, slots, label } }  dashed line after the
                                                       bars (e.g. 7-day forecast)
    Follows the dataviz rules: thin bars with a 2px gap, rounded data-end,
@@ -24,7 +26,8 @@ function niceMax(v) {
   return Math.ceil(v / step) * step;
 }
 
-function barChart(container, points, { label = "Chart", format = (v) => String(v), axis = null, overlay = null } = {}) {
+function barChart(container, points, { label = "Chart", format = (v) => String(v), axis = null, overlay = null,
+                                       dayLabel = chartDate, tipLabel = dayLabel } = {}) {
   const W = Math.max(container.clientWidth, 280);
   const H = 220;
   const pad = { l: 48, r: 12, t: 16, b: 26 };
@@ -65,7 +68,7 @@ function barChart(container, points, { label = "Chart", format = (v) => String(v
 
   const ticks = points.length > 1 ? [0, Math.floor(points.length / 2), points.length - 1] : [0];
   const xLabels = ticks.map(i =>
-    `<text class="axis" x="${pad.l + i * slot + barW / 2}" y="${H - 8}" text-anchor="middle">${chartDate(points[i].day)}</text>`).join("");
+    `<text class="axis" x="${pad.l + i * slot + barW / 2}" y="${H - 8}" text-anchor="middle">${escapeHTML(dayLabel(points[i].day))}</text>`).join("");
 
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${escapeHTML(label)}">
@@ -79,7 +82,7 @@ function barChart(container, points, { label = "Chart", format = (v) => String(v
   container.querySelectorAll(".hit").forEach(hit => {
     const show = () => {
       const p = points[Number(hit.dataset.i)];
-      tip.innerHTML = `<strong>${escapeHTML(format(p.value))}</strong><br>${chartDate(p.day)}`;
+      tip.innerHTML = `<strong>${escapeHTML(format(p.value))}</strong><br>${escapeHTML(tipLabel(p.day))}`;
       tip.hidden = false;
       tip.style.left = `${Number(hit.getAttribute("x")) + slot / 2}px`;
       tip.style.top = `${pad.t - 6}px`;
@@ -95,10 +98,11 @@ function barChart(container, points, { label = "Chart", format = (v) => String(v
 }
 
 // The same numbers as a table, inside a <details> under the chart.
-function chartTable(points, { valueHeader, format }) {
+// periodHeader / dayLabel: e.g. "Week" and day => "Week 42 · Oct 13–19" (default "Day" and the date).
+function chartTable(points, { valueHeader, format, periodHeader = "Day", dayLabel = chartDate }) {
   const rows = [...points].reverse().map(p =>
-    `<tr><td>${chartDate(p.day)}</td><td class="num">${escapeHTML(format(p.value))}</td></tr>`).join("");
+    `<tr><td>${escapeHTML(dayLabel(p.day))}</td><td class="num">${escapeHTML(format(p.value))}</td></tr>`).join("");
   return `<details class="chart-table"><summary>Show as a table</summary>
-    <div class="table-wrap"><table class="table"><thead><tr><th>Day</th><th class="num">${escapeHTML(valueHeader)}</th></tr></thead>
+    <div class="table-wrap"><table class="table"><thead><tr><th>${escapeHTML(periodHeader)}</th><th class="num">${escapeHTML(valueHeader)}</th></tr></thead>
     <tbody>${rows}</tbody></table></div></details>`;
 }
