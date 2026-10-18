@@ -21,7 +21,10 @@ mysql -u root -p < database/bongalink_schema.sql
 Or, if using XAMPP/phpMyAdmin: open phpMyAdmin → Import →
 select `database/bongalink_schema.sql` → Go. This creates the
 `bongalink` database and all tables (users, categories, products,
-carts, cart_items, orders, order_items) with the seeded categories.
+carts, cart_items, orders, order_items). It has no categories yet:
+after the migrations and the first admin account (below), load
+`database/seed_data.sql` for the categories and the hidden test
+products used by the live payment test (section 8).
 
 Then apply the migration that adds soft delete (`products.is_active`),
 the product change log and the ML tables/triggers:
@@ -186,3 +189,37 @@ Island provinces billed at the `ISLAND_PROVINCE` rate are listed in
 Endpoints are in `postman/bongalink-apis.json`. Run the tests with
 `npm test` — they build a throwaway `bongalink_test` database on the MySQL
 server in `.env` (and drop it afterwards); PayMongo, Lalamove and email are mocked.
+
+## 8. Live payment test
+
+One real purchase after go-live proves the whole chain: the live PayMongo keys, the
+webhook, the "paid" status, the stock deduction, the bell and the shop's email alert.
+It uses a hidden test product, so customers never see it: on `bongalink_real` that's
+**Yosi** (product 73, 3 in stock); a fresh install gets **Camel** and three others from
+`database/seed_data.sql`. Do it with the live keys and the webhook already set up
+(DEPLOYMENT.md, go-live steps).
+
+1. **Show the test product.** Admin > Inventory > Hidden parts > the product > Edit
+   part > switch it to shown. (It needs a price above ₱0 and stock; Yosi has both.)
+2. **Buy it.** Log in as a customer account with a verified email (not the admin), add
+   1 to the cart, check out with J&T or LBC, and pay with GCash or QR Ph on the PayMongo
+   page. This charges real money: the item plus the shipping fee.
+3. **Confirm PayMongo marked it paid.** Within a minute:
+   - the checkout page confirms the payment, and My Orders shows the order with a
+     "Paid" date;
+   - Admin > Deliveries lists it under "Paid orders to ship", the bell shows
+     "New sale" and the shop inbox (`ADMIN_ALERT_EMAIL`) gets the order alert;
+   - the PayMongo dashboard (Live mode) shows the payment.
+   If the order stays unpaid although PayMongo shows the payment, the webhook isn't reaching the server:
+   check its URL and `PAYMONGO_WEBHOOK_SECRET` (PayMongo > Developers > Webhooks).
+4. **Hide the product again.** Inventory > the product > Edit part > hidden.
+5. **Refund the payment** in the PayMongo dashboard (Payments > the payment > Refund),
+   if you don't want to keep the money.
+6. **Take the test order out of the sales**, so the dashboard and the forecasts only
+   count real sales: back up the database, put the order number in
+   `database/imports/remove_live_test_order.sql` and run it
+   (`mysql -u root -p bongalink_real < database/imports/remove_live_test_order.sql`).
+   It refuses an order that has any part still shown in the shop, deletes only that
+   order and what depends on it, and leaves the stock alone (the unit stays sold;
+   adjust it in Inventory if you want it back). It works like
+   `database/imports/remove_test_orders.sql`, which removed the earlier checkout tests.
