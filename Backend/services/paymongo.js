@@ -3,10 +3,29 @@
 const crypto = require('crypto');
 
 const BASE = 'https://api.paymongo.com/v1';
+const TIMEOUT_MS = 15000;   // per PayMongo request
 
 class PaymentError extends Error {}
 
 const authHeader = () => 'Basic ' + Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64');
+
+// fetch to PayMongo that gives up after TIMEOUT_MS -> parsed JSON body, or a PaymentError.
+async function call(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader() },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PaymentError(err.name === 'TimeoutError' ? "PayMongo didn't answer in time. Please try again."
+      : "PayMongo can't be reached right now. Please try again.");
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new PaymentError(json.errors?.[0]?.detail || `PayMongo error ${res.status}`);
+  return json;
+}
 
 // REQ03: GCash + bank transfer. Bank options in PayMongo:
 //   qrph (pay from any bank/e-wallet app), dob (BPI online), dob_ubp (UnionBank online),
@@ -19,9 +38,8 @@ async function createCheckoutSession({ referenceNumber, description, lineItems, 
   const billing = { name: customer.name, email: customer.email };
   if (customer.phone) billing.phone = customer.phone;
 
-  const res = await fetch(`${BASE}/checkout_sessions`, {
+  const json = await call('/checkout_sessions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader() },
     body: JSON.stringify({
       data: {
         attributes: {
@@ -39,9 +57,16 @@ async function createCheckoutSession({ referenceNumber, description, lineItems, 
       },
     }),
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new PaymentError(json.errors?.[0]?.detail || `PayMongo error ${res.status}`);
   return { id: json.data.id, checkoutUrl: json.data.attributes.checkout_url };
+}
+
+// An existing session: still payable ('active', nothing paid), already paid, or expired.
+// -> { id, checkoutUrl, status: 'active' | 'paid' | 'expired' }
+async function getCheckoutSession(id) {
+  const json = await call(`/checkout_sessions/${encodeURIComponent(id)}`);
+  const a = json.data.attributes;
+  const paid = Boolean(a.paid_at) || (a.payments || []).length > 0;
+  return { id: json.data.id, checkoutUrl: a.checkout_url, status: paid ? 'paid' : a.status === 'active' ? 'active' : 'expired' };
 }
 
 // Header format: "t=<timestamp>,te=<test signature>,li=<live signature>"
@@ -62,4 +87,4 @@ function verifyWebhookSignature(rawBody, header, secret, livemode) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { createCheckoutSession, verifyWebhookSignature, PaymentError };
+module.exports = { createCheckoutSession, getCheckoutSession, verifyWebhookSignature, PaymentError };

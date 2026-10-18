@@ -20,51 +20,81 @@ const returnUrl = (orderId, result) =>
 
 // POST /checkout  { order_id }  -> { checkout_url }
 // Amounts always come from the database, never from the browser.
+// One payable link per order: "Pay now" again (a double click, or a retry after the page
+// timed out) gets the order's open PayMongo session back instead of a second one, so the
+// customer can't pay twice. A new session is only made when the last one expired.
 router.post('/checkout', requireAuth, requireRole('user'), requireVerifiedEmail, ah(async (req, res) => {
   const orderId = Number(req.body.order_id);
-  const [[order]] = await pool.query(
-    `SELECT o.order_id, o.status, o.shipping_fee, u.username AS name,
-            o.contact_email, u.email AS account_email, a.recipient_name, a.recipient_phone
-       FROM orders o
-       JOIN users u ON u.user_id = o.user_id
-       LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
-      WHERE o.order_id = ? AND o.user_id = ?`,
-    [orderId, req.user.userId]
-  );
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  const recipient = decryptAddress(order);   // name and phone are stored encrypted
-  if (order.status !== 'pending_payment') return res.status(409).json({ error: `Order is already ${order.status}` });
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Locks the order row: a second request for the same order waits here until this one
+    // has stored its session, then finds it below.
+    const [[order]] = await conn.query(
+      `SELECT o.order_id, o.status, o.shipping_fee, u.username AS name,
+              o.contact_email, u.email AS account_email, a.recipient_name, a.recipient_phone
+         FROM orders o
+         JOIN users u ON u.user_id = o.user_id
+         LEFT JOIN delivery_addresses a ON a.address_id = o.address_id
+        WHERE o.order_id = ? AND o.user_id = ?
+          FOR UPDATE OF o`,
+      [orderId, req.user.userId]
+    );
+    const done = async (status, body) => { await conn.commit(); return res.status(status).json(body); };
+    if (!order) return done(404, { error: 'Order not found' });
+    const recipient = decryptAddress(order);   // name and phone are stored encrypted
+    if (order.status !== 'pending_payment') return done(409, { error: `Order is already ${order.status}` });
 
-  const [items] = await pool.query(
-    `SELECT p.name, oi.quantity, oi.unit_price
-       FROM order_items oi JOIN products p ON p.product_id = oi.product_id WHERE oi.order_id = ?`,
-    [orderId]
-  );
-  if (!items.length) return res.status(400).json({ error: 'Order has no items' });
+    const [[open]] = await conn.query(
+      "SELECT checkout_session_id FROM payments WHERE order_id = ? AND status = 'pending' ORDER BY payment_id DESC LIMIT 1",
+      [orderId]
+    );
+    if (open) {
+      const existing = await paymongo.getCheckoutSession(open.checkout_session_id);
+      if (existing.status === 'active') return done(200, { checkout_url: existing.checkoutUrl });
+      if (existing.status === 'paid') {
+        return done(409, { error: "This order is already paid. We're confirming the payment, check My Orders in a minute.",
+          code: 'PAYMENT_CONFIRMING' });
+      }
+      // expired: open a new session below
+    }
 
-  const lineItems = items.map((i) => ({
-    name: i.name.slice(0, 255), quantity: i.quantity, amount: toCentavos(i.unit_price), currency: 'PHP',
-  }));
-  if (Number(order.shipping_fee) > 0) {
-    lineItems.push({ name: 'Shipping fee', quantity: 1, amount: toCentavos(order.shipping_fee), currency: 'PHP' });
+    const [items] = await conn.query(
+      `SELECT p.name, oi.quantity, oi.unit_price
+         FROM order_items oi JOIN products p ON p.product_id = oi.product_id WHERE oi.order_id = ?`,
+      [orderId]
+    );
+    if (!items.length) return done(400, { error: 'Order has no items' });
+
+    const lineItems = items.map((i) => ({
+      name: i.name.slice(0, 255), quantity: i.quantity, amount: toCentavos(i.unit_price), currency: 'PHP',
+    }));
+    if (Number(order.shipping_fee) > 0) {
+      lineItems.push({ name: 'Shipping fee', quantity: 1, amount: toCentavos(order.shipping_fee), currency: 'PHP' });
+    }
+    const total = lineItems.reduce((sum, l) => sum + l.amount * l.quantity, 0);
+
+    const session = await paymongo.createCheckoutSession({
+      referenceNumber: `BL-${order.order_id}`,
+      description: `Bongalink order #${order.order_id}`,
+      lineItems,
+      customer: { name: recipient.recipient_name || order.name, email: orderEmail(order), phone: recipient.recipient_phone },
+      successUrl: returnUrl(order.order_id, 'success'),
+      cancelUrl: returnUrl(order.order_id, 'cancelled'),
+    });
+
+    await conn.query(
+      `INSERT INTO payments (order_id, provider, checkout_session_id, amount_centavos, status)
+       VALUES (?, 'paymongo', ?, ?, 'pending')`,
+      [order.order_id, session.id, total]
+    );
+    return done(200, { checkout_url: session.checkoutUrl });
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
   }
-  const total = lineItems.reduce((sum, l) => sum + l.amount * l.quantity, 0);
-
-  const session = await paymongo.createCheckoutSession({
-    referenceNumber: `BL-${order.order_id}`,
-    description: `Bongalink order #${order.order_id}`,
-    lineItems,
-    customer: { name: recipient.recipient_name || order.name, email: orderEmail(order), phone: recipient.recipient_phone },
-    successUrl: returnUrl(order.order_id, 'success'),
-    cancelUrl: returnUrl(order.order_id, 'cancelled'),
-  });
-
-  await pool.query(
-    `INSERT INTO payments (order_id, provider, checkout_session_id, amount_centavos, status)
-     VALUES (?, 'paymongo', ?, ?, 'pending')`,
-    [order.order_id, session.id, total]
-  );
-  res.json({ checkout_url: session.checkoutUrl });
 }));
 
 // GET /orders/:id  - the return page polls this. The redirect alone is NOT proof of payment;

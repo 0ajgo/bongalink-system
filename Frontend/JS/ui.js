@@ -326,9 +326,20 @@ function startToShipBadge() {
    Server-Sent Events stream, opened with a single-use ticket so the login
    token never goes in a URL. If the stream can't connect or drops, the
    unread count is polled every 30 seconds while the stream is retried
-   after 2 s, 4 s, 8 s ... up to a minute. */
+   after 2 s, 4 s, 8 s ... up to a minute.
+
+   One stream per browser, not one per tab: browsers open at most 6
+   connections to the API's host, so a stream in every admin tab would
+   leave the pages' other requests waiting for a free one. The tabs elect
+   one holder with the Web Locks API; it opens the stream and passes each
+   notification to the other tabs over a BroadcastChannel, and when it
+   closes another tab takes over. Each tab keeps its own unread count (tabs
+   can be logged in as different admins). Browsers without those APIs give
+   each tab its own stream, closed while the tab is hidden. */
 const NOTIF_POLL_MS = 30000;
 const NOTIF_RETRY_MS = [2000, 4000, 8000, 16000, 30000, 60000];
+const NOTIF_CHANNEL = "bongalink-notifications";
+const NOTIF_LOCK = "bongalink-notification-stream";
 const NOTIF_PAGE_SIZE = 15;
 const NOTIF_ICON = {
   sale: "credit-card", payment_review: "circle-alert", orders_expired: "clock", shipment_booked: "truck",
@@ -360,7 +371,11 @@ function startNotificationBell(root) {
   const panel = wrap.querySelector("#notif-panel");
   const list = wrap.querySelector("[data-notif-list]");
   const readAll = wrap.querySelector("[data-notif-read-all]");
-  const state = { unread: 0, items: null, source: null, attempt: 0, retryTimer: null, pollTimer: null, ended: false };
+  const state = { unread: 0, items: null, source: null, attempt: 0, retryTimer: null, pollTimer: null, ended: false,
+                  shared: "locks" in navigator && typeof BroadcastChannel === "function",
+                  holder: false, live: false, channel: null, release: null, lockAbort: null, onVisibility: null };
+  // Tells the other tabs (shared mode only).
+  const share = (message) => { try { state.channel?.postMessage(message); } catch (e) { /* channel closed */ } };
 
   function paintCount() {
     const badge = wrap.querySelector("[data-notif-count]");
@@ -453,6 +468,7 @@ function startNotificationBell(root) {
       setUnread(state.unread - 1);
       try {
         setUnread((await apiFetch(`/v1/admin/notifications/${n.id}/read`, { method: "POST" })).unread);
+        share({ type: "read", username: session.username });
       } catch (err) { /* still open the page */ }
     }
     if (el.getAttribute("href")) window.location.href = el.getAttribute("href");
@@ -463,6 +479,7 @@ function startNotificationBell(root) {
     readAll.disabled = true;
     try {
       setUnread((await apiFetch("/v1/admin/notifications/read-all", { method: "POST" })).unread);
+      share({ type: "read", username: session.username });
       state.items?.forEach((n) => { n.read = true; });
       paintList();
     } catch (err) {
@@ -494,16 +511,24 @@ function startNotificationBell(root) {
     state.attempt++;
     state.retryTimer = setTimeout(() => { state.retryTimer = null; connect(); }, wait);
   }
+  const pausedWhileHidden = () => !state.shared && document.visibilityState === "hidden";
+  function setLive(live) {
+    state.live = live;
+    share({ type: "live", live });
+  }
   async function connect() {
     if (typeof EventSource !== "function") return startPolling();   // very old browser: polling only
     let ticket;
     try {
       ({ ticket } = await apiFetch("/v1/admin/notifications/stream-ticket", { method: "POST" }));
     } catch (err) {
+      setLive(false);
       startPolling();
       if (!(err.status === 401 || err.status === 403)) retryLater();
       return;
     }
+    if (state.ended) return;                                       // stopped while asking for the ticket
+    if (pausedWhileHidden()) return startPolling();                // hidden meanwhile: connect when shown
     const source = new EventSource(`${API_BASE_URL}/v1/admin/notifications/stream?ticket=${encodeURIComponent(ticket)}`);
     state.source = source;
     source.addEventListener("ready", (e) => {
@@ -511,13 +536,21 @@ function startNotificationBell(root) {
       stopPolling();
       state.items = null;   // anything missed while disconnected comes with the next list load
       setUnread(JSON.parse(e.data).unread);
+      setLive(true);
     });
-    source.addEventListener("notification", (e) => onNotification(JSON.parse(e.data)));
+    source.addEventListener("notification", (e) => {
+      const n = JSON.parse(e.data);
+      onNotification(n);
+      share({ type: "notification", n });
+    });
     // The login stopped working (logged out, suspended, role changed): this request
     // gets the reason, and api.js ends the session if that's what happened.
+    // Another tab takes over the stream.
     source.addEventListener("end", () => {
       state.ended = true;
       source.close();
+      setLive(false);
+      giveUpStream();
       refreshCount();
     });
     // Each ticket works once, so reconnect with a new one instead of letting EventSource retry.
@@ -525,10 +558,64 @@ function startNotificationBell(root) {
       source.close();
       if (state.source === source) state.source = null;
       if (state.ended) return;
+      setLive(false);
       startPolling();
       refreshCount();
       retryLater();
     };
+  }
+
+  /* Shared mode: one tab holds the stream, the others hear from it. */
+  function onShared(message) {
+    if (message.type === "hello" && state.holder) share({ type: "live", live: state.live });
+    if (message.type === "read" && message.username === session.username) refreshCount();
+    if (state.holder) return;
+    if (message.type === "notification") onNotification(message.n);
+    if (message.type === "live" && message.live) {
+      stopPolling();
+      state.items = null;
+      refreshCount();   // catches up on anything missed while no stream was live
+    } else if (message.type === "live") {
+      startPolling();
+    }
+  }
+  function giveUpStream() {
+    state.holder = false;
+    state.release?.();
+    state.release = null;
+  }
+  function startShared() {
+    state.channel = new BroadcastChannel(NOTIF_CHANNEL);
+    state.channel.onmessage = (e) => onShared(e.data || {});
+    state.lockAbort = new AbortController();
+    startPolling();                     // until the holder's stream is live
+    share({ type: "hello" });
+    navigator.locks.request(NOTIF_LOCK, { signal: state.lockAbort.signal }, () => new Promise((release) => {
+      if (state.ended) return release();
+      state.holder = true;
+      state.release = release;
+      connect();
+    })).catch(() => { /* this bell was stopped while waiting for the stream */ });
+  }
+
+  /* Without shared mode: a hidden tab closes its stream and polls instead. */
+  function startOwn() {
+    state.onVisibility = () => {
+      if (state.ended) return;
+      if (document.visibilityState === "hidden") {
+        state.source?.close();
+        state.source = null;
+        clearTimeout(state.retryTimer);
+        state.retryTimer = null;
+        startPolling();
+      } else if (!state.source && !state.retryTimer) {
+        state.attempt = 0;
+        refreshCount();
+        connect();
+      }
+    };
+    document.addEventListener("visibilitychange", state.onVisibility);
+    if (pausedWhileHidden()) startPolling(); else connect();
   }
 
   startNotificationBell.stop = () => {
@@ -536,10 +623,15 @@ function startNotificationBell(root) {
     state.source?.close();
     stopPolling();
     clearTimeout(state.retryTimer);
+    if (state.onVisibility) document.removeEventListener("visibilitychange", state.onVisibility);
+    state.lockAbort?.abort();
+    if (state.holder) setLive(false);
+    giveUpStream();
+    state.channel?.close();
   };
   paintCount();
   refreshCount();
-  connect();
+  if (state.shared) startShared(); else startOwn();
 }
 
 /* --- Admin pages: show the "admin required" panel instead of the page -- */

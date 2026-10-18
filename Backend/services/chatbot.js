@@ -26,6 +26,8 @@ const HISTORY_TURNS = 6;            // earlier exchanges sent as context
 const MAX_TOOL_ROUNDS = 5;
 const MAX_CALLS_PER_ROUND = 6;
 const TIMEOUT_MS = 15000;           // per Gemini request
+const DEADLINE_MS = 45000;          // the whole reply, tool rounds and fallback model included
+                                    // (the chat page waits 60 s: Frontend/JS/chat.js)
 const MAX_REPLY = 2500;
 
 const model = () => (process.env.GEMINI_MODEL || '').trim() || DEFAULT_MODEL;
@@ -144,11 +146,17 @@ const logEntry = ({ name, args }) => (JSON.stringify(args).length <= 500 ? { nam
 
 const redact = (s) => { const k = apiKey(); return k ? String(s).split(k).join('[redacted]') : String(s); };
 
-// Asks Gemini, running its tool calls, until it writes a reply.
-async function askGemini(ai, { modelName, contents, config, ctx, toolsUsed }) {
+// Past the deadline: no time left for another request (not retried with the fallback model).
+const deadlineError = () => Object.assign(new Error('No time left for a reply'), { name: 'DeadlineError' });
+
+// Asks Gemini, running its tool calls, until it writes a reply (or the deadline passes).
+async function askGemini(ai, { modelName, contents, config, ctx, toolsUsed, deadline }) {
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const left = deadline - Date.now();
+    if (left <= 0) throw deadlineError();
     const response = await ai.models.generateContent({
-      model: modelName, contents: [...contents], config: { ...config, abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
+      model: modelName, contents: [...contents],
+      config: { ...config, abortSignal: AbortSignal.timeout(Math.min(TIMEOUT_MS, left)) },
     });
     const calls = response.functionCalls || [];
     if (!calls.length) return (response.text || '').trim();
@@ -200,7 +208,8 @@ async function handleMessage({ sessionId, message, user = null, productId = null
       toolsUsed.length = 0;
       state.unanswered = null;
       try {
-        text = await askGemini(ai, { modelName: candidates[i], contents, config, ctx: { user, state }, toolsUsed });
+        text = await askGemini(ai, { modelName: candidates[i], contents, config, ctx: { user, state }, toolsUsed,
+                                     deadline: started + DEADLINE_MS });
         usedModel = candidates[i];
       } catch (err) {
         if (i + 1 >= candidates.length || !retryable(err)) throw err;
@@ -237,4 +246,4 @@ async function handleMessage({ sessionId, message, user = null, productId = null
   return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: chatId };
 }
 
-module.exports = { handleMessage, systemInstruction, fallbackReply, contactText, MAX_MESSAGE, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL };
+module.exports = { handleMessage, systemInstruction, fallbackReply, contactText, MAX_MESSAGE, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL, DEADLINE_MS };

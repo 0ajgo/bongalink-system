@@ -11,6 +11,47 @@ beforeEach(async () => {
 });
 afterAll(() => pool.end());
 
+describe("POST /api/orders — placing the order again after the page stopped waiting", () => {
+  test("the first try went through: the retry finds an empty cart and is sent to pay for that order; no second order", async () => {
+    const user = await createUser();
+    const productId = await createProduct({ price: 499.5, stock: 5 });
+    await fillCart(user.id, [{ productId, quantity: 2 }]);
+    const first = await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody());
+    expect(first.status).toBe(201);
+
+    const retry = await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody());
+    expect(retry.status).toBe(409);
+    expect(retry.body).toEqual({ error: "Your order was already placed. Continue to payment.", code: "ORDER_ALREADY_PLACED",
+      orderId: first.body.orderId });
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM orders");
+    expect(n).toBe(1);
+    expect(await product(productId)).toEqual({ stock_quantity: 5, reserved: 2 });   // reserved once
+  });
+
+  test("an empty cart with no recent unpaid order is still 'Your cart is empty'", async () => {
+    const user = await createUser();
+    const productId = await createProduct({ price: 100, stock: 5 });
+    await fillCart(user.id, [{ productId, quantity: 1 }]);
+    const { orderId } = (await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody())).body;
+    await pool.query("UPDATE orders SET created_at = NOW() - INTERVAL 20 MINUTE WHERE order_id = ?", [orderId]);
+    const res = await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Your cart is empty.");
+  });
+
+  test("two Place order clicks at the same time make one order", async () => {
+    const user = await createUser();
+    const productId = await createProduct({ price: 100, stock: 5 });
+    await fillCart(user.id, [{ productId, quantity: 1 }]);
+    const send = () => request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody());
+    const statuses = (await Promise.all([send(), send()])).map((r) => r.status).sort();
+    expect(statuses[0]).toBe(201);
+    expect([400, 409]).toContain(statuses[1]);
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM orders");
+    expect(n).toBe(1);
+  });
+});
+
 describe("POST /api/orders — stock reservation", () => {
   test("reserves stock, keeps stock_quantity, and creates a pending_payment order", async () => {
     const user = await createUser();

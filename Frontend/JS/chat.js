@@ -107,7 +107,7 @@ const ChatWidget = (() => {
   async function ask(text) {
     setBusy(true);
     try {
-      const data = await apiFetch("/v1/chat/messages", { method: "POST",
+      const data = await apiFetch("/v1/chat/messages", { method: "POST", timeout: API_TIMEOUT_CHAT_MS,
         body: JSON.stringify({ session_id: state.sessionId, message: text, ...(state.product ? { product_id: state.product.id } : {}) }) });
       state.messages.push({ role: "bot", text: data.reply || "Sorry, I have no answer for that." });
     } catch (err) {

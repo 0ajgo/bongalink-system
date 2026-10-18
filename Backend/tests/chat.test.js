@@ -302,6 +302,28 @@ describe("limits and failures", () => {
     expect(await lastLog()).toMatchObject({ answered: 0, unanswered_reason: "service_down", model: null });
   });
 
+  test("the whole reply has a 45 s deadline: slow tool rounds end in the fallback in time, not on the fallback model", async () => {
+    const { DEADLINE_MS } = require("../services/chatbot");
+    expect(DEADLINE_MS).toBe(45000);
+    let clock = Date.now();
+    const now = jest.spyOn(Date, "now").mockImplementation(() => clock);
+    await product("DDR4 RAM 8GB");
+    // Every Gemini request "takes" 20 s and asks for another tool.
+    mockGenerate.mockImplementation(async (req) => {
+      expect(req.config.abortSignal).toBeInstanceOf(AbortSignal);
+      clock += 20000;
+      return toolCall("search_products", { query: "ram" });
+    });
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const res = await send("Do you have RAM?");
+    spy.mockRestore();
+    now.mockRestore();
+    expect(res.body.reply).toMatch(/isn't available right now/);
+    expect(mockGenerate).toHaveBeenCalledTimes(3);   // 0 s, 20 s, 40 s; at 60 s the deadline has passed
+    expect(mockGenerate.mock.calls.every((c) => c[0].model === "gemini-test-model")).toBe(true);
+    expect(await lastLog()).toMatchObject({ answered: 0, unanswered_reason: "service_down" });
+  });
+
   test("no API key: the same fallback, and Gemini is never called", async () => {
     process.env.GEMINI_API_KEY = "";
     const res = await send("Hello?");

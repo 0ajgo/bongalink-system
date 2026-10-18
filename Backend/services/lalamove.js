@@ -4,6 +4,8 @@ const crypto = require('crypto');
 
 class LogisticsError extends Error {}
 
+const TIMEOUT_MS = 15000;   // per Lalamove request
+
 const baseUrl = () =>
   process.env.LALAMOVE_ENV === 'production' ? 'https://rest.lalamove.com' : 'https://rest.sandbox.lalamove.com';
 
@@ -15,16 +17,22 @@ async function request(method, path, payload) {
   const raw = `${time}\r\n${method}\r\n${path}\r\n\r\n${body}`;
   const signature = crypto.createHmac('sha256', process.env.LALAMOVE_API_SECRET).update(raw).digest('hex');
 
-  const res = await fetch(baseUrl() + path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `hmac ${process.env.LALAMOVE_API_KEY}:${time}:${signature}`,
-      Market: 'PH',
-      'Request-ID': crypto.randomUUID(),
-    },
-    body: body || undefined,
-  });
+  let res;
+  try {
+    res = await fetch(baseUrl() + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `hmac ${process.env.LALAMOVE_API_KEY}:${time}:${signature}`,
+        Market: 'PH',
+        'Request-ID': crypto.randomUUID(),
+      },
+      body: body || undefined,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new LogisticsError(err.name === 'TimeoutError' ? "Lalamove didn't answer in time" : "Lalamove can't be reached right now");
+  }
   if (res.status === 204) return null;
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {

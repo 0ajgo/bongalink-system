@@ -56,7 +56,7 @@ $("resendCode").addEventListener("click", async (event) => {
   busy(button, true);
   $("verifyMessage").textContent = "";
   try {
-    const r = await apiFetch("/v1/auth/verify-email/send", { method: "POST", body: JSON.stringify({ email: me.email }) });
+    const r = await apiFetch("/v1/auth/verify-email/send", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ email: me.email }) });
     toast(r.message, "success");
   } catch (err) {
     $("verifyMessage").textContent = err.message;

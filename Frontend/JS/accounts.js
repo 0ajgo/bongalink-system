@@ -372,7 +372,8 @@ $("confirmForm").addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.classList.add("is-loading");
   try {
-    const result = await apiFetch(request[0], { method: request[1], body: JSON.stringify(request[2]) });
+    const result = await apiFetch(request[0], { method: request[1], body: JSON.stringify(request[2]),
+      ...(p.action === "resend_invite" ? { timeout: API_TIMEOUT_LONG_MS } : {}) });
     $("confirmDialog").close();
     if (p.action === "delete") {
       $("detailDialog").close();
@@ -426,7 +427,7 @@ $("createForm").addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.classList.add("is-loading");
   try {
-    const res = await apiFetch("/v1/admin/accounts", { method: "POST", body: JSON.stringify({ username, email, role }) });
+    const res = await apiFetch("/v1/admin/accounts", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ username, email, role }) });
     $("createDialog").close();
     toast(res.email_sent ? `Account created. We emailed ${email} a link to set the password.`
       : "Account created, but the email couldn't be sent. Open it and use Resend setup email.", res.email_sent ? "success" : "error");

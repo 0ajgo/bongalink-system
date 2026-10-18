@@ -7,6 +7,11 @@ const transporter = nodemailer.createTransport({
   port,
   secure: port === 465,
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  // Nodemailer's defaults wait minutes; a request that sends mail (register, resend code,
+  // invite) gives up within about 30 s instead (the pages wait 45 s).
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
 });
 
 const esc = (s) =>

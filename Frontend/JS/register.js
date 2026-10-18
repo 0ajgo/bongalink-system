@@ -59,7 +59,7 @@ registerForm.addEventListener("submit", async (event) => {
   const button = document.getElementById("registerSubmit");
   busy(button, true);
   try {
-    const result = await apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ username, email, password, privacy_consent: true }) });
+    const result = await apiFetch("/auth/register", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ username, email, password, privacy_consent: true }) });
     showVerifyStep(email, result);
   } catch (err) {
     showAlert("registerMessage", err.message || "Registration failed.", "error");
@@ -98,7 +98,7 @@ document.getElementById("resendCode").addEventListener("click", async (event) =>
   const button = event.currentTarget;
   busy(button, true);
   try {
-    const result = await apiFetch("/v1/auth/verify-email/send", { method: "POST", body: JSON.stringify({ email: verifyEmail }) });
+    const result = await apiFetch("/v1/auth/verify-email/send", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ email: verifyEmail }) });
     showAlert("verifyMessage", result.message, "success");
   } catch (err) {
     showAlert("verifyMessage", err.message || "Couldn't send a new code.", "error");

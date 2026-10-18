@@ -20,6 +20,9 @@ beforeEach(async () => {
 
   jest.spyOn(paymongo, "createCheckoutSession")
     .mockResolvedValue({ id: "cs_test_1", checkoutUrl: "https://checkout.paymongo.com/cs_test_1" });
+  // Asking again looks up the open session first; unless a test says otherwise it has expired,
+  // so a new one is made. (Tests never call the real PayMongo.)
+  jest.spyOn(paymongo, "getCheckoutSession").mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "expired" }));
   await request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
 });
 afterAll(() => pool.end());
@@ -68,6 +71,53 @@ describe("POST /api/v1/payments/checkout", () => {
     const other = await createUser();
     const res = await request(app).post("/api/v1/payments/checkout").set("Authorization", other.auth).send({ order_id: orderId });
     expect(res.status).toBe(404);
+  });
+
+  describe("one payable link per order (Pay now again, a double click, a retry after a timeout)", () => {
+    const payNow = () => request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
+    const sessions = async () => (await pool.query("SELECT checkout_session_id, status FROM payments WHERE order_id = ?", [orderId]))[0];
+
+    test("while the session is still open, the same link comes back: no second session, no second payment row", async () => {
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "active" }));
+      const res = await payNow();
+      expect(res.status).toBe(200);
+      expect(res.body.checkout_url).toBe("https://checkout.paymongo.com/cs_test_1");
+      expect(paymongo.getCheckoutSession).toHaveBeenCalledWith("cs_test_1");
+      expect(paymongo.createCheckoutSession).toHaveBeenCalledTimes(1);   // only the first, in beforeEach
+      expect(await sessions()).toEqual([{ checkout_session_id: "cs_test_1", status: "pending" }]);
+    });
+
+    test("already paid at PayMongo but the webhook isn't here yet: 409, and no new session to pay again", async () => {
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: "https://x", status: "paid" }));
+      const res = await payNow();
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("PAYMENT_CONFIRMING");
+      expect(paymongo.createCheckoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("the old session expired: a new one is opened", async () => {
+      paymongo.createCheckoutSession.mockResolvedValueOnce({ id: "cs_test_2", checkoutUrl: "https://checkout.paymongo.com/cs_test_2" });
+      expect((await payNow()).body.checkout_url).toBe("https://checkout.paymongo.com/cs_test_2");
+      expect((await sessions()).map((s) => s.checkout_session_id)).toEqual(["cs_test_1", "cs_test_2"]);
+    });
+
+    test("two Pay now requests at the same time for a new order open ONE session", async () => {
+      await fillCart(user.id, [{ productId, quantity: 1 }]);
+      const second = (await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody())).body.orderId;
+      let n = 0;
+      paymongo.createCheckoutSession.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 100));   // PayMongo takes a moment
+        return { id: `cs_parallel_${++n}`, checkoutUrl: `https://checkout.paymongo.com/cs_parallel_${n}` };
+      });
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "active" }));
+      const send = () => request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: second });
+      const [a, b] = await Promise.all([send(), send()]);
+      expect([a.status, b.status]).toEqual([200, 200]);
+      expect(a.body.checkout_url).toBe(b.body.checkout_url);
+      expect(n).toBe(1);
+      const [rows] = await pool.query("SELECT COUNT(*) AS n FROM payments WHERE order_id = ?", [second]);
+      expect(rows[0].n).toBe(1);
+    });
   });
 
   test("a PayMongo failure is a 502 with its message", async () => {

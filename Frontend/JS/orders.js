@@ -78,7 +78,7 @@ function wirePayButtons(root, onError) {
     button.classList.add("is-loading");
     try {
       const { checkout_url } = await apiFetch("/v1/payments/checkout", {
-        method: "POST", body: JSON.stringify({ order_id: Number(button.dataset.pay) })
+        method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ order_id: Number(button.dataset.pay) })
       });
       window.location.href = checkout_url;
     } catch (err) {

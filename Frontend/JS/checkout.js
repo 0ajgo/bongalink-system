@@ -110,7 +110,7 @@ async function refreshQuote() {
   let failed = null;
   try {
     const result = await apiFetch("/v1/shipping/quote", {
-      method: "POST",
+      method: "POST", timeout: API_TIMEOUT_LONG_MS,
       body: JSON.stringify({
         items: cart.map(i => ({ product_id: Number(i.productId), quantity: i.quantity })),
         address: {
@@ -297,7 +297,7 @@ document.getElementById("verify-resend").addEventListener("click", async (event)
   busy(button, true);
   try {
     const result = await apiFetch("/v1/auth/verify-email/send", {
-      method: "POST", body: JSON.stringify({ email: verify.email.value.trim() })
+      method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ email: verify.email.value.trim() })
     });
     verify.message.textContent = result.message;
   } catch (err) {
@@ -362,12 +362,18 @@ async function placeOrder() {
   busy(els.button, true);
   let order;
   try {
-    order = await apiFetch("/orders", { method: "POST", body: JSON.stringify(payload) });
+    order = await apiFetch("/orders", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify(payload) });
   } catch (err) {
     busy(els.button, false);
     if (err.code === "EMAIL_NOT_VERIFIED") return showVerifyStep();
+    // An earlier try that timed out went through: pay for that order (it is never placed twice).
+    if (err.code === "ORDER_ALREADY_PLACED" && err.data?.orderId) {
+      writeCart([]);
+      return startPayment(err.data.orderId);
+    }
     if (err.code === "SHIPPING_FEE_CHANGED") await refreshQuote();   // show the new fee before they retry
-    els.orderErr.textContent = err.message || "Checkout failed. Please try again.";
+    els.orderErr.textContent = err.status ? (err.message || "Checkout failed. Please try again.")
+      : `${err.message} If your order went through, pressing Place order again takes you to payment; it won't be placed twice.`;
     return;
   }
   // The server emptied the cart when it created the order.
@@ -381,7 +387,7 @@ async function placeOrder() {
 async function startPayment(orderId) {
   try {
     const { checkout_url } = await apiFetch("/v1/payments/checkout", {
-      method: "POST", body: JSON.stringify({ order_id: orderId })
+      method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ order_id: orderId })
     });
     window.location.href = checkout_url;
   } catch (err) {

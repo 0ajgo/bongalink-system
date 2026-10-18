@@ -17,6 +17,7 @@ class GeocodeError extends Error {
 
 const BASE = () => process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org';
 const MIN_INTERVAL_MS = 1100;          // a little over 1 request per second
+const LOOKUP_TIMEOUT_MS = 8000;        // per Nominatim request
 const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
 const CACHE_MAX = 5000;
 
@@ -112,7 +113,9 @@ async function fetchNominatim(lat, lng) {
   const url = `${BASE()}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`;
   let res;
   try {
-    res = await fetch(url, { headers: { 'User-Agent': userAgent(), 'Accept-Language': 'en', Accept: 'application/json' } });
+    // A hung request would hold up every lookup queued behind it, so it gives up after LOOKUP_TIMEOUT_MS.
+    res = await fetch(url, { headers: { 'User-Agent': userAgent(), 'Accept-Language': 'en', Accept: 'application/json' },
+                             signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) });
   } catch (e) {
     throw new GeocodeError('The map lookup service is unreachable right now.');
   }

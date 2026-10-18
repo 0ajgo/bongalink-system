@@ -43,7 +43,10 @@ app.post("/api/v1/webhooks/paymongo", express.raw({ type: "application/json" }),
 // Only origins listed in CORS_ORIGIN (.env) may call this API.
 // Add your hosted frontend's URL there once deployed — no code change.
 const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map(o => o.trim());
-app.use(cors({ origin: allowedOrigins }));
+// Browsers may reuse a preflight answer for 10 minutes (Chrome caps it at 2 h), so a
+// logged-in page doesn't send an extra OPTIONS request before every API call.
+const CORS_PREFLIGHT_MAX_AGE_S = 600;
+app.use(cors({ origin: allowedOrigins, maxAge: CORS_PREFLIGHT_MAX_AGE_S }));
 
 app.use(express.json({ limit: "100kb" }));
 

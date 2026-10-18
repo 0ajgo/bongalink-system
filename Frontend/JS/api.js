@@ -72,12 +72,47 @@ async function logOut() {
   } catch (e) { /* offline: the token is gone from this device anyway */ }
 }
 
+/* A request that gets no answer fails after this long, so a page shows an
+   error instead of loading forever. Photo uploads get longer, and calls that
+   wait for another service pass their own `timeout` (always longer than the
+   server's own limit for that service):
+     API_TIMEOUT_LONG_MS (45 s): shipping quote, place order, open PayMongo
+       checkout, register / resend code / admin invite (they send an email)
+     API_TIMEOUT_CHAT_MS (60 s): chat message, booking a Lalamove rider */
+const API_TIMEOUT_MS = 20000;
+const API_TIMEOUT_LONG_MS = 45000;
+const API_TIMEOUT_CHAT_MS = 60000;
+const API_UPLOAD_TIMEOUT_MS = 120000;
+
+// fetch() that gives up after `ms`. The elapsed time is checked when the
+// timer fires, so a timer that runs early never cuts a request short.
+function fetchWithTimeout(url, options, ms) {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const started = Date.now();
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    const check = () => {
+      const left = ms - (Date.now() - started);
+      if (left > 0) { timer = setTimeout(check, left); return; }
+      controller?.abort();
+      const error = new Error("The server took too long to answer. Please try again.");
+      error.code = "TIMEOUT";
+      reject(error);
+    };
+    timer = setTimeout(check, ms);
+  });
+  const request = fetch(url, controller ? { ...options, signal: controller.signal } : options);
+  return Promise.race([request, timedOut]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Wraps fetch() with the API base URL, JSON handling, and the
  * logged-in user's auth token (if any). Throws an Error with the
  * server's message on non-2xx responses so callers can catch() it.
+ * No answer within API_TIMEOUT_MS (or options.timeout), or no connection
+ * at all, also throws, with a readable message and no `status`.
  */
-async function apiFetch(path, options = {}) {
+async function apiFetch(path, { timeout, ...options } = {}) {
   const token = authStore.get("bongalink_token");
 
   const headers = { ...(options.headers || {}) };
@@ -85,11 +120,19 @@ async function apiFetch(path, options = {}) {
 
   // Only set Content-Type: JSON when we're not sending a file (FormData
   // sets its own multipart boundary header automatically).
-  if (!(options.body instanceof FormData) && options.body) {
+  const upload = options.body instanceof FormData;
+  if (!upload && options.body) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  let response;
+  try {
+    response = await fetchWithTimeout(`${API_BASE_URL}${path}`, { ...options, headers },
+      timeout ?? (upload ? API_UPLOAD_TIMEOUT_MS : API_TIMEOUT_MS));
+  } catch (err) {
+    if (err.code === "TIMEOUT") throw err;
+    throw new Error("Can't reach the server. Check your connection and try again.");
+  }
 
   // .catch(() => ({})) guards against a body that isn't valid JSON (an
   // empty 204 response, or a proxy/500 page instead of Express's own
@@ -106,6 +149,7 @@ async function apiFetch(path, options = {}) {
     const error = new Error(data.error || "Something went wrong.");
     error.status = response.status;
     error.code = data.code;
+    error.data = data;
     // Suspended by the shop, or logged out by an account change (e.g. a new role):
     // the token no longer works anywhere, so end the session and go to the login page.
     if (token && SESSION_ENDED_CODES[data.code] && !path.startsWith("/auth/")) endSession(SESSION_ENDED_CODES[data.code]);
