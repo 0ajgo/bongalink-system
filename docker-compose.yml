@@ -1,9 +1,9 @@
 # Bongalink: MySQL + Node API + Python ML worker + static frontend.
 #
-#   1. Create a .env file next to this one (git-ignored):
-#        DB_PASSWORD=choose-a-password
-#        JWT_SECRET=choose-a-long-random-string
-#        DATA_ENCRYPTION_KEY=...   DATA_INDEX_KEY=...   (personal data is encrypted; see Backend/.env.example)
+#   1. Copy .env.example (next to this file) to .env (git-ignored) and fill it in. Required:
+#        DB_PASSWORD, JWT_SECRET, DATA_ENCRYPTION_KEY, DATA_INDEX_KEY. Every value below is read
+#        from there (${VAR}); nothing secret is written in this file.
+#        For an existing database the encryption keys MUST be the ones it was encrypted with.
 #   2. docker compose up --build
 #   3. Frontend: http://localhost:5500/Pages/Homepage/homepage.html   API: http://localhost:4000/api/health
 #
@@ -24,6 +24,9 @@
 services:
   mysql:
     image: mysql:8.4
+    # Philippine time for NOW() and DATETIME columns, as on the shop's own MySQL server
+    # (the Philippines has no daylight saving, so a fixed offset is exact).
+    command: ["--default-time-zone=+08:00"]
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       MYSQL_DATABASE: bongalink
@@ -53,19 +56,25 @@ services:
     environment:
       PORT: 4000
       NODE_ENV: production
-      CORS_ORIGIN: http://localhost:5500,http://127.0.0.1:5500
+      TZ: Asia/Manila
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5500,http://127.0.0.1:5500}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-bongalink}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      JWT_EXPIRES_IN: 7d
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       # Encryption of personal information (migration 009): the API won't start without these.
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
       DATA_INDEX_KEY: ${DATA_INDEX_KEY:?set DATA_INDEX_KEY in .env}
       DATA_ENCRYPTION_KEY_VERSION: ${DATA_ENCRYPTION_KEY_VERSION:-1}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}     # AI chat support (006); optional
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1:-}   # only after a key rotation (left empty, it's ignored)
+      # AI chat support (006); optional. Blank model names use the defaults in services/chatbot.js.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
+      STORE_EMAIL: ${STORE_EMAIL:-}
       APP_URL: ${APP_URL:-http://localhost:5500}
       # Email verification, PayMongo and Lalamove — see Backend/.env.example
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -106,12 +115,25 @@ services:
       context: .
       dockerfile: ml/worker/Dockerfile
     environment:
+      TZ: Asia/Manila                # the nightly retrain hour is local time
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-bongalink}
-      ML_TRAINER: tensorflow
+      # Optional tuning, see ml/worker/.env.example (the defaults are the worker's own).
+      ML_TRAINER: ${ML_TRAINER:-tensorflow}
+      ML_POLL_SECONDS: ${ML_POLL_SECONDS:-5}
+      ML_QUIET_SECONDS: ${ML_QUIET_SECONDS:-10}
+      ML_MAX_WAIT_SECONDS: ${ML_MAX_WAIT_SECONDS:-60}
+      ML_FULL_REFRESH_MINUTES: ${ML_FULL_REFRESH_MINUTES:-60}
+      ML_RETRY_SECONDS: ${ML_RETRY_SECONDS:-30}
+      ML_COLD_START_DAYS: ${ML_COLD_START_DAYS:-28}
+      ML_TREND_MIN_SALE_DAYS: ${ML_TREND_MIN_SALE_DAYS:-8}
+      ML_RETRAIN_HOUR: ${ML_RETRAIN_HOUR:-2}
+      ML_RETRAIN_NEW_ORDERS: ${ML_RETRAIN_NEW_ORDERS:-50}
+      ML_RETRAIN_STOCK_CHANGES: ${ML_RETRAIN_STOCK_CHANGES:-100}
+      ML_LOG_LEVEL: ${ML_LOG_LEVEL:-INFO}
     volumes:
       - ml-models:/repo/ml/worker/models     # versioned model files survive rebuilds
     depends_on:
