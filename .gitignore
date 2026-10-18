@@ -41,6 +41,10 @@ data/raw/
 *.sqlite3
 *.db
 dumps/
+backups/
+
+# ---- Real inventory source files (workbook, photos.zip; never committed) ----
+/imports/
 
 # ---- Runtime uploads ----
 Backend/uploads/*
