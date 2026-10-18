@@ -43,6 +43,12 @@ async function checkToken(token) {
   } catch (err) {
     return { status: 401, body: { error: "Session expired or invalid. Please log in again." } };
   }
+  return checkAccount(payload);
+}
+
+// The account part of checkToken(), for a login whose token was already verified:
+// { userId, tv, sid }. The admin notification stream re-checks its login with it.
+async function checkAccount(payload) {
   const [[account]] = await pool.query(
     `SELECT u.username, u.role, u.status, u.token_version,
             s.session_id, s.remember, s.revoked_at, (s.expires_at <= NOW()) AS session_expired
@@ -161,5 +167,5 @@ function signToken(user) {
   );
 }
 
-module.exports = { requireAuth, optionalAuth, requireAdmin, requireRole, requireVerifiedEmail, signToken,
+module.exports = { requireAuth, optionalAuth, requireAdmin, requireRole, requireVerifiedEmail, signToken, checkAccount,
                    startSession, endSession, endAllSessions, bearer, REMEMBER_DAYS, SUSPENDED };

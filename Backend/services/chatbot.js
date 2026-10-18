@@ -17,6 +17,7 @@ const { GoogleGenAI } = require('@google/genai');
 const pool = require('../db');
 const { DECLARATIONS, runTool } = require('./chatTools');
 const { enc, dec, logError } = require('../lib/pii');
+const notifications = require('./notifications');
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';   // lighter, usually free when Flash is busy
@@ -230,6 +231,8 @@ async function handleMessage({ sessionId, message, user = null, productId = null
   } catch (err) {
     logError('Chat log not saved', err);
   }
+  // The admin bell: a question the assistant couldn't answer (off-topic ones are skipped there).
+  if (reason) await notifications.chatUnanswered({ chatId, reason });
 
   return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: chatId };
 }

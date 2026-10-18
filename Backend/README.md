@@ -154,7 +154,10 @@ How an order flows:
 
 The shop is alerted to each paid order by email (`ADMIN_ALERT_EMAIL`) and by a
 "paid orders to ship" badge on the admin Inventory page (polls
-`GET /api/v1/admin/orders/to-ship` every 30 seconds). The catalog shows
+`GET /api/v1/admin/orders/to-ship` every 30 seconds). The bell in the admin header
+(migration 012, `routes/notifications.js`) lists sales, payments to review, expired
+orders, shipments booked/delivered/failed, low and out of stock parts, new customers
+and unanswered chats, live over Server-Sent Events. The catalog shows
 **available** stock (on hand minus units held by unpaid orders).
 
 ### Shipping fees from map pins

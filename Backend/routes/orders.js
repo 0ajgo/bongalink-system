@@ -18,6 +18,7 @@ const pool = require("../db");
 const { requireAuth, requireVerifiedEmail } = require("../middleware/auth");
 const { quoteOptions, REGIONS } = require("../services/shippingRates");
 const { encryptAddress, enc, logError } = require("../lib/pii");
+const notifications = require("../services/notifications");
 
 const router = express.Router();
 
@@ -192,7 +193,9 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     const orderId = orderResult.insertId;
 
     // --- Step 6: snapshot each line into order_items (price changes later
-    // don't rewrite history) and reserve the units.
+    // don't rewrite history) and reserve the units. Holding units lowers
+    // the available stock, so the admin bell may get a low / out of stock alert.
+    const stockAlerts = await notifications.watchStock(connection, items.map(i => i.product_id));
     for (const item of items) {
       await connection.query(
         "INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)",
@@ -203,6 +206,7 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
         [item.quantity, item.product_id]
       );
     }
+    await stockAlerts();
 
     // --- Step 7: the order is placed, so empty the cart it came from.
     await connection.query("DELETE FROM cart_items WHERE cart_id = ?", [cartId]);

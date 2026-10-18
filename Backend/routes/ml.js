@@ -15,6 +15,7 @@ const express = require("express");
 const pool = require("../db");
 const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
+const { LOW_STOCK } = require("../lib/stock");
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -126,7 +127,6 @@ router.get("/products", async (req, res) => {
    Dates are Philippine dates (Asia/Manila), whatever time zone the MySQL
    server runs in (UTC in Docker): see withPhilippineTime().
    --------------------------------------------------------------------- */
-const LOW_STOCK = 3;   // same threshold as the storefront's "Low stock" badge (Frontend/JS/ui.js)
 
 // Ranges offered per grouping; the first one is the default.
 const TREND_GROUPS = { day: [30, 90, 180], week: [12, 26, 52], month: [6, 12, 24] };

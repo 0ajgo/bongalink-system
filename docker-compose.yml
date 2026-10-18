@@ -13,10 +13,10 @@
 #   DB_NAME=bongalink_real docker compose up -d api worker
 #
 # A fresh volume (the first `docker compose up`, or after `docker compose down -v`) is initialised from
-# the schema dump + migrations 003-011, in that order (002 is already in the dump). This is the same
+# the schema dump + migrations 003-012, in that order (002 is already in the dump). This is the same
 # list as Backend/tests/globalSetup.js; keep the two in step. MySQL runs them only on an EMPTY volume.
 # For an existing database, apply the migrations it doesn't have yet yourself, in order, e.g.:
-#   mysql -u root -p bongalink < Backend/database/migrations/006_chatbot.sql    (then 007, 008, ... 011)
+#   mysql -u root -p bongalink < Backend/database/migrations/006_chatbot.sql    (then 007, 008, ... 012)
 # 009 only changes columns; if that database already has customers or orders, encrypt those rows
 # once afterwards, from Backend/:  node scripts/encrypt-personal-data.js --apply
 # (not needed on a fresh volume: there are no rows yet, and the API encrypts everything it writes).
@@ -39,6 +39,7 @@ services:
       - ./Backend/database/migrations/009_encrypt_personal_data.sql:/docker-entrypoint-initdb.d/09_encrypt_personal_data.sql:ro
       - ./Backend/database/migrations/010_ml_training_runs.sql:/docker-entrypoint-initdb.d/10_ml_training_runs.sql:ro
       - ./Backend/database/migrations/011_auth_recovery.sql:/docker-entrypoint-initdb.d/11_auth_recovery.sql:ro
+      - ./Backend/database/migrations/012_admin_notifications.sql:/docker-entrypoint-initdb.d/12_admin_notifications.sql:ro
     ports:
       - "3307:3306"            # 3307 on the host so it doesn't clash with a local MySQL
     healthcheck:

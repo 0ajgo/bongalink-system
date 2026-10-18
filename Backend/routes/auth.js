@@ -19,6 +19,7 @@ const { requestReset, findReset, completeReset } = require("../services/password
 const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
+const notifications = require("../services/notifications");
 
 const router = express.Router();
 
@@ -69,6 +70,7 @@ router.post("/register", async (req, res) => {
          VALUES (?, 'PRIVACY_NOTICE', 1, ?, 'registration')`,
         [result.insertId, PRIVACY_POLICY_VERSION]
       );
+      await notifications.customerRegistered(connection, { userId: result.insertId, username });   // admin bell
       await connection.commit();
     } catch (err) {
       await connection.rollback();

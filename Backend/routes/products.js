@@ -37,6 +37,7 @@ const crypto = require("crypto");
 const pool = require("../db");
 const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
+const notifications = require("../services/notifications");
 
 const router = express.Router();
 
@@ -381,11 +382,13 @@ router.post("/:id(\\d+)/stock", requireAdmin, async (req, res) => {
         return { status: 409, body: {
           error: `You can remove at most ${removable} unit${removable === 1 ? "" : "s"}: ${p.reserved} ${p.reserved === 1 ? "is" : "are"} held by unpaid orders.` } };
       }
+      const stockAlerts = await notifications.watchStock(connection, [req.params.id]);   // admin bell: low / out of stock
       await connection.query("UPDATE products SET stock_quantity = ? WHERE product_id = ?", [next, req.params.id]);
       await connection.query(
         `INSERT INTO inventory_movements (product_id, change_qty, reason, reference, note, created_by)
          VALUES (?, ?, ?, 'adjustment', ?, ?)`,
         [req.params.id, change, reason, cleanNote, req.user.userId]);
+      await stockAlerts();
       return { status: 200, body: { stock_quantity: next, reserved: p.reserved, available: next - p.reserved } };
     }), cleanNote ? `${reason}: ${cleanNote}` : reason);
 

@@ -28,6 +28,7 @@ const rateRoutes = require("./routes/rates");
 const chatRoutes = require("./routes/chat");
 const chatAdminRoutes = require("./routes/chatAdmin");
 const adminAccountRoutes = require("./routes/adminAccounts");
+const notificationRoutes = require("./routes/notifications");
 const { PaymentError } = require("./services/paymongo");
 const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
@@ -65,6 +66,7 @@ app.use("/api/v1/payments", paymentRoutes);
 app.use("/api/v1", chatRoutes);              // /chat/messages (AI chat support, Gemini server-side)
 app.use("/api/v1", chatAdminRoutes);         // /admin/chat/*, /admin/faqs
 app.use("/api/v1/admin/accounts", adminAccountRoutes);   // account management (admins)
+app.use("/api/v1/admin/notifications", notificationRoutes);   // the admin bell: list, read state, live stream (SSE)
 app.use("/api/v1", logisticsRoutes); // /shipping/quote, /orders/:id/tracking, /admin/shipments, /webhooks/lalamove
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));

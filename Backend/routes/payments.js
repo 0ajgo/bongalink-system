@@ -6,6 +6,7 @@ const ah = require('../lib/asyncHandler');
 const { decryptAddress, addressLine, orderEmail, logError } = require('../lib/pii');
 const paymongo = require('../services/paymongo');
 const { mail } = require('../services/mailer');
+const notifications = require('../services/notifications');
 const { COURIER_LABEL } = require('../services/shippingRates');
 const { requireAuth, requireAdmin, requireRole, requireVerifiedEmail } = require('../middleware/auth');
 
@@ -111,6 +112,9 @@ async function handleCheckoutPaid(conn, session) {
 
   if (paid?.attributes?.amount !== p.amount_centavos) {
     await flag(`Amount mismatch: expected ${p.amount_centavos}, got ${paid?.attributes?.amount}`);
+    await notifications.paymentNeedsReview(conn, {
+      orderId: p.order_id, kind: 'amount', expectedCentavos: p.amount_centavos, paidCentavos: paid?.attributes?.amount,
+    });
     return null;
   }
 
@@ -121,6 +125,7 @@ async function handleCheckoutPaid(conn, session) {
   if (!upd.affectedRows) {
     // e.g. order expired and its stock was released before the customer finished paying
     await flag('Paid after order left pending_payment (expired/cancelled) - refund or restore manually');
+    await notifications.paymentNeedsReview(conn, { orderId: p.order_id, kind: 'late' });
     return null;
   }
 
@@ -128,6 +133,7 @@ async function handleCheckoutPaid(conn, session) {
     `UPDATE payments SET status = 'paid', provider_payment_id = ?, method_used = ?, paid_at = NOW() WHERE payment_id = ?`,
     [paid?.id, attrs.payment_method_used, p.payment_id]
   );
+  const stockAlerts = await notifications.watchStock(conn, { orderId: p.order_id });
   // Ghost-stock fix: the reservation made at checkout becomes a real deduction.
   // LEAST() keeps the UNSIGNED columns from underflowing if an admin lowered stock meanwhile.
   // The 003 trigger logs this stock_quantity change to ml_events.
@@ -143,6 +149,10 @@ async function handleCheckoutPaid(conn, session) {
      SELECT product_id, -quantity, 'sale', CONCAT('order:', order_id) FROM order_items WHERE order_id = ?`,
     [p.order_id]
   );
+  // The admin bell, in this transaction: a rolled-back payment leaves no "New sale".
+  // (Available stock usually doesn't move here, the checkout already held it; it can if an admin lowered stock meanwhile.)
+  await stockAlerts();
+  await notifications.orderPaid(conn, p.order_id);
   return { orderId: p.order_id, amount: p.amount_centavos / 100 };
 }
 
@@ -194,7 +204,8 @@ async function paymongoWebhook(req, res) {
 }
 
 // Emails the shop (ADMIN_ALERT_EMAIL) what to pack and where to send it.
-// The admin dashboard also polls GET /api/v1/admin/orders/to-ship for a badge.
+// The admin dashboard also polls GET /api/v1/admin/orders/to-ship for a badge, and the
+// admin bell got a "New sale" notification inside the webhook transaction (handleCheckoutPaid).
 // Only the lookups are awaited; a slow SMTP server never delays the webhook reply.
 async function alertShop({ orderId, amount }) {
   const to = process.env.ADMIN_ALERT_EMAIL;

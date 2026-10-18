@@ -2,7 +2,8 @@
    ui.js — shared UI for every page (load after api.js and icons.js).
    - renderHeader(): site header with nav, cart, and the account
      indicator (avatar + username + role badge + menu), or Log in /
-     Sign up for visitors. Mobile gets a collapsible menu.
+     Sign up for visitors. Mobile gets a collapsible menu. Admins also
+     get the notification bell (startNotificationBell).
    - toast(), STATUS labels, money/date formatters, escapeHTML(),
      and loading / empty / error state markup for lists and tables.
    Session data (token, role, username) is what login.js stores in
@@ -192,6 +193,20 @@ function renderHeader({ active = "", search = true } = {}) {
       ${icon("shopping-cart")}<span class="badge badge--count" data-cart-count hidden>0</span>
     </a>`;
 
+  const bell = admin ? `
+    <div class="notif">
+      <button class="btn btn--ghost btn--icon notif__button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="notif-panel" aria-label="Notifications">
+        ${icon("bell")}<span class="badge badge--count" data-notif-count hidden>0</span>
+      </button>
+      <div class="notif-panel" id="notif-panel" role="region" aria-labelledby="notif-title" hidden>
+        <div class="notif-panel__head">
+          <h2 class="notif-panel__title" id="notif-title">Notifications</h2>
+          <button class="btn btn--ghost btn--sm" type="button" data-notif-read-all disabled>Mark all as read</button>
+        </div>
+        <div class="notif-panel__body" data-notif-list></div>
+      </div>
+    </div>` : "";
+
   const account = session.loggedIn ? `
     <div class="account">
       <button class="account__button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu">
@@ -229,7 +244,7 @@ function renderHeader({ active = "", search = true } = {}) {
       </a>
       ${nav}
       ${searchBox}
-      <div class="header-actions">${cart}${account}</div>
+      <div class="header-actions">${cart}${bell}${account}</div>
     </div>
     <div class="mobile-panel" id="mobile-panel" hidden>
       <div class="container">
@@ -256,7 +271,7 @@ function renderHeader({ active = "", search = true } = {}) {
     const setOpen = (open) => { menu.hidden = !open; button.setAttribute("aria-expanded", String(open)); };
     button.addEventListener("click", (e) => { e.stopPropagation(); setOpen(menu.hidden); });
     document.addEventListener("click", (e) => { if (!menu.contains(e.target)) setOpen(false); });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { setOpen(false); button.focus(); } });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) { setOpen(false); button.focus(); } });
     root.querySelector("[data-logout]").addEventListener("click", async (e) => {
       e.currentTarget.disabled = true;
       await session.logout();
@@ -264,7 +279,7 @@ function renderHeader({ active = "", search = true } = {}) {
     });
   }
 
-  if (admin) startToShipBadge();
+  if (admin) { startToShipBadge(); startNotificationBell(root); }
   else if (typeof readCart === "function") paintHeaderCartCount(countOf(readCart()));
 
   // Keep the search term visible after searching
@@ -302,6 +317,229 @@ function startToShipBadge() {
   if (startToShipBadge.timer) return;
   refreshToShipBadge().catch(() => {});
   startToShipBadge.timer = setInterval(() => refreshToShipBadge().catch(() => {}), TO_SHIP_POLL_MS);
+}
+
+/* --- Admin: notification bell -----------------------------------------
+   Sales, payments to review, expired orders, shipments, low and out of
+   stock, new customers and chat questions the assistant couldn't answer
+   (Backend/routes/notifications.js). New ones arrive live over a
+   Server-Sent Events stream, opened with a single-use ticket so the login
+   token never goes in a URL. If the stream can't connect or drops, the
+   unread count is polled every 30 seconds while the stream is retried
+   after 2 s, 4 s, 8 s ... up to a minute. */
+const NOTIF_POLL_MS = 30000;
+const NOTIF_RETRY_MS = [2000, 4000, 8000, 16000, 30000, 60000];
+const NOTIF_PAGE_SIZE = 15;
+const NOTIF_ICON = {
+  sale: "credit-card", payment_review: "circle-alert", orders_expired: "clock", shipment_booked: "truck",
+  shipment_delivered: "circle-check", shipment_failed: "triangle-alert", low_stock: "package", out_of_stock: "package-open",
+  new_customer: "user-plus", chat_unanswered: "circle-help"
+};
+
+// "just now", "2 min ago", "3 h ago", "yesterday", "4 days ago", then the date.
+function timeAgo(value) {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "yesterday";
+  return days < 7 ? `${days} days ago` : formatDate(value);
+}
+
+// Links are pages under Pages/ written by the server; anything else is ignored.
+const notifHref = (link) => (/^[A-Za-z]+\/[A-Za-z0-9_-]+\.html([?#][A-Za-z0-9_=&#-]*)?$/.test(link || "") ? UI_ROOT + link : null);
+
+function startNotificationBell(root) {
+  const wrap = root.querySelector(".notif");
+  if (!wrap) return;
+  startNotificationBell.stop?.();   // the header was drawn again (e.g. the profile page): replace the old bell
+  const button = wrap.querySelector(".notif__button");
+  const panel = wrap.querySelector("#notif-panel");
+  const list = wrap.querySelector("[data-notif-list]");
+  const readAll = wrap.querySelector("[data-notif-read-all]");
+  const state = { unread: 0, items: null, source: null, attempt: 0, retryTimer: null, pollTimer: null, ended: false };
+
+  function paintCount() {
+    const badge = wrap.querySelector("[data-notif-count]");
+    badge.textContent = state.unread > 9 ? "9+" : String(state.unread);
+    badge.hidden = state.unread === 0;
+    button.setAttribute("aria-label", state.unread ? `Notifications, ${state.unread} unread` : "Notifications");
+    readAll.disabled = state.unread === 0;
+  }
+  const setUnread = (n) => { state.unread = Math.max(0, Number(n) || 0); paintCount(); };
+
+  function paintList() {
+    if (!state.items) {
+      list.innerHTML = '<div class="notif-panel__loading" aria-hidden="true"><span class="skeleton skeleton--text"></span><span class="skeleton skeleton--text"></span></div>';
+      return;
+    }
+    if (!state.items.length) {
+      list.innerHTML = UIState.empty({ icon: "bell", title: "No notifications yet",
+        text: "Sales, deliveries, stock alerts, new customers and unanswered chats show up here." });
+      return;
+    }
+    list.innerHTML = `<ul class="notif-list">${state.items.map((n) => {
+      const href = notifHref(n.link);
+      const tag = href ? "a" : "button";
+      const attrs = href ? `href="${escapeHTML(href)}"` : 'type="button"';
+      return `<li><${tag} class="notif-item${n.read ? "" : " is-unread"}" ${attrs} data-notif-id="${n.id}" data-type="${escapeHTML(n.type)}">
+        <span class="notif-item__icon">${icon(NOTIF_ICON[n.type] || "info", { size: 18 })}</span>
+        <span class="notif-item__text">
+          <span class="notif-item__title">${n.read ? "" : '<span class="sr-only">Unread: </span>'}${escapeHTML(n.title)}</span>
+          ${n.body ? `<span class="notif-item__body">${escapeHTML(n.body)}</span>` : ""}
+          <time class="notif-item__time" datetime="${escapeHTML(n.created_at)}">${escapeHTML(timeAgo(n.created_at))}</time>
+        </span>
+      </${tag}></li>`;
+    }).join("")}</ul>`;
+  }
+
+  async function loadList() {
+    try {
+      const data = await apiFetch(`/v1/admin/notifications?per_page=${NOTIF_PAGE_SIZE}`);
+      state.items = data.items;
+      setUnread(data.unread);
+    } catch (err) {
+      if (!state.items) {
+        list.innerHTML = UIState.error(`Couldn't load notifications: ${err.message}`);
+        return;
+      }
+    }
+    paintList();
+  }
+
+  const refreshCount = () => apiFetch("/v1/admin/notifications/unread-count").then((d) => setUnread(d.unread)).catch(() => {});
+
+  /* Open / close: the bell button, Esc, a click outside. */
+  const isOpen = () => !panel.hidden;
+  function setOpen(open, { focusButton = false } = {}) {
+    panel.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    if (open) {
+      paintList();
+      loadList().then(() => {
+        if (isOpen() && document.activeElement === button) (list.querySelector(".notif-item") || readAll).focus();
+      });
+    } else if (focusButton) {
+      button.focus();
+    }
+  }
+  button.addEventListener("click", (e) => { e.stopPropagation(); setOpen(!isOpen()); });
+  document.addEventListener("click", (e) => { if (isOpen() && !wrap.contains(e.target)) setOpen(false); });
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return;
+    if (e.key === "Escape") { setOpen(false, { focusButton: true }); return; }
+    // Up/Down move between the items.
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const items = [...list.querySelectorAll(".notif-item")];
+      const i = items.indexOf(document.activeElement);
+      if (!items.length || (i === -1 && !panel.contains(document.activeElement))) return;
+      e.preventDefault();
+      items[Math.min(Math.max(i + (e.key === "ArrowDown" ? 1 : -1), 0), items.length - 1)].focus();
+    }
+  });
+
+  // An item: mark it read for this admin, then open its page.
+  list.addEventListener("click", async (e) => {
+    const el = e.target.closest("[data-notif-id]");
+    if (!el) return;
+    e.preventDefault();
+    const n = state.items?.find((x) => String(x.id) === el.dataset.notifId);
+    if (n && !n.read) {
+      n.read = true;
+      el.classList.remove("is-unread");
+      setUnread(state.unread - 1);
+      try {
+        setUnread((await apiFetch(`/v1/admin/notifications/${n.id}/read`, { method: "POST" })).unread);
+      } catch (err) { /* still open the page */ }
+    }
+    if (el.getAttribute("href")) window.location.href = el.getAttribute("href");
+  });
+
+  readAll.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    readAll.disabled = true;
+    try {
+      setUnread((await apiFetch("/v1/admin/notifications/read-all", { method: "POST" })).unread);
+      state.items?.forEach((n) => { n.read = true; });
+      paintList();
+    } catch (err) {
+      toast(err.message, "error");
+      paintCount();
+    }
+  });
+
+  function onNotification(n) {
+    setUnread(state.unread + 1);
+    if (state.items && !state.items.some((x) => x.id === n.id)) {
+      state.items.unshift(n);
+      if (isOpen()) paintList();
+    }
+    if (n.type === "sale") toast(n.body ? `${n.title} · ${n.body}` : n.title, "success");
+  }
+
+  /* Live stream, with polling while it's down. */
+  function startPolling() {
+    if (!state.pollTimer) state.pollTimer = setInterval(refreshCount, NOTIF_POLL_MS);
+  }
+  function stopPolling() {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+  function retryLater() {
+    if (state.ended || state.retryTimer) return;
+    const wait = NOTIF_RETRY_MS[Math.min(state.attempt, NOTIF_RETRY_MS.length - 1)];
+    state.attempt++;
+    state.retryTimer = setTimeout(() => { state.retryTimer = null; connect(); }, wait);
+  }
+  async function connect() {
+    if (typeof EventSource !== "function") return startPolling();   // very old browser: polling only
+    let ticket;
+    try {
+      ({ ticket } = await apiFetch("/v1/admin/notifications/stream-ticket", { method: "POST" }));
+    } catch (err) {
+      startPolling();
+      if (!(err.status === 401 || err.status === 403)) retryLater();
+      return;
+    }
+    const source = new EventSource(`${API_BASE_URL}/v1/admin/notifications/stream?ticket=${encodeURIComponent(ticket)}`);
+    state.source = source;
+    source.addEventListener("ready", (e) => {
+      state.attempt = 0;
+      stopPolling();
+      state.items = null;   // anything missed while disconnected comes with the next list load
+      setUnread(JSON.parse(e.data).unread);
+    });
+    source.addEventListener("notification", (e) => onNotification(JSON.parse(e.data)));
+    // The login stopped working (logged out, suspended, role changed): this request
+    // gets the reason, and api.js ends the session if that's what happened.
+    source.addEventListener("end", () => {
+      state.ended = true;
+      source.close();
+      refreshCount();
+    });
+    // Each ticket works once, so reconnect with a new one instead of letting EventSource retry.
+    source.onerror = () => {
+      source.close();
+      if (state.source === source) state.source = null;
+      if (state.ended) return;
+      startPolling();
+      refreshCount();
+      retryLater();
+    };
+  }
+
+  startNotificationBell.stop = () => {
+    state.ended = true;
+    state.source?.close();
+    stopPolling();
+    clearTimeout(state.retryTimer);
+  };
+  paintCount();
+  refreshCount();
+  connect();
 }
 
 /* --- Admin pages: show the "admin required" panel instead of the page -- */

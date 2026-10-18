@@ -7,10 +7,13 @@
 
    If the customer pays after expiry, the PayMongo webhook sees the order
    is no longer pending_payment and flags the payment for admin review.
+   Each run that expires orders leaves one notification on the admin bell
+   with the count (not one per order).
    ===================================================================== */
 
 const pool = require("../db");
 const { logError } = require("../lib/pii");
+const notifications = require("../services/notifications");
 
 const HOLD_HOURS = 24;
 const RUN_EVERY_MS = 5 * 60 * 1000;
@@ -69,6 +72,7 @@ async function expireStaleOrders() {
   for (const { order_id } of rows) {
     if (await expireOrder(order_id)) expired++;
   }
+  await notifications.ordersExpired(expired, HOLD_HOURS);
   return expired;
 }
 

@@ -7,6 +7,7 @@ const ah = require('../lib/asyncHandler');
 const lalamove = require('../services/lalamove');
 const { quoteOptions, storeLocation, COURIER_LABEL } = require('../services/shippingRates');
 const { mail } = require('../services/mailer');
+const notifications = require('../services/notifications');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { decryptAddress, addressLine, orderEmail, maskEmail, logError } = require('../lib/pii');
 
@@ -262,6 +263,7 @@ router.post('/admin/shipments/:orderId/lalamove', requireAdmin, ah(async (req, r
       await addShipmentEvent(conn, { delivery_id: id, order_id: o.order_id }, 'BOOKED', {
         note: 'Lalamove rider requested', userId: req.user.userId,
       });
+      await notifications.shipmentBooked(conn, { orderId: o.order_id, shipmentId: id, courier: 'LALAMOVE' });
       // orders.courier keeps the customer's checkout choice; deliveries.courier is the one used.
       await conn.query(`UPDATE orders SET status = 'shipped' WHERE order_id = ?`, [o.order_id]);
       return id;
@@ -307,6 +309,7 @@ router.post('/admin/shipments/:orderId/manual', requireAdmin, ah(async (req, res
     await addShipmentEvent(conn, { delivery_id: id, order_id: o.order_id }, 'PICKED_UP', {
       note: `Dropped off at ${COURIER_LABEL[courier]}`, userId: req.user.userId,
     });
+    await notifications.shipmentBooked(conn, { orderId: o.order_id, shipmentId: id, courier, trackingNumber: tn });
     // orders.courier keeps the customer's checkout choice; deliveries.courier is the one used.
     await conn.query(`UPDATE orders SET status = 'shipped' WHERE order_id = ?`, [o.order_id]);
     return id;
@@ -327,9 +330,11 @@ router.patch('/admin/shipments/:id/status', requireAdmin, ah(async (req, res) =>
   if (d.status === 'PENDING') return res.status(409).json({ error: 'Shipment has not been booked yet' });
   if (d.status === 'DELIVERED') return res.status(409).json({ error: 'Shipment is already delivered' });
 
-  await inTransaction((conn) =>
-    addShipmentEvent(conn, d, status, { note: note ? String(note).slice(0, 255) : null, userId: req.user.userId })
-  );
+  await inTransaction(async (conn) => {
+    await addShipmentEvent(conn, d, status, { note: note ? String(note).slice(0, 255) : null, userId: req.user.userId });
+    // The admin bell: DELIVERED and FAILED only, and only when the status actually changes.
+    if (status !== d.status) await notifications.shipmentStatusChanged(conn, { orderId: d.order_id, shipmentId: d.delivery_id, status });
+  });
   if (status === 'DELIVERED') notifyDelivered(d.order_id);
   res.json({ ok: true });
 }));
@@ -350,9 +355,10 @@ router.post('/webhooks/lalamove', ah(async (req, res) => {
   const live = await lalamove.getOrder(llmOrderId);
   const mapped = lalamove.STATUS_MAP[live?.status];
   if (mapped && mapped !== d.status && d.status !== 'DELIVERED') {
-    await inTransaction((conn) =>
-      addShipmentEvent(conn, d, mapped, { note: `Lalamove: ${live.status}`, source: 'courier_webhook' })
-    );
+    await inTransaction(async (conn) => {
+      await addShipmentEvent(conn, d, mapped, { note: `Lalamove: ${live.status}`, source: 'courier_webhook' });
+      await notifications.shipmentStatusChanged(conn, { orderId: d.order_id, shipmentId: d.delivery_id, status: mapped });
+    });
     if (mapped === 'DELIVERED') notifyDelivered(d.order_id);
   }
   res.status(200).end();

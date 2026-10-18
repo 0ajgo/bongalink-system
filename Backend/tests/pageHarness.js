@@ -11,7 +11,8 @@ const FRONTEND = path.join(__dirname, "..", "..", "Frontend");
 // role: "user" | "admin" | null (logged out). fastTimers: run setTimeout callbacks immediately.
 // storage: extra sessionStorage entries, e.g. a chat carried over from another page.
 // local: localStorage entries, e.g. a "Remember me" login from an earlier browser session.
-async function openPage(page, { api, role = "user", query = "", hash = "", fastTimers = false, username = "juan", storage = {}, local = {} }) {
+// setup(window): runs before the page's scripts, e.g. to install a fake EventSource (jsdom has none).
+async function openPage(page, { api, role = "user", query = "", hash = "", fastTimers = false, username = "juan", storage = {}, local = {}, setup = null }) {
   const dir = path.dirname(path.join(FRONTEND, page));
   const html = fs.readFileSync(path.join(FRONTEND, page), "utf8")
     .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
@@ -54,6 +55,7 @@ async function openPage(page, { api, role = "user", query = "", hash = "", fastT
         const { status = 200, body = {} } = (await api(call)) || {};
         return { ok: status < 400, status, json: async () => body };
       };
+      if (setup) setup(window);
     }
   });
 
