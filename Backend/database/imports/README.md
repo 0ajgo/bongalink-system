@@ -94,6 +94,27 @@ whose comment says what failed. Running it again changes no rows and writes no h
 `ml_events` or movement rows. Requires migrations 003 and 005 (triggers); the backend on
 this branch also needs 011 and 012.
 
+## Sales reconciled with the 2026 sales sheet (`remove_test_orders.sql`)
+
+The database's sales must equal the 2026 sales sheet (`ml/worker/data/2026 Bongalink Sheet
+SALES.xlsx`, read with `import_sales.py`'s own cleaning: paid product rows, services excluded).
+Row by row (date, product, quantity, unit price, amount), on 2026-10-19:
+
+- **162 matched**, 274 units, **₱863,434.00**; 0 missing, 0 mismatched; per product (units and
+  revenue) all 66 products equal the sheet.
+- **7 extra: orders 171–177**, test orders for the "Yosi" test product (product 73) placed on
+  15–16 October from the checkout (3 delivered, 4 expired). They weren't in the sheet, and the 3
+  delivered ones added ₱27 of sales to the dashboard and the ML training data.
+
+`remove_test_orders.sql` (one transaction, checks before COMMIT) deleted those 7 orders and
+everything that pointed at them: their order_items, deliveries and shipment_events (cascade),
+6 payments, their 7 checkout addresses, and the 7 `inventory_movements` rows referencing
+`order:171`–`order:177`. Product stock and reserved were not changed and no movements were
+written; `ml_events` and product history got no new rows (deleting orders touches no product).
+`ml_status.sold_orders_at_last_train` was set to 162, so the worker's new-orders retrain
+trigger counts from the real total. The PayMongo `payment_events` (webhook IDs, no link to an
+order) were kept. Afterwards: 162 orders, all in the sheet; dashboard "this month" ₱45,600.
+
 ## Open items (not changed by the import)
 
 - **14 hidden products need a price** (they're at 0 on purpose); the admin Edit part dialog
@@ -102,5 +123,4 @@ this branch also needs 011 and 012.
   weights on the Inventory page.
 - **47 sales-sheet parts are still visible** at stock 0, with prices from the 2026 sales
   sheet that haven't been confirmed (and the sheet's placeholder description).
-- **3 delivered test orders for Yosi** (₱9 each, orders 173, 176, 177) still count as sales
-  on the dashboard and in ML training; orders weren't touched.
+- ~~3 delivered test orders for Yosi~~: removed with the sales reconciliation above.
