@@ -61,4 +61,20 @@ describe("admin inventory shows on hand, reserved and available", () => {
     expect(res.body.find(p => p.product_id === productId))
       .toMatchObject({ stock_quantity: 3, reserved: 3, available: 0 });
   });
+
+  test("hidden parts are only in the Hidden parts list, never in the forecast table", async () => {
+    const admin = await createUser({ role: "admin" });
+    const shown = await createProduct({ createdBy: admin.id });
+    const hidden = await createProduct({ createdBy: admin.id });
+    await pool.query("UPDATE products SET is_active = 0 WHERE product_id = ?", [hidden]);
+    // an old forecast row for the hidden part must not bring it back into the table
+    await pool.query(
+      `INSERT INTO ml_predictions (product_id, current_stock, predicted_demand_7d, forecast_source, data_status, history_days, trend_status)
+       VALUES (?, 10, 3, 'model', 'ok', 60, 'ok')`, [hidden]);
+
+    const forecast = (await request(app).get("/api/admin/ml/predictions").set("Authorization", admin.auth)).body;
+    expect(forecast.map(p => p.product_id)).toEqual([shown]);
+    const all = (await request(app).get("/api/admin/ml/products").set("Authorization", admin.auth)).body;
+    expect(all.filter(p => !p.is_active).map(p => p.product_id)).toEqual([hidden]);
+  });
 });

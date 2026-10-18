@@ -380,9 +380,28 @@ async function loadProducts() {
   // Hidden parts: open the editor to show them in the shop again.
   const hidden = products.filter(p => !p.is_active);
   document.getElementById("hiddenSection").hidden = hidden.length === 0;
+  document.getElementById("hiddenLabel").textContent = `Hidden parts (${hidden.length})`;
   document.getElementById("hiddenList").innerHTML = hidden.map(p => `
     <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}">${icon("pencil", { size: 14 })} ${escapeHTML(p.name)}</button>`).join("");
 }
+
+/* Hidden parts open and close from their title; collapsed by default. Each admin's
+   choice is remembered in this browser (localStorage, keyed by username). */
+const HIDDEN_OPEN_KEY = `bongalink.inventory.hiddenOpen.${session.username}`;
+function setHiddenOpen(open, { save = true } = {}) {
+  document.getElementById("hiddenToggle").setAttribute("aria-expanded", String(open));
+  document.getElementById("hiddenBody").hidden = !open;
+  document.getElementById("hiddenSection").classList.toggle("is-collapsed", !open);
+  if (!save) return;
+  try { localStorage.setItem(HIDDEN_OPEN_KEY, open ? "1" : "0"); } catch (e) { /* storage blocked: not remembered */ }
+}
+document.getElementById("hiddenToggle").addEventListener("click", (e) =>
+  setHiddenOpen(e.currentTarget.getAttribute("aria-expanded") !== "true"));
+(function restoreHiddenOpen() {
+  let open = false;
+  try { open = localStorage.getItem(HIDDEN_OPEN_KEY) === "1"; } catch (e) { /* storage blocked: collapsed */ }
+  setHiddenOpen(open, { save: false });
+})();
 
 /* ---------------------------------------------------------------------
    EDIT PART — js/product-editor.js. After any save, refresh the table,

@@ -28,6 +28,56 @@ const forecastLoaded = (page) => page.$('#predRows tr[data-id="1"]');
 const eventsLoaded = (page) => page.$("#eventRows tr td")?.textContent.includes("Part 1");
 const chartLoaded = (page) => page.$("#historyTitle").textContent.includes("Part 1") && !page.$("#historyChart .skeleton");
 
+describe("hidden parts section", () => {
+  const PRODUCTS = [{ product_id: 1, name: "Part 1", is_active: 1 },
+    { product_id: 7, name: "Old scanner", is_active: 0 }, { product_id: 8, name: "Fuser L2540", is_active: 0 }];
+  const withHidden = async (call) => (call.url === "/admin/ml/products" ? { body: PRODUCTS } : api()(call));
+  const openWith = (opts = {}) => open({ api: withHidden, ...opts });
+  const toggle = (page) => page.$("#hiddenToggle");
+
+  test("collapsed by default, with the count in its title; hidden parts aren't in the forecast table", async () => {
+    const page = await openWith();
+    await page.until(() => !page.$("#hiddenSection").hidden && forecastLoaded(page));
+    expect(toggle(page).textContent.trim()).toBe("Hidden parts (2)");
+    expect(toggle(page).getAttribute("aria-expanded")).toBe("false");
+    expect(toggle(page).getAttribute("aria-controls")).toBe("hiddenBody");
+    expect(page.$("#hiddenBody").hidden).toBe(true);
+    expect(page.$$("#hiddenList [data-edit]").map(b => b.textContent.trim())).toEqual(["Old scanner", "Fuser L2540"]);
+    expect(page.$$("#predRows tr[data-id]").map(tr => tr.dataset.id)).toEqual(["1"]);
+    page.close();
+  });
+
+  test("opening it is remembered for this admin (localStorage), not for another admin", async () => {
+    const page = await openWith({ username: "owner" });
+    await page.until(() => !page.$("#hiddenSection").hidden);
+    toggle(page).click();
+    expect(toggle(page).getAttribute("aria-expanded")).toBe("true");
+    expect(page.$("#hiddenBody").hidden).toBe(false);
+    expect(page.window.localStorage.getItem("bongalink.inventory.hiddenOpen.owner")).toBe("1");
+    page.close();
+
+    const again = await openWith({ username: "owner", local: { "bongalink.inventory.hiddenOpen.owner": "1" } });
+    await again.until(() => !again.$("#hiddenSection").hidden);
+    expect(again.$("#hiddenBody").hidden).toBe(false);
+    toggle(again).click();   // closing is remembered too
+    expect(again.window.localStorage.getItem("bongalink.inventory.hiddenOpen.owner")).toBe("0");
+    again.close();
+
+    const other = await openWith({ username: "staff2", local: { "bongalink.inventory.hiddenOpen.owner": "1" } });
+    await other.until(() => !other.$("#hiddenSection").hidden);
+    expect(other.$("#hiddenBody").hidden).toBe(true);
+    other.close();
+  });
+
+  test("no hidden parts: no section at all", async () => {
+    const page = await open({ api: api() });
+    await page.until(() => forecastLoaded(page));
+    await page.settle();
+    expect(page.$("#hiddenSection").hidden).toBe(true);
+    page.close();
+  });
+});
+
 describe("inventory page sections", () => {
   test("the forecast request fails: only the forecast table shows the error; status, chart and change log load; Try again works", async () => {
     const failing = { "/admin/ml/predictions": "error" };
