@@ -15,6 +15,7 @@
 
 const express = require("express");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { requireAuth, requireVerifiedEmail } = require("../middleware/auth");
 const { quoteOptions, REGIONS } = require("../services/shippingRates");
 const { encryptAddress, enc, logError } = require("../lib/pii");
@@ -50,7 +51,7 @@ const sameCart = (a, b) =>
    pin is. expected_shipping_fee is the fee the customer was shown: if the
    recomputed fee differs, the order is refused (409 SHIPPING_FEE_CHANGED).
    --------------------------------------------------------------------- */
-router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
+router.post("/", requireAuth, requireVerifiedEmail, ah(async (req, res) => {
   const { contact, recipient, address, courier, payment, consent } = req.body || {};
 
   if (!contact?.email || !contact?.phone || !recipient?.firstName || !recipient?.lastName ||
@@ -261,14 +262,14 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     await connection.query("SET @app_user_id = NULL").catch(() => {});
     connection.release();
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/orders — this user's order history, newest first, each with
    its items. Powers Pages/COpage/orders.html; the tracking timeline of a
    shipped order comes from GET /api/v1/orders/:id/tracking.
    --------------------------------------------------------------------- */
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, ah(async (req, res) => {
   try {
     const [orders] = await pool.query(
       `SELECT order_id, status, total_amount, shipping_fee, courier, paid_at, created_at
@@ -292,6 +293,6 @@ router.get("/", requireAuth, async (req, res) => {
     logError("Loading orders failed", err);
     res.status(500).json({ error: "Could not load your orders." });
   }
-});
+}));
 
 module.exports = router;

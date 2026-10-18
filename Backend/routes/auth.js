@@ -11,6 +11,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { issueVerificationCode } = require("./emailVerification");
 const { rateLimit, MemoryStore } = require("express-rate-limit");
 const { startSession, endSession, bearer, SUSPENDED } = require("../middleware/auth");
@@ -31,7 +32,7 @@ const router = express.Router();
    Always creates a regular "user" account — admins are provisioned
    directly in the database, never through this endpoint.
    --------------------------------------------------------------------- */
-router.post("/register", async (req, res) => {
+router.post("/register", ah(async (req, res) => {
   try {
     const { username, password } = req.body;
     const email = String(req.body.email || "").trim();
@@ -101,7 +102,7 @@ router.post("/register", async (req, res) => {
     logError("Registration failed", err);
     res.status(500).json({ error: "Registration failed." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/auth/login
@@ -109,7 +110,7 @@ router.post("/register", async (req, res) => {
    picked (User/Admin) on the login page; the server re-checks it
    against the real role in the database rather than trusting it blindly.
    --------------------------------------------------------------------- */
-router.post("/login", async (req, res) => {
+router.post("/login", ah(async (req, res) => {
   try {
     const { username, password, role } = req.body;
 
@@ -164,14 +165,14 @@ router.post("/login", async (req, res) => {
     logError("Login failed", err);
     res.status(500).json({ error: "Login failed." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/auth/logout — ends this device's session at once (the token
    stops working everywhere it was copied). Always answers 200, so the
    browser can always finish logging out.
    --------------------------------------------------------------------- */
-router.post("/logout", async (req, res) => {
+router.post("/logout", ah(async (req, res) => {
   const token = bearer(req);
   try {
     if (token) await endSession(token);
@@ -179,7 +180,7 @@ router.post("/logout", async (req, res) => {
     logError("Logout failed", err);
   }
   res.json({ ok: true });
-});
+}));
 
 /* ---------------------------------------------------------------------
    Set-password link for accounts created by an admin.
@@ -190,7 +191,7 @@ const setupLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHead
   message: { error: "Too many tries. Please wait a few minutes." } });
 const BAD_LINK = "This link is invalid, already used or expired. Ask the shop to send a new one.";
 
-router.get("/set-password", setupLimit, async (req, res) => {
+router.get("/set-password", setupLimit, ah(async (req, res) => {
   try {
     const setup = await findSetup(req.query.token);
     if (!setup) return res.status(400).json({ error: BAD_LINK });
@@ -199,9 +200,9 @@ router.get("/set-password", setupLimit, async (req, res) => {
     logError("Set-password link check failed", err);
     res.status(500).json({ error: "Could not check the link." });
   }
-});
+}));
 
-router.post("/set-password", setupLimit, async (req, res) => {
+router.post("/set-password", setupLimit, ah(async (req, res) => {
   try {
     if (req.body?.privacy_consent !== true) {
       return res.status(400).json({ error: "Please read and accept the privacy notice to finish setting up your account.", code: "PRIVACY_CONSENT_REQUIRED" });
@@ -213,7 +214,7 @@ router.post("/set-password", setupLimit, async (req, res) => {
     logError("Set password failed", err);
     res.status(500).json({ error: "Could not set the password." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    Forgot password (services/passwordReset.js).
@@ -235,7 +236,7 @@ const resetLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, store: reset
   standardHeaders: "draft-7", legacyHeaders: false, message: { error: "Too many tries. Please wait a few minutes." } });
 const BAD_RESET_LINK = "This link is invalid, already used or expired. Ask for a new one from the login page.";
 
-router.post("/forgot-password", forgotPerIp, forgotPerEmail, async (req, res) => {
+router.post("/forgot-password", forgotPerIp, forgotPerEmail, ah(async (req, res) => {
   const email = String(req.body?.email || "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 150) {
     return res.status(400).json({ error: "Enter the email address of your account." });
@@ -244,9 +245,9 @@ router.post("/forgot-password", forgotPerIp, forgotPerEmail, async (req, res) =>
   // response time, whether or not the email has an account. Failures are only logged.
   requestReset(email).catch((err) => logError("Password reset request failed", err));
   res.json({ message: RESET_SENT });
-});
+}));
 
-router.get("/reset-password", resetLimit, async (req, res) => {
+router.get("/reset-password", resetLimit, ah(async (req, res) => {
   try {
     const reset = await findReset(req.query.token);
     if (!reset) return res.status(400).json({ error: BAD_RESET_LINK });
@@ -256,9 +257,9 @@ router.get("/reset-password", resetLimit, async (req, res) => {
     logError("Reset link check failed", err);
     res.status(500).json({ error: "Could not check the link." });
   }
-});
+}));
 
-router.post("/reset-password", resetLimit, async (req, res) => {
+router.post("/reset-password", resetLimit, ah(async (req, res) => {
   try {
     const result = await completeReset(req.body?.token, req.body?.password);
     if (result.code === "ACCOUNT_SUSPENDED") return res.status(403).json(SUSPENDED);
@@ -268,7 +269,7 @@ router.post("/reset-password", resetLimit, async (req, res) => {
     logError("Password reset failed", err);
     res.status(500).json({ error: "Could not reset the password." });
   }
-});
+}));
 
 // Tests: start every test from empty rate-limit counters.
 router.resetRateLimits = () => Promise.all(resetStores.map((s) => s.resetAll()));

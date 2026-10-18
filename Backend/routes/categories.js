@@ -7,19 +7,20 @@
 
 const express = require("express");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
 // GET /api/categories — public, used to populate the dropdown/sidebar
-router.get("/", async (req, res) => {
+router.get("/", ah(async (req, res) => {
   const [rows] = await pool.query("SELECT category_id, name FROM categories ORDER BY name");
   res.json(rows);
-});
+}));
 
 // POST /api/categories — admin only, in case new categories are needed later
-router.post("/", requireAdmin, async (req, res) => {
+router.post("/", requireAdmin, ah(async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: "Category name is required." });
@@ -35,6 +36,6 @@ router.post("/", requireAdmin, async (req, res) => {
     logError("Categories request failed", err);
     res.status(500).json({ error: "Failed to create category." });
   }
-});
+}));
 
 module.exports = router;
