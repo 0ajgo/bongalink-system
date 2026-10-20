@@ -20,7 +20,7 @@ db/schema.sql                    (superseded: the live schema is Backend/databas
 | | Stock prediction | Trend shift |
 |---|---|---|
 | Method | Linear regression on 6 features of the last 28 days | Segmented (two-piece) linear regression; breakpoint found by optimization |
-| Trained with TensorFlow | `Dense(1)` in Colab, and again automatically by the worker on real orders (nightly / every 200 sold items) | TensorFlow curve fit; shift threshold calibrated on 600 labeled series in Colab |
+| Trained with TensorFlow | `Dense(1)` in Colab, and again automatically by the worker on real orders (nightly, or after 50 new paid orders / 100 stock changes) | TensorFlow curve fit; shift threshold calibrated on 600 labeled series in Colab |
 | Output | Units expected to sell in the next 7 days, days until stockout, reorder suggestion | Whether demand changed direction, when, and which way |
 
 The models in `backend/models/` right now are **placeholders** from synthetic data. The worker registers them as

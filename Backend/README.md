@@ -1,113 +1,85 @@
 # Bongalink API — Setup
 
-This connects your frontend (`homepage.html`, `login.html`, `register.html`)
-to a real MySQL database using the schema in
-`database/bongalink_schema.sql`. Same code runs locally now and on
-Hostinger/AWS later — only `.env` changes.
+The Node API behind the shop's pages (`Frontend/`), on MySQL. This file is for
+running it **on your own computer**. Putting it on a server, the go-live steps,
+backups and the test-session (UAT) settings are in [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ## 1. Install prerequisites
 
-- **Node.js** (v18+): https://nodejs.org
-- **MySQL**, locally, via one of:
-  - Standalone MySQL Server / MySQL Workbench
-  - XAMPP (easiest — includes MySQL + phpMyAdmin in one installer)
+- **Node.js 20 or newer**: https://nodejs.org
+- **MySQL 8.4** (the shop uses the standalone MySQL84 server / MySQL Workbench)
+- For the forecasts: **Python 3.12** for the ML worker (`ml/worker/README.md`)
 
 ## 2. Create the database
 
-Using the MySQL CLI:
+From the repository root, the schema and then **every** migration, in number order
+(002 is already in the schema; this is the same list as `tests/globalSetup.js` and
+`docker-compose.yml`):
 ```bash
-mysql -u root -p < database/bongalink_schema.sql
+mysql -u root -p -e "CREATE DATABASE bongalink CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+mysql -u root -p bongalink < Backend/database/bongalink_schema.sql
+for m in 003_ml_sync 004_api_integrations 005_product_history 006_chatbot 007_faq_no_repairs \
+         008_admin_accounts 009_encrypt_personal_data 010_ml_training_runs 011_auth_recovery \
+         012_admin_notifications; do
+  mysql -u root -p bongalink < Backend/database/migrations/$m.sql
+done
 ```
-Or, if using XAMPP/phpMyAdmin: open phpMyAdmin → Import →
-select `database/bongalink_schema.sql` → Go. This creates the
-`bongalink` database and all tables (users, categories, products,
-carts, cart_items, orders, order_items). It has no categories yet:
-after the migrations and the first admin account (below), load
-`database/seed_data.sql` for the categories and the hidden test
-products used by the live payment test (section 8).
+(Windows PowerShell: run the same `mysql ... < file` line once per migration, e.g. with
+`cmd /c "mysql -u root -p bongalink < Backend\database\migrations\003_ml_sync.sql"`.)
+To see what an existing database is missing: `mysql -u root -p <db> < deploy/mysql/check_migrations.sql`.
 
-Then apply the migration that adds soft delete (`products.is_active`),
-the product change log and the ML tables/triggers:
-```bash
-mysql -u root -p bongalink < database/migrations/003_ml_sync.sql
-```
-Then apply the migration for email verification, PayMongo payments
-and courier logistics (see "7. Email, payment and logistics APIs"):
-```bash
-mysql -u root -p bongalink < database/migrations/004_api_integrations.sql
-```
-The admin **Inventory & Forecasts** page (`Pages/Admin/inventory.html`)
-reads what the Python ML worker writes. See `ml/worker/README.md` to
-run it. Removing a product now hides it (`is_active = 0`) instead of
+The schema has no categories: after the first admin account (step 4), load
+`database/seed_data.sql` for the six categories and the hidden test products used by the
+live payment test (section 8). It can be run twice safely.
+
+The admin **Inventory & Forecasts** page reads what the Python ML worker writes; see
+`ml/worker/README.md` to run it. Removing a product hides it (`is_active = 0`) instead of
 deleting the row, so order history and sales trends stay intact.
-
-**Create your first admin account** (registration only creates
-regular users, by design — admins are provisioned directly):
-```sql
-USE bongalink;
-INSERT INTO users (username, email, password_hash, role)
-VALUES ('admin', 'admin@bongalink.local',
-        '$2a$10$PLACEHOLDER', 'admin');
-```
-Then generate a real bcrypt hash and update that row — easiest way,
-from the `backend/` folder after `npm install`:
-```bash
-node -e "console.log(require('bcryptjs').hashSync('YourAdminPassword123', 10))"
-```
-Copy the printed hash into `password_hash` for that row.
 
 ## 3. Configure the backend
 
 ```bash
-cd backend
+cd Backend
 cp .env.example .env
 ```
-Open `.env` and fill in your local MySQL credentials (defaults match
-a fresh XAMPP install: host `localhost`, user `root`, empty password).
+Fill in `.env`: the database (`DB_*`), and the three values the server needs to start,
+`DATA_ENCRYPTION_KEY`, `DATA_INDEX_KEY` and `JWT_SECRET` (`.env.example` shows how to
+generate each). Everything else turns a feature on; the startup log lists which are on.
+For local work keep `NODE_ENV=development` and
+`CORS_ORIGIN=http://localhost:5500,http://127.0.0.1:5500`.
 
 ## 4. Install dependencies and run
 
 ```bash
 npm install
-npm run dev
+npm run dev        # restarts on file changes
+npm test           # the test suite (builds its own bongalink_test database)
 ```
-You should see: `Bongalink API running on http://localhost:4000`
+You should see `Bongalink API running on http://localhost:4000`, and
+`http://localhost:4000/api/health` answers `{"status":"ok"}`.
 
-Check it's alive: open `http://localhost:4000/api/health` in a
-browser — should return `{"status":"ok"}`.
-
-## 5. Point the frontend at it
-
-Open `js/api.js` and confirm:
-```js
-const API_BASE_URL = "http://localhost:4000/api";
+**First admin account.** Sign-up only makes customer accounts, by design. Register one
+on the shop's sign-up page (so its email is stored encrypted the way the app expects),
+then make it an admin:
+```sql
+UPDATE users SET role = 'admin' WHERE username = 'your-username';
 ```
-Then open `homepage.html` from a local web server (not `file://` —
-use VS Code's "Live Server" extension, or `npx serve`, etc.), and
-make sure that URL is in `CORS_ORIGIN` inside `.env`.
+After that, more accounts (admins or customers) are created from Admin > Accounts,
+which emails each one a link to set their password.
 
-At this point: registration writes to the real `users` table, admin
-product listings write to the real `products` table, cart/checkout
-read and write `carts`/`cart_items`/`orders`/`order_items` — nothing
-is in `localStorage` anymore except the JWT session token.
+## 5. Open the shop
 
-## 6. Moving to Hostinger / AWS later
+Serve `Frontend/` from a local web server on **port 5500** (VS Code "Live Server" opened
+on the repository, or the Docker setup), not `file://`. On port 5500 the pages call the
+API at `http://localhost:4000/api` by themselves; `Frontend/JS/config.js` is only for an
+API somewhere else. The page's address must be in `CORS_ORIGIN`.
 
-Nothing in the code changes. You only:
+## 6. Putting it online
 
-1. Create a MySQL database on the host (Hostinger's hPanel → Databases,
-   or an AWS RDS MySQL instance) and import
-   `database/bongalink_schema.sql` the same way as step 2.
-2. On the server, create a new `.env` with that host's DB credentials
-   and a real `JWT_SECRET`, and add your live frontend URL to
-   `CORS_ORIGIN`.
-3. Deploy this `backend/` folder (Hostinger Node.js hosting, or an
-   AWS EC2/Elastic Beanstalk instance) and run `npm install && npm start`.
-4. Update `API_BASE_URL` in `js/api.js` to your live API URL
-   (e.g. `https://api.bongalink.com/api`).
-
-That's the entire migration — same schema, same routes, same
-frontend logic.
+See [`../DEPLOYMENT.md`](../DEPLOYMENT.md): one HTTPS address for the pages and the API
+(nginx), `NODE_ENV=production` (the server then refuses to start without its essential
+settings), least-privilege database users, the ML worker as a service, live keys and
+webhooks, backups, and the go-live tests.
 
 ## 7. Email, payment and logistics APIs
 
