@@ -1,6 +1,7 @@
 // Logistics API (REQ012-REQ016, REQ025, REQ034). Mounted at /api/v1
 // Shipments live in the existing `deliveries` table: POST /api/orders creates one
 // PENDING row per order, and booking a courier fills it in.
+const crypto = require('crypto');
 const router = require('express').Router();
 const pool = require('../db');
 const ah = require('../lib/asyncHandler');
@@ -10,6 +11,7 @@ const { mail } = require('../services/mailer');
 const notifications = require('../services/notifications');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { decryptAddress, addressLine, orderEmail, maskEmail, logError } = require('../lib/pii');
+const { MINUTE, limiter } = require('../lib/rateLimit');
 
 const SHIPMENT_STATUSES = ['BOOKED', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED'];
 const READY_TO_SHIP = ['paid', 'packed'];
@@ -343,11 +345,21 @@ router.patch('/admin/shipments/:id/status', requireAdmin, ah(async (req, res) =>
 
 // POST /webhooks/lalamove  - set this URL in the Lalamove Partner Portal.
 // The payload is not trusted: we only take the orderId and re-fetch the real status from Lalamove.
-router.post('/webhooks/lalamove', ah(async (req, res) => {
+// An update about an order must carry our API key (Lalamove sends it in the body). Lalamove's
+// documentation doesn't say how its webhook "signature" is computed, so it isn't checked yet
+// (go-live checklist in DEPLOYMENT.md). Each call makes us call Lalamove, hence the limit.
+const lalamoveWebhookLimit = limiter({ windowMs: MINUTE, limit: 120, message: { error: 'Too many requests.' } });
+const sameSecret = (a, b) => {
+  const x = Buffer.from(String(a ?? '')), y = Buffer.from(String(b ?? ''));
+  return x.length > 0 && x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+
+router.post('/webhooks/lalamove', lalamoveWebhookLimit, ah(async (req, res) => {
   const body = req.body || {};
-  if (body.apiKey && body.apiKey !== process.env.LALAMOVE_API_KEY) return res.status(401).end();
   const llmOrderId = body.data?.order?.orderId;
-  if (!llmOrderId) return res.status(200).end(); // portal test ping
+  // The portal's test ping names no order and changes nothing, so it gets 200 with or without the key.
+  if (!llmOrderId) return res.status(body.apiKey === undefined || sameSecret(body.apiKey, process.env.LALAMOVE_API_KEY) ? 200 : 401).end();
+  if (!sameSecret(body.apiKey, process.env.LALAMOVE_API_KEY)) return res.status(401).end();
 
   const [[d]] = await pool.query('SELECT delivery_id, order_id, status FROM deliveries WHERE external_order_id = ?', [llmOrderId]);
   if (!d) return res.status(200).end();
