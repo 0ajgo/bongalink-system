@@ -52,6 +52,23 @@ const listCalls = (page) => page.calls.filter(c => c.url.startsWith("/v1/admin/a
 const submit = (page, id) => page.$(id).dispatchEvent(new page.window.Event("submit", { cancelable: true }));
 
 describe("Accounts page", () => {
+  test("the activity log shows every logged value as text, never as HTML", async () => {
+    const evil = '<img src=x onerror="window.pwned=1">';
+    const page = await openPage("Pages/Admin/accounts.html", { role: "admin", username: "owner", api: adminApi({ answers: {
+      "GET /v1/admin/accounts/audit-log": () => ({ body: { entries: [
+        { audit_id: 1, admin: "owner", action: evil, target: "pedro", target_user_id: 7, reason: null,
+          old_value: { status: evil }, new_value: { status: "<b>x</b>" }, created_at: "2026-10-14T08:00:00Z" },
+        { audit_id: 2, admin: "owner", action: "promote", target: "ana", target_user_id: 8, reason: null,
+          old_value: { role: evil }, new_value: { role: "admin" }, created_at: "2026-10-14T08:00:00Z" },
+      ], total: 2, page: 1, per_page: 10 } }) } }) });
+    await page.until(() => page.$$("#logList .log-entry").length === 2);
+    expect(page.$("#logList img, #logList b")).toBeNull();
+    expect(page.$("#logList").textContent).toContain(evil);
+    expect(page.$("#logList").textContent).toContain("Status: " + evil + " → <b>x</b>");
+    expect(page.window.pwned).toBeUndefined();
+    page.close();
+  });
+
   test("tiles, the list with its columns, You badge, and the activity log", async () => {
     const page = await open();
     expect(page.$('.site-nav a[aria-current="page"]').textContent.trim()).toBe("Accounts");
