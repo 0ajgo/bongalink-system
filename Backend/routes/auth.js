@@ -132,6 +132,11 @@ const loginPerUser = limiter({ windowMs: LOGIN_WINDOW_MS, limit: 10, message: to
 const loginPerIp = limiter({ windowMs: LOGIN_WINDOW_MS, limit: envLimit(process.env.RATE_LIMIT_LOGIN_PER_IP, 50),
   message: tooManyLogins, skipSuccessfulRequests: true });
 
+// Compared against when there is no real hash to check (unknown, deleted or not set up yet), so
+// every login takes about as long and the answer time doesn't tell which usernames exist.
+// Same cost (10) as the real hashes.
+const DUMMY_HASH = bcrypt.hashSync(require("crypto").randomBytes(16).toString("hex"), 10);
+
 router.post("/login", loginPerIp, loginPerUser, ah(async (req, res) => {
   try {
     const { username, password, role } = req.body;
@@ -147,18 +152,21 @@ router.post("/login", loginPerIp, loginPerUser, ah(async (req, res) => {
     );
     // Deleted (anonymized) accounts look like unknown usernames.
     if (rows.length === 0 || rows[0].status === "deleted") {
+      await bcrypt.compare(String(password), DUMMY_HASH);
       return res.status(401).json({ error: "Invalid username or password." });
     }
 
     const user = rows[0];
-    // Created by an admin and not set up yet: there is no password to check.
+    // Created by an admin and not set up yet: there is no password to check. The hint comes
+    // after the same wait as a real check.
     if (user.must_set_password) {
+      await bcrypt.compare(String(password), DUMMY_HASH);
       return res.status(403).json({
         error: "Finish setting up your account first: open the link we emailed you to set your password. If it expired, ask the shop to send a new one.",
         code: "PASSWORD_NOT_SET"
       });
     }
-    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+    const passwordMatches = await bcrypt.compare(String(password), user.password_hash);
     if (!passwordMatches) {
       return res.status(401).json({ error: "Invalid username or password." });
     }
