@@ -1,16 +1,21 @@
 /* =====================================================================
    api.js — shared fetch helper for all pages
    Include this BEFORE Homepage.js / login.js / register.js in each
-   HTML file.
+   HTML file, after config.js.
 
-   THIS is the one line that changes when you move from your local
-   machine to Hostinger/AWS — nothing else in the frontend needs to
-   change:
-     - while developing locally:  http://localhost:4000/api
-     - once hosted:                https://api.yourdomain.com/api
+   Where the API is: config.js (window.BONGALINK_API_BASE_URL), or when
+   that is blank, http://localhost:4000/api for a page opened from a
+   development server (port 5500: VS Code Live Server or Docker), and
+   /api on the same site anywhere else (production, DEPLOYMENT.md).
    ===================================================================== */
 
-const API_BASE_URL = "http://localhost:4000/api";
+const DEV_API_BASE_URL = "http://localhost:4000/api";
+const API_BASE_URL = (() => {
+  const configured = String(window.BONGALINK_API_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  const { protocol, port, origin } = window.location;
+  return protocol === "file:" || port === "5500" ? DEV_API_BASE_URL : `${origin}/api`;
+})();
 
 /* --- The stored login -------------------------------------------------
    A normal login lives in sessionStorage: this tab only, gone when it
