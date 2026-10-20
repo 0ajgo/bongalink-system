@@ -115,8 +115,49 @@ describe("the pages' Content-Security-Policy (deploy/nginx/frontend.conf.templat
     const compose = fs.readFileSync(path.join(ROOT, "docker-compose.yml"), "utf8");
     expect(compose).toMatch(/API_ORIGIN: \$\{API_ORIGIN:-http:\/\/localhost:4000\}/);
     expect(compose).toContain("./deploy/nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro");
-    // The default matches the frontend's own default API address.
-    const apiBase = fs.readFileSync(path.join(FRONTEND, "JS", "api.js"), "utf8").match(/API_BASE_URL = "(https?:\/\/[^/]+)/)[1];
+    // The default matches the frontend's own development API address (DEV_API_BASE_URL in JS/api.js).
+    const apiBase = fs.readFileSync(path.join(FRONTEND, "JS", "api.js"), "utf8").match(/DEV_API_BASE_URL = "(https?:\/\/[^/]+)/)[1];
     expect(apiBase).toBe("http://localhost:4000");
+  });
+});
+
+describe("production nginx (deploy/nginx/production.conf.example)", () => {
+  const conf = fs.readFileSync(path.join(ROOT, "deploy", "nginx", "production.conf.example"), "utf8").replace(/\r\n/g, "\n");
+  const cspOf = (text) => Object.fromEntries(text.match(/add_header Content-Security-Policy "([^"]+)"/)[1]
+    .split(";").map((d) => d.trim().split(/\s+/)).map(([n, ...v]) => [n, v]));
+  const docker = cspOf(fs.readFileSync(path.join(ROOT, "deploy", "nginx", "frontend.conf.template"), "utf8"));
+  const prod = cspOf(conf);
+  const block = (start) => conf.slice(conf.indexOf(start), conf.indexOf("\n    }", conf.indexOf(start)));
+
+  test("the same page policy as Docker's, with the API on the same address", () => {
+    const withoutApi = Object.fromEntries(Object.entries(docker).map(([n, v]) => [n, v.filter((s) => s !== "${API_ORIGIN}")]));
+    expect(prod).toEqual(withoutApi);
+  });
+
+  test("HTTPS only: http redirects, the pages send HSTS", () => {
+    expect(conf).toMatch(/listen 80;[\s\S]*return 301 https:\/\/\$host\$request_uri;/);
+    expect(block("    location / {")).toContain('add_header Strict-Transport-Security "max-age=15552000" always;');
+  });
+
+  test("the page headers are only on the pages, not added again to the API's answers", () => {
+    const serverLevel = conf.split("\n").filter((l) => /^ {4}add_header/.test(l));
+    expect(serverLevel).toEqual([]);
+    for (const loc of ["    location /api/ {", "    location /api/v1/admin/notifications/stream {", "    location /uploads/ {"]) {
+      expect(block(loc)).not.toContain("add_header");
+      expect(block(loc)).toContain("proxy_pass http://127.0.0.1:4000;");
+    }
+  });
+
+  test("the API sees each visitor's address (TRUST_PROXY=1), and the live stream isn't buffered", () => {
+    expect(block("    location /api/ {")).toContain("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
+    const sse = block("    location /api/v1/admin/notifications/stream {");
+    expect(sse).toContain("proxy_buffering off;");
+    expect(sse).toContain("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
+    expect(conf).toContain("TRUST_PROXY=1");
+  });
+
+  test("photo uploads (5 MB) fit through", () => {
+    expect(conf).toMatch(/client_max_body_size 6m;/);
+    expect(fs.readFileSync(path.join(__dirname, "..", "routes", "products.js"), "utf8")).toMatch(/MAX_IMAGE_BYTES = 5 \* 1024 \* 1024/);
   });
 });
