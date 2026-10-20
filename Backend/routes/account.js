@@ -34,6 +34,14 @@ const { blindIndex } = require("../lib/dataProtection");
 
 router.use(requireAuth);
 
+// Changes that check the current password (email, password): failed ones are counted per account,
+// so a stolen login can't be used to guess the password. RATE_LIMIT_ACCOUNT_PER_USER, default 10
+// per 15 minutes.
+const { MINUTE, envLimit, limiter } = require("../lib/rateLimit");
+const passwordCheckLimit = limiter({ windowMs: 15 * MINUTE, limit: envLimit(process.env.RATE_LIMIT_ACCOUNT_PER_USER, 10),
+  skipSuccessfulRequests: true, keyGenerator: (req) => `user:${req.user.userId}`,
+  message: { error: "Too many failed tries. Please wait 15 minutes and try again." } });
+
 const { newPasswordProblem } = require("../lib/passwordRule");   // same rule as POST /api/auth/register
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
@@ -57,7 +65,7 @@ router.get("/me", ah(async (req, res) => {
 
 // Changing the email needs the current password, marks the new address
 // unverified and emails it a fresh code.
-router.patch("/me", ah(async (req, res) => {
+router.patch("/me", passwordCheckLimit, ah(async (req, res) => {
   const current = await profile(req.user.userId);
   if (!current) return res.status(404).json({ error: "Account not found." });
 
@@ -104,7 +112,7 @@ router.patch("/me", ah(async (req, res) => {
 }));
 
 /* ---------------------------------------------------------------- password */
-router.post("/password", ah(async (req, res) => {
+router.post("/password", passwordCheckLimit, ah(async (req, res) => {
   const { current_password, new_password } = req.body || {};
   const weak = newPasswordProblem(new_password);
   if (weak) return res.status(400).json(weak);

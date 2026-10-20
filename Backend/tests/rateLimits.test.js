@@ -142,3 +142,30 @@ describe("the other per-IP limits a shared-IP session would hit are raisable too
     } finally { await api.pool.end(); }
   });
 });
+
+describe("changes that check the current password (per account)", () => {
+  const change = (server, u, current) => request(server).post("/api/v1/account/password").set("Authorization", u.auth)
+    .send({ current_password: current, new_password: "another-pass-77" });
+  const emailChange = (u, current) => request(app).patch("/api/v1/account/me").set("Authorization", u.auth)
+    .send({ email: "other.address@example.com", current_password: current });
+
+  test("10 failed tries in 15 minutes, then 429 even with the right password; other accounts unaffected", async () => {
+    const juan = await userWithPassword();
+    const ana = await userWithPassword();
+    for (let i = 0; i < 6; i++) expect((await change(app, juan, "wrong")).status).toBe(400);
+    for (let i = 0; i < 4; i++) expect((await emailChange(juan, "wrong")).status).toBe(400);   // counted together
+    const blocked = await change(app, juan, PASSWORD);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual({ error: "Too many failed tries. Please wait 15 minutes and try again.", code: "RATE_LIMITED" });
+    expect((await change(app, ana, PASSWORD)).status).toBe(200);
+  });
+
+  test("RATE_LIMIT_ACCOUNT_PER_USER sets it", async () => {
+    const juan = await userWithPassword();
+    const api = appWith({ RATE_LIMIT_ACCOUNT_PER_USER: "2" });
+    try {
+      for (let i = 0; i < 2; i++) expect((await change(api.app, juan, "wrong")).status).toBe(400);
+      expect((await change(api.app, juan, "wrong")).status).toBe(429);
+    } finally { await api.pool.end(); }
+  });
+});

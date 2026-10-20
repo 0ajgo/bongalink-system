@@ -1,10 +1,10 @@
 /* =====================================================================
    lib/rateLimit.js — the API's rate limits (express-rate-limit, counted
    in memory per process; a restart starts them from zero).
-   The per-IP limits are raisable in .env: during a test session where many
-   people share one public IP (a school lab, one Wi-Fi) raise them, and put
-   them back afterwards (DEPLOYMENT.md). Limits per account or per
-   username + IP stay fixed in code.
+   Most limits are raisable in .env: during a test session where many
+   people share one public IP (a school lab, one Wi-Fi) raise the per-IP
+   ones, and put them back afterwards (DEPLOYMENT.md). Failed logins per
+   username + IP, per email and per chat stay fixed in code.
    ===================================================================== */
 const { rateLimit, MemoryStore } = require("express-rate-limit");
 
