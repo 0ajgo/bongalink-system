@@ -44,7 +44,8 @@ services:
       - ./Backend/database/migrations/011_auth_recovery.sql:/docker-entrypoint-initdb.d/11_auth_recovery.sql:ro
       - ./Backend/database/migrations/012_admin_notifications.sql:/docker-entrypoint-initdb.d/12_admin_notifications.sql:ro
     ports:
-      - "3307:3306"            # 3307 on the host so it doesn't clash with a local MySQL
+      # 3307 on the host so it doesn't clash with a local MySQL; this machine only, never the network.
+      - "127.0.0.1:3307:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
@@ -61,8 +62,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}   # 1 when a proxy / HTTPS terminator is in front
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
+      # root unless API_DB_USER is set: the least-privilege bongalink_app (deploy/mysql/create_app_users.sql).
+      DB_USER: ${API_DB_USER:-root}
+      DB_PASSWORD: ${API_DB_PASSWORD:-${DB_PASSWORD}}
       DB_NAME: ${DB_NAME:-bongalink}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
@@ -115,7 +117,8 @@ services:
     volumes:
       - uploads:/app/uploads
     ports:
-      - "4000:4000"
+      # This machine only: browsers reach it through nginx (DEPLOYMENT.md) or, locally, at localhost:4000.
+      - "127.0.0.1:4000:4000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -129,8 +132,9 @@ services:
       TZ: Asia/Manila                # the nightly retrain hour is local time
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
+      # root unless ML_DB_USER is set: the least-privilege bongalink_ml (deploy/mysql/create_app_users.sql).
+      DB_USER: ${ML_DB_USER:-root}
+      DB_PASSWORD: ${ML_DB_PASSWORD:-${DB_PASSWORD}}
       DB_NAME: ${DB_NAME:-bongalink}
       # Optional tuning, see ml/worker/.env.example (the defaults are the worker's own).
       ML_TRAINER: ${ML_TRAINER:-tensorflow}

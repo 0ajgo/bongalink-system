@@ -140,3 +140,9 @@ describe("ML worker requirements.lock", () => {
     expect(ignored.filter((p) => /requirements|\.lock/.test(p))).toEqual([]);
   });
 });
+
+test("MySQL and the API are published on this machine only, never on every network interface", () => {
+  const ports = (name) => [...service(name).matchAll(/^ {6}- "([^"]+)"/gm)].map((m) => m[1]);
+  expect(ports("mysql")).toEqual(["127.0.0.1:3307:3306"]);
+  expect(ports("api")).toEqual(["127.0.0.1:4000:4000"]);
+});
