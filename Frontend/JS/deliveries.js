@@ -137,7 +137,7 @@ els.awaiting.addEventListener("click", (event) => {
   const orderId = button.dataset.lalamove;
   if (!confirm(`Book a Lalamove rider for order #${orderId}? The live Lalamove price is charged to the shop's Lalamove wallet.`)) return;
   act(button,
-    () => apiFetch(`/v1/admin/shipments/${orderId}/lalamove`, { method: "POST" }),
+    () => apiFetch(`/v1/admin/shipments/${orderId}/lalamove`, { method: "POST", timeout: API_TIMEOUT_CHAT_MS }),
     (r) => r.fee_difference
       ? `Lalamove rider booked for order #${orderId}. The live price differs from what the customer paid by ${formatMoney(r.fee_difference)}.`
       : `Lalamove rider booked for order #${orderId}.`);

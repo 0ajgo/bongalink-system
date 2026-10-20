@@ -16,7 +16,7 @@
 -- Triggers run inside the same transaction as the product change, so an
 -- event row exists only if that change commits.
 --
--- Apply with:  mysql -u root -p bongalink < Backend/database/migrations/003_ml_sync.sql
+-- Apply with:  mysql -u root -p <database> < Backend/database/migrations/003_ml_sync.sql
 
 ALTER TABLE products
   ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER stock_quantity,

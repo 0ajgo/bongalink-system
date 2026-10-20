@@ -5,18 +5,20 @@ const { blindIndex } = require("../lib/dataProtection");
 const app = require("../server");
 const { mail } = require("../services/mailer");
 const { pool, resetDb } = require("./helpers");
+const rateLimits = require("../lib/rateLimit");
 
 const lastCode = () => mail.verificationCode.mock.calls.at(-1)[2];
 
 async function register(email = "new@example.com") {
   const res = await request(app)
     .post("/api/auth/register")
-    .send({ username: email.split("@")[0], email, password: "secret123", privacy_consent: true });
+    .send({ username: email.split("@")[0], email, password: "secret-pass-123", privacy_consent: true });
   return res;
 }
 
 beforeEach(async () => {
   await resetDb();
+  await rateLimits.resetAll();   // each test registers from the same IP
   jest.clearAllMocks();
 });
 afterAll(() => pool.end());

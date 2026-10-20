@@ -1,16 +1,16 @@
 # Bongalink: MySQL + Node API + Python ML worker + static frontend.
 #
-#   1. Create a .env file next to this one (git-ignored):
-#        DB_PASSWORD=choose-a-password
-#        JWT_SECRET=choose-a-long-random-string
-#        DATA_ENCRYPTION_KEY=...   DATA_INDEX_KEY=...   (personal data is encrypted; see Backend/.env.example)
+#   1. Copy .env.example (next to this file) to .env (git-ignored) and fill it in. Required:
+#        DB_PASSWORD, JWT_SECRET, DATA_ENCRYPTION_KEY, DATA_INDEX_KEY. Every value below is read
+#        from there (${VAR}); nothing secret is written in this file.
+#        For an existing database the encryption keys MUST be the ones it was encrypted with.
 #   2. docker compose up --build
 #   3. Frontend: http://localhost:5500/Pages/Homepage/homepage.html   API: http://localhost:4000/api/health
 #
-# Import the sales sheet into bongalink_real (see ml/worker/README.md); the sheet stays on the host:
+# The shop's data: load a backup of bongalink_real and set DB_NAME=bongalink_real (DEPLOYMENT.md, section 6).
+# The sales-sheet import builds a NEW database to inspect, never the shop's (ml/worker/README.md):
 #   docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py --dry-run
 #   docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py
-#   DB_NAME=bongalink_real docker compose up -d api worker
 #
 # A fresh volume (the first `docker compose up`, or after `docker compose down -v`) is initialised from
 # the schema dump + migrations 003-012, in that order (002 is already in the dump). This is the same
@@ -24,6 +24,9 @@
 services:
   mysql:
     image: mysql:8.4
+    # Philippine time for NOW() and DATETIME columns, as on the shop's own MySQL server
+    # (the Philippines has no daylight saving, so a fixed offset is exact).
+    command: ["--default-time-zone=+08:00"]
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       MYSQL_DATABASE: bongalink
@@ -41,7 +44,8 @@ services:
       - ./Backend/database/migrations/011_auth_recovery.sql:/docker-entrypoint-initdb.d/11_auth_recovery.sql:ro
       - ./Backend/database/migrations/012_admin_notifications.sql:/docker-entrypoint-initdb.d/12_admin_notifications.sql:ro
     ports:
-      - "3307:3306"            # 3307 on the host so it doesn't clash with a local MySQL
+      # 3307 on the host so it doesn't clash with a local MySQL; this machine only, never the network.
+      - "127.0.0.1:3307:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
@@ -53,19 +57,36 @@ services:
     environment:
       PORT: 4000
       NODE_ENV: production
-      CORS_ORIGIN: http://localhost:5500,http://127.0.0.1:5500
+      TZ: Asia/Manila
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5500,http://127.0.0.1:5500}
+      TRUST_PROXY: ${TRUST_PROXY:-}   # 1 when a proxy / HTTPS terminator is in front
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
+      # root unless API_DB_USER is set: the least-privilege bongalink_app (deploy/mysql/create_app_users.sql).
+      DB_USER: ${API_DB_USER:-root}
+      DB_PASSWORD: ${API_DB_PASSWORD:-${DB_PASSWORD}}
       DB_NAME: ${DB_NAME:-bongalink}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      JWT_EXPIRES_IN: 7d
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      # Per-IP rate limits (blank = the defaults in the code); raised only for a shared-IP test session.
+      RATE_LIMIT_LOGIN_PER_IP: ${RATE_LIMIT_LOGIN_PER_IP:-}
+      RATE_LIMIT_REGISTER_PER_IP_HOUR: ${RATE_LIMIT_REGISTER_PER_IP_HOUR:-}
+      RATE_LIMIT_REGISTER_PER_IP_DAY: ${RATE_LIMIT_REGISTER_PER_IP_DAY:-}
+      RATE_LIMIT_VERIFY_EMAIL_PER_IP: ${RATE_LIMIT_VERIFY_EMAIL_PER_IP:-}
+      RATE_LIMIT_FORGOT_PASSWORD_PER_IP: ${RATE_LIMIT_FORGOT_PASSWORD_PER_IP:-}
+      RATE_LIMIT_CHAT_PER_IP_MINUTE: ${RATE_LIMIT_CHAT_PER_IP_MINUTE:-}
+      RATE_LIMIT_CHAT_PER_IP_DAY: ${RATE_LIMIT_CHAT_PER_IP_DAY:-}
+      RATE_LIMIT_ACCOUNT_PER_USER: ${RATE_LIMIT_ACCOUNT_PER_USER:-}
       # Encryption of personal information (migration 009): the API won't start without these.
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
       DATA_INDEX_KEY: ${DATA_INDEX_KEY:?set DATA_INDEX_KEY in .env}
       DATA_ENCRYPTION_KEY_VERSION: ${DATA_ENCRYPTION_KEY_VERSION:-1}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}     # AI chat support (006); optional
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1:-}   # only after a key rotation (left empty, it's ignored)
+      # AI chat support (006); optional. Blank model names use the defaults in services/chatbot.js.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
+      STORE_EMAIL: ${STORE_EMAIL:-}
       APP_URL: ${APP_URL:-http://localhost:5500}
       # Email verification, PayMongo and Lalamove — see Backend/.env.example
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -78,6 +99,7 @@ services:
       PAYMONGO_SECRET_KEY: ${PAYMONGO_SECRET_KEY:-}
       PAYMONGO_WEBHOOK_SECRET: ${PAYMONGO_WEBHOOK_SECRET:-}
       PAYMONGO_METHODS: ${PAYMONGO_METHODS:-gcash,qrph,dob,dob_ubp}
+      PAYMONGO_WEBHOOK_TOLERANCE_SECONDS: ${PAYMONGO_WEBHOOK_TOLERANCE_SECONDS:-}
       LALAMOVE_ENV: ${LALAMOVE_ENV:-sandbox}
       LALAMOVE_API_KEY: ${LALAMOVE_API_KEY:-}
       LALAMOVE_API_SECRET: ${LALAMOVE_API_SECRET:-}
@@ -95,7 +117,8 @@ services:
     volumes:
       - uploads:/app/uploads
     ports:
-      - "4000:4000"
+      # This machine only: browsers reach it through nginx (DEPLOYMENT.md) or, locally, at localhost:4000.
+      - "127.0.0.1:4000:4000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -106,12 +129,26 @@ services:
       context: .
       dockerfile: ml/worker/Dockerfile
     environment:
+      TZ: Asia/Manila                # the nightly retrain hour is local time
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
+      # root unless ML_DB_USER is set: the least-privilege bongalink_ml (deploy/mysql/create_app_users.sql).
+      DB_USER: ${ML_DB_USER:-root}
+      DB_PASSWORD: ${ML_DB_PASSWORD:-${DB_PASSWORD}}
       DB_NAME: ${DB_NAME:-bongalink}
-      ML_TRAINER: tensorflow
+      # Optional tuning, see ml/worker/.env.example (the defaults are the worker's own).
+      ML_TRAINER: ${ML_TRAINER:-tensorflow}
+      ML_POLL_SECONDS: ${ML_POLL_SECONDS:-5}
+      ML_QUIET_SECONDS: ${ML_QUIET_SECONDS:-10}
+      ML_MAX_WAIT_SECONDS: ${ML_MAX_WAIT_SECONDS:-60}
+      ML_FULL_REFRESH_MINUTES: ${ML_FULL_REFRESH_MINUTES:-60}
+      ML_RETRY_SECONDS: ${ML_RETRY_SECONDS:-30}
+      ML_COLD_START_DAYS: ${ML_COLD_START_DAYS:-28}
+      ML_TREND_MIN_SALE_DAYS: ${ML_TREND_MIN_SALE_DAYS:-8}
+      ML_RETRAIN_HOUR: ${ML_RETRAIN_HOUR:-2}
+      ML_RETRAIN_NEW_ORDERS: ${ML_RETRAIN_NEW_ORDERS:-50}
+      ML_RETRAIN_STOCK_CHANGES: ${ML_RETRAIN_STOCK_CHANGES:-100}
+      ML_LOG_LEVEL: ${ML_LOG_LEVEL:-INFO}
     volumes:
       - ml-models:/repo/ml/worker/models     # versioned model files survive rebuilds
     depends_on:
@@ -121,8 +158,12 @@ services:
 
   frontend:
     image: nginx:1.27-alpine
+    environment:
+      # Where the pages' browser reaches the API (for the Content-Security-Policy in deploy/nginx).
+      API_ORIGIN: ${API_ORIGIN:-http://localhost:4000}
     volumes:
       - ./Frontend:/usr/share/nginx/html:ro
+      - ./deploy/nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
     ports:
       - "5500:80"
 

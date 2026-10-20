@@ -34,10 +34,11 @@
           <div class="field">
             <label class="label" for="regPassword">Password</label>
             <div class="password-field">
-              <input class="input" id="regPassword" type="password" autocomplete="new-password" minlength="6" required>
+              <input class="input" id="regPassword" type="password" autocomplete="new-password" minlength="10" required aria-describedby="regPasswordHint regPasswordError">
               <button class="btn btn--ghost btn--sm" type="button" data-toggle="regPassword">Show</button>
             </div>
-            <span class="hint">At least 6 characters.</span>
+            <span class="hint" id="regPasswordHint">At least 10 characters, and not a common one like password123.</span>
+            <span class="error-text" id="regPasswordError" role="alert"></span>
           </div>
           <div class="field">
             <label class="label" for="regConfirmPassword">Confirm password</label>
@@ -100,6 +101,7 @@
   </aside>
 </div>
 
+<script src="../../JS/config.js"></script>
 <script src="../../JS/api.js"></script>
 <script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>

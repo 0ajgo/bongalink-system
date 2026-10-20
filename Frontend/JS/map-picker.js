@@ -60,7 +60,7 @@ function createMapPicker(container, { onLocation = () => {}, onClear = () => {},
     const mine = ++seq;
     setStatus(`Finding the address for your pin…`, "", "loader-circle");
     try {
-      const location = await apiFetch("/v1/geo/reverse", { method: "POST", body: JSON.stringify(pin) });
+      const location = await apiFetch("/v1/geo/reverse", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify(pin) });
       if (mine !== seq) return;
       const where = [location.city, location.province, regionName(location.region)].filter(Boolean).join(", ");
       setStatus(`Pinned: <strong>${escapeHTML(where)}</strong> · ${ZONE_RATE_LABEL[location.zone] || ""}`, "ok", "check");

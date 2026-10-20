@@ -53,9 +53,10 @@ document.getElementById("toggleNew").addEventListener("click", (e) => {
 resetForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const password = resetPassword.value;
-  resetFieldError(resetPassword, password.length < 6 ? "Use at least 6 characters." : "");
-  resetFieldError(resetConfirm, password.length >= 6 && resetConfirm.value !== password ? "The two passwords don't match." : "");
-  if (password.length < 6) return resetPassword.focus();
+  const weak = newPasswordProblem(password);
+  resetFieldError(resetPassword, weak);
+  resetFieldError(resetConfirm, !weak && resetConfirm.value !== password ? "The two passwords don't match." : "");
+  if (weak) return resetPassword.focus();
   if (resetConfirm.value !== password) return resetConfirm.focus();
 
   const submit = document.getElementById("setSubmit");
@@ -68,7 +69,12 @@ resetForm.addEventListener("submit", async (event) => {
     resetNotice(`Your password was changed and every device that was logged in has been logged out.
       <a href="login.html">Log in as ${escapeHTML(username)}</a>.`, "success");
   } catch (err) {
-    resetNotice(`${escapeHTML(err.message)} ${err.code === "ACCOUNT_SUSPENDED" ? "" : askAgain}`, "error");
+    if (err.code === "WEAK_PASSWORD") {
+      resetFieldError(resetPassword, err.message);
+      resetPassword.focus();
+    } else {
+      resetNotice(`${escapeHTML(err.message)} ${err.code === "ACCOUNT_SUSPENDED" ? "" : askAgain}`, "error");
+    }
     submit.disabled = false;
     submit.classList.remove("is-loading");
   }

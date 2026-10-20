@@ -138,24 +138,25 @@ const ACTION = {
   promote: "Made admin", demote: "Made customer", delete: "Deleted the account", anonymize: "Anonymized the account",
   ml_retrain: "Asked for a forecast update", password_reset: "Reset the password (emailed link)"
 };
+// HTML: every value from the log is escaped, even the ones that are only ever fixed words.
 function changeText(e) {
   const o = e.old_value || {}, n = e.new_value || {};
   if (e.action === "create_account") return `${n.role === "admin" ? "Admin" : "Customer"} account${n.email ? `, ${escapeHTML(n.email)}` : ""}`;
-  if (e.action === "anonymize" && n.kept) return `Kept ${n.kept.orders} order${n.kept.orders === 1 ? "" : "s"} for the sales history`;
-  if (o.role && n.role) return `Role: ${ROLE[o.role]?.[0] || o.role} → ${ROLE[n.role]?.[0] || n.role}`;
-  if (o.status && n.status) return `Status: ${o.status} → ${n.status}`;
+  if (e.action === "anonymize" && n.kept) return `Kept ${Number(n.kept.orders) || 0} order${Number(n.kept.orders) === 1 ? "" : "s"} for the sales history`;
+  if (o.role && n.role) return `Role: ${escapeHTML(ROLE[o.role]?.[0] || o.role)} → ${escapeHTML(ROLE[n.role]?.[0] || n.role)}`;
+  if (o.status && n.status) return `Status: ${escapeHTML(o.status)} → ${escapeHTML(n.status)}`;
   return "";
 }
 function logEntryHTML(e, { withTarget = true } = {}) {
   const target = withTarget
     ? (e.target_user_id && !String(e.target).startsWith("deleted-user-")
-        ? `<button class="link-button" type="button" data-open="${e.target_user_id}">${escapeHTML(e.target)}</button>` : escapeHTML(e.target))
+        ? `<button class="link-button" type="button" data-open="${Number(e.target_user_id)}">${escapeHTML(e.target)}</button>` : escapeHTML(e.target))
     : "";
   const change = changeText(e);
   return `
     <li class="log-entry">
       <span class="log-entry__when">${formatDateTime(e.created_at)}</span>
-      <span class="log-entry__what"><strong>${escapeHTML(e.admin)}</strong> · ${ACTION[e.action] || e.action}${withTarget ? ` · ${target}` : ""}</span>
+      <span class="log-entry__what"><strong>${escapeHTML(e.admin)}</strong> · ${escapeHTML(ACTION[e.action] || e.action)}${withTarget ? ` · ${target}` : ""}</span>
       ${change ? `<span class="log-entry__change">${change}</span>` : ""}
       ${e.reason ? `<span class="log-entry__reason">Reason: ${escapeHTML(e.reason)}</span>` : ""}
     </li>`;
@@ -372,7 +373,8 @@ $("confirmForm").addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.classList.add("is-loading");
   try {
-    const result = await apiFetch(request[0], { method: request[1], body: JSON.stringify(request[2]) });
+    const result = await apiFetch(request[0], { method: request[1], body: JSON.stringify(request[2]),
+      ...(p.action === "resend_invite" ? { timeout: API_TIMEOUT_LONG_MS } : {}) });
     $("confirmDialog").close();
     if (p.action === "delete") {
       $("detailDialog").close();
@@ -426,7 +428,7 @@ $("createForm").addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.classList.add("is-loading");
   try {
-    const res = await apiFetch("/v1/admin/accounts", { method: "POST", body: JSON.stringify({ username, email, role }) });
+    const res = await apiFetch("/v1/admin/accounts", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ username, email, role }) });
     $("createDialog").close();
     toast(res.email_sent ? `Account created. We emailed ${email} a link to set the password.`
       : "Account created, but the email couldn't be sent. Open it and use Resend setup email.", res.email_sent ? "success" : "error");

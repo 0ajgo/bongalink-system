@@ -154,4 +154,27 @@ describe("Lalamove booking + webhook", () => {
     const res = await request(app).post("/api/v1/webhooks/lalamove").send({ apiKey: "nope", data: { order: { orderId: "LLM1" } } });
     expect(res.status).toBe(401);
   });
+
+  test("an order update without the apiKey is rejected too, and Lalamove isn't called", async () => {
+    const spy = jest.spyOn(lalamove, "getOrder").mockResolvedValue({ status: "COMPLETED" });
+    for (const apiKey of [undefined, "", null, 0]) {
+      const res = await request(app).post("/api/v1/webhooks/lalamove").send({ apiKey, data: { order: { orderId: "LLM1" } } });
+      expect(res.status).toBe(401);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("the Partner Portal's test ping (no order) still gets 200, with or without the key", async () => {
+    expect((await request(app).post("/api/v1/webhooks/lalamove").send({})).status).toBe(200);
+    expect((await request(app).post("/api/v1/webhooks/lalamove").send({ apiKey: process.env.LALAMOVE_API_KEY })).status).toBe(200);
+    expect((await request(app).post("/api/v1/webhooks/lalamove").send({ apiKey: "nope" })).status).toBe(401);
+  });
+
+  test("at most 120 calls a minute per IP", async () => {
+    await require("../lib/rateLimit").resetAll();
+    for (let i = 0; i < 120; i++) await request(app).post("/api/v1/webhooks/lalamove").send({});
+    const res = await request(app).post("/api/v1/webhooks/lalamove").send({});
+    expect(res.status).toBe(429);
+    await require("../lib/rateLimit").resetAll();
+  });
 });

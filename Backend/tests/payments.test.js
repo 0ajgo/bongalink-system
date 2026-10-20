@@ -20,6 +20,9 @@ beforeEach(async () => {
 
   jest.spyOn(paymongo, "createCheckoutSession")
     .mockResolvedValue({ id: "cs_test_1", checkoutUrl: "https://checkout.paymongo.com/cs_test_1" });
+  // Asking again looks up the open session first; unless a test says otherwise it has expired,
+  // so a new one is made. (Tests never call the real PayMongo.)
+  jest.spyOn(paymongo, "getCheckoutSession").mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "expired" }));
   await request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
 });
 afterAll(() => pool.end());
@@ -68,6 +71,53 @@ describe("POST /api/v1/payments/checkout", () => {
     const other = await createUser();
     const res = await request(app).post("/api/v1/payments/checkout").set("Authorization", other.auth).send({ order_id: orderId });
     expect(res.status).toBe(404);
+  });
+
+  describe("one payable link per order (Pay now again, a double click, a retry after a timeout)", () => {
+    const payNow = () => request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
+    const sessions = async () => (await pool.query("SELECT checkout_session_id, status FROM payments WHERE order_id = ?", [orderId]))[0];
+
+    test("while the session is still open, the same link comes back: no second session, no second payment row", async () => {
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "active" }));
+      const res = await payNow();
+      expect(res.status).toBe(200);
+      expect(res.body.checkout_url).toBe("https://checkout.paymongo.com/cs_test_1");
+      expect(paymongo.getCheckoutSession).toHaveBeenCalledWith("cs_test_1");
+      expect(paymongo.createCheckoutSession).toHaveBeenCalledTimes(1);   // only the first, in beforeEach
+      expect(await sessions()).toEqual([{ checkout_session_id: "cs_test_1", status: "pending" }]);
+    });
+
+    test("already paid at PayMongo but the webhook isn't here yet: 409, and no new session to pay again", async () => {
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: "https://x", status: "paid" }));
+      const res = await payNow();
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("PAYMENT_CONFIRMING");
+      expect(paymongo.createCheckoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("the old session expired: a new one is opened", async () => {
+      paymongo.createCheckoutSession.mockResolvedValueOnce({ id: "cs_test_2", checkoutUrl: "https://checkout.paymongo.com/cs_test_2" });
+      expect((await payNow()).body.checkout_url).toBe("https://checkout.paymongo.com/cs_test_2");
+      expect((await sessions()).map((s) => s.checkout_session_id)).toEqual(["cs_test_1", "cs_test_2"]);
+    });
+
+    test("two Pay now requests at the same time for a new order open ONE session", async () => {
+      await fillCart(user.id, [{ productId, quantity: 1 }]);
+      const second = (await request(app).post("/api/orders").set("Authorization", user.auth).send(orderBody())).body.orderId;
+      let n = 0;
+      paymongo.createCheckoutSession.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 100));   // PayMongo takes a moment
+        return { id: `cs_parallel_${++n}`, checkoutUrl: `https://checkout.paymongo.com/cs_parallel_${n}` };
+      });
+      paymongo.getCheckoutSession.mockImplementation(async (id) => ({ id, checkoutUrl: `https://checkout.paymongo.com/${id}`, status: "active" }));
+      const send = () => request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: second });
+      const [a, b] = await Promise.all([send(), send()]);
+      expect([a.status, b.status]).toEqual([200, 200]);
+      expect(a.body.checkout_url).toBe(b.body.checkout_url);
+      expect(n).toBe(1);
+      const [rows] = await pool.query("SELECT COUNT(*) AS n FROM payments WHERE order_id = ?", [second]);
+      expect(rows[0].n).toBe(1);
+    });
   });
 
   test("a PayMongo failure is a 502 with its message", async () => {
@@ -124,6 +174,78 @@ describe("POST /api/v1/webhooks/paymongo", () => {
     const forged = require("./helpers").signPaymongo(body, "whsk_attacker");
     expect((await sendWebhook(body, forged)).status).toBe(401);
     expect((await request(app).post("/api/v1/webhooks/paymongo").set("Content-Type", "application/json").send(body)).status).toBe(401);
+  });
+
+  describe("test or live mode comes from the secret key, never from the event", () => {
+    const crypto = require("crypto");
+    // An event in either mode, signed for that mode (te= or li=), t seconds ago.
+    const signed = ({ live, ageSeconds = 0 }) => {
+      const body = paymongoEvent({ amount: 109900 }).body.replace('"livemode":false', `"livemode":${live}`);
+      const t = Math.floor(Date.now() / 1000) - ageSeconds;
+      const sig = crypto.createHmac("sha256", process.env.PAYMONGO_WEBHOOK_SECRET).update(`${t}.${body}`).digest("hex");
+      return { body, signature: live ? `t=${t},te=,li=${sig}` : `t=${t},te=${sig},li=` };
+    };
+    const orderStatus = async () => (await pool.query("SELECT status FROM orders"))[0][0].status;
+    const withEnv = async (env, fn) => {
+      const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+      Object.assign(process.env, env);
+      try { await fn(); } finally {
+        for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      }
+    };
+
+    test("live key: a correctly signed TEST event is refused and the order stays unpaid", async () => {
+      await withEnv({ PAYMONGO_SECRET_KEY: "sk_live_fake" }, async () => {
+        const { body, signature } = signed({ live: false });
+        expect((await sendWebhook(body, signature)).status).toBe(401);
+        expect(await orderStatus()).toBe("pending_payment");
+      });
+    });
+
+    test("live key: a live event with the live signature is accepted", async () => {
+      await withEnv({ PAYMONGO_SECRET_KEY: "sk_live_fake" }, async () => {
+        const { body, signature } = signed({ live: true });
+        expect((await sendWebhook(body, signature)).status).toBe(200);
+        expect(await orderStatus()).toBe("paid");
+      });
+    });
+
+    test("test key: a live event is refused, whatever it is signed with", async () => {
+      const { body, signature } = signed({ live: true });
+      expect((await sendWebhook(body, signature)).status).toBe(401);
+      const relabelled = body.replace('"livemode":true', '"livemode":false');
+      expect((await sendWebhook(relabelled, signature)).status).toBe(401);
+      expect(await orderStatus()).toBe("pending_payment");
+    });
+
+    test("an event without livemode is refused", async () => {
+      const body = paymongoEvent({ amount: 109900 }).body.replace('"livemode":false,', "");
+      expect((await sendWebhook(body, require("./helpers").signPaymongo(body))).status).toBe(401);
+    });
+  });
+
+  describe("signature age (PAYMONGO_WEBHOOK_TOLERANCE_SECONDS)", () => {
+    const crypto = require("crypto");
+    const aged = (ageSeconds) => {
+      const { body } = paymongoEvent({ amount: 109900 });
+      const t = Math.floor(Date.now() / 1000) - ageSeconds;
+      return { body, signature: `t=${t},te=${crypto.createHmac("sha256", process.env.PAYMONGO_WEBHOOK_SECRET).update(`${t}.${body}`).digest("hex")},li=` };
+    };
+
+    test("off by default: an old signature (a retried delivery) is still accepted", async () => {
+      const { body, signature } = aged(6 * 60 * 60);
+      expect((await sendWebhook(body, signature)).status).toBe(200);
+    });
+
+    test("when set, a signature older than the limit is refused and a fresh one accepted", async () => {
+      process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS = "300";
+      try {
+        const old = aged(10 * 60);
+        expect((await sendWebhook(old.body, old.signature)).status).toBe(401);
+        const fresh = aged(5);
+        expect((await sendWebhook(fresh.body, fresh.signature)).status).toBe(200);
+      } finally { delete process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS; }
+    });
   });
 
   test("duplicate event: processed once, stock deducted once", async () => {

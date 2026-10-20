@@ -1,0 +1,44 @@
+# Exact versions for the worker's Docker image: the set installed in ml/worker/.venv and checked
+# with pip-audit on 2026-10-20 (no known vulnerabilities). The Dockerfile installs
+# requirements.txt with this file as constraints (pip install -r requirements.txt -c requirements.lock),
+# so every package listed here gets exactly this version; anything Linux needs beyond it still resolves.
+# The image installs tensorflow-cpu (same API, no CUDA) instead of tensorflow, at the same version.
+# To upgrade: change the venv, run the tests and pip-audit, then regenerate this list from
+#   .venv\Scripts\python -m pip freeze   (leave out pip; keep the tensorflow-cpu line in step).
+absl-py==2.5.1
+astunparse==1.6.3
+certifi==2026.7.22
+charset-normalizer==3.5.2
+et_xmlfile==2.0.0
+flatbuffers==25.12.19
+gast==0.7.0
+google-pasta==0.2.0
+grpcio==1.84.0
+h5py==3.14.0
+idna==3.20
+keras==3.15.1
+libclang==18.1.1
+markdown-it-py==4.2.0
+mdurl==0.1.2
+ml_dtypes==0.6.0
+namex==0.1.0
+numpy==2.5.4
+openpyxl==3.1.5
+opt_einsum==3.4.0
+optree==0.20.0
+packaging==26.3
+protobuf==7.36.2
+Pygments==2.21.0
+PyMySQL==1.2.3
+python-dotenv==1.2.4
+requests==2.34.2
+rich==15.0.0
+setuptools==84.0.0
+six==1.17.0
+tensorflow==2.21.0
+termcolor==3.3.0
+typing_extensions==4.16.0
+urllib3==2.8.0
+wheel==0.48.0
+wrapt==2.5.0
+tensorflow-cpu==2.21.0

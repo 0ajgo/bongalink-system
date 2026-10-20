@@ -58,10 +58,18 @@
     </div>
   </section>
 
-  <!-- HIDDEN PARTS — restore them from the Edit dialog -->
-  <section class="card section-card" id="hiddenSection" aria-labelledby="hiddenTitle" hidden>
-    <div class="card__header"><h2 id="hiddenTitle">Hidden parts</h2><span class="muted">Not shown in the shop; history kept</span></div>
-    <div class="card__body"><div class="hidden-list" id="hiddenList"></div></div>
+  <!-- HIDDEN PARTS — restore them from the Edit dialog. Collapsed by default; the choice is
+       remembered per admin (js/inventory.js). -->
+  <section class="card section-card is-collapsed" id="hiddenSection" aria-labelledby="hiddenTitle" hidden>
+    <div class="card__header">
+      <h2 id="hiddenTitle">
+        <button class="section-toggle" type="button" id="hiddenToggle" aria-expanded="false" aria-controls="hiddenBody">
+          <i data-icon="chevron-right" data-size="18"></i><span id="hiddenLabel">Hidden parts</span>
+        </button>
+      </h2>
+      <span class="muted">Not shown in the shop; history kept</span>
+    </div>
+    <div class="card__body" id="hiddenBody" hidden><div class="hidden-list" id="hiddenList"></div></div>
   </section>
 
   <!-- SALES HISTORY — includes removed products -->
@@ -212,6 +220,7 @@
   </div>
 </footer>
 
+<script src="../../JS/config.js"></script>
 <script src="../../JS/api.js"></script>
 <script src="../../JS/icons.js"></script>
 <script src="../../JS/cart.js"></script>

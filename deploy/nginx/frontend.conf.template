@@ -1,0 +1,26 @@
+# nginx for Frontend/ (docker-compose "frontend" service). The nginx image fills in ${API_ORIGIN}
+# from the environment when it starts (/etc/nginx/templates); nginx's own $variables are left alone.
+#
+# Content-Security-Policy: pages may run only their own script files (no inline scripts or
+# handlers anywhere in Frontend/), and load only:
+#   styles  - own files + Google Fonts' stylesheet;   fonts - own + Google Fonts' files
+#   images  - own (incl. Leaflet's), data: (CSS icons), OpenStreetMap tiles, product photos from the API
+#   fetch / live updates - the API
+# Navigating to PayMongo's checkout is a page change, which the policy doesn't restrict.
+# A new outside source (another CDN, a payment widget) must be added here, or the browser blocks it;
+# Backend/tests/securityHeaders.test.js checks the frontend code against this list.
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    server_tokens off;
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://tile.openstreetmap.org ${API_ORIGIN}; connect-src 'self' ${API_ORIGIN}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    # The origin only, never the full address; OpenStreetMap's tile policy needs a Referer.
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

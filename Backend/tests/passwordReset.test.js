@@ -52,8 +52,8 @@ describe("forgot password, end to end", () => {
     expect(stored.token_hash).not.toBe(token);   // stored hashed
 
     expect((await request(app).get(`/api/auth/reset-password?token=${token}`)).body).toEqual({ username: juan.username });
-    expect((await reset(token, "123")).body.error).toBe("Password must be at least 6 characters.");   // sign-up rule
-    const done = await reset(token, "brandnew9");
+    expect((await reset(token, "123")).body.error).toBe("Use at least 10 characters for your password.");   // sign-up rule
+    const done = await reset(token, "brand-new-pass9");
     expect(done.status).toBe(200);
     expect(done.body.username).toBe(juan.username);
 
@@ -62,7 +62,7 @@ describe("forgot password, end to end", () => {
     expect(old.status).toBe(401);
     expect(old.body.code).toBe("SESSION_ENDED");
     expect((await login(juan.username, "oldpass1")).status).toBe(401);
-    expect((await login(juan.username, "brandnew9")).status).toBe(200);
+    expect((await login(juan.username, "brand-new-pass9")).status).toBe(200);
     expect(mail.passwordChanged).toHaveBeenCalledWith("juan.delacruz@example.com", juan.username);
     expect(await raw("SELECT admin_id, action, target_user_id, new_value FROM admin_audit_log"))
       .toEqual([{ admin_id: juan.id, action: "password_reset", target_user_id: juan.id, new_value: { via: "emailed reset link" } }]);
@@ -78,8 +78,8 @@ describe("forgot password, end to end", () => {
     const second = tokenFrom(mail.passwordReset.mock.calls[1]);
 
     expect((await request(app).get(`/api/auth/reset-password?token=${first}`)).status).toBe(400);   // replaced
-    expect((await reset(second, "newpass12")).status).toBe(200);
-    const reused = await reset(second, "another12");                                                // used once
+    expect((await reset(second, "newpass-1234")).status).toBe(200);
+    const reused = await reset(second, "another-1234");                                                // used once
     expect(reused.status).toBe(400);
     expect(reused.body.error).toBe("This link is invalid, already used or expired. Ask for a new one from the login page.");
 
@@ -87,15 +87,15 @@ describe("forgot password, end to end", () => {
     await settle(() => mail.passwordReset.mock.calls.length === 3);
     const third = tokenFrom(mail.passwordReset.mock.calls[2]);
     await pool.query("UPDATE password_setup_tokens SET expires_at = NOW() - INTERVAL 1 SECOND WHERE used_at IS NULL");   // 30 min passed
-    expect((await reset(third, "late12345")).status).toBe(400);
-    expect((await login(juan.username, "newpass12")).status).toBe(200);
+    expect((await reset(third, "late-pass-12345")).status).toBe(400);
+    expect((await login(juan.username, "newpass-1234")).status).toBe(200);
   });
 
   test("a reset link can't be used on the account-setup page, nor a setup link to reset", async () => {
     const admin = await createUser({ role: "admin" });
     await request(app).post("/api/v1/admin/accounts").set("Authorization", admin.auth).send({ username: "invited1", email: "inv@example.com" });
     const setupToken = mail.accountInvite.mock.calls[0][3].split("token=")[1];
-    expect((await reset(setupToken, "newpass12")).status).toBe(400);
+    expect((await reset(setupToken, "newpass-1234")).status).toBe(400);
 
     const juan = await userWithPassword({ email: "juan@example.com" });
     await forgot("juan@example.com");
@@ -150,7 +150,7 @@ describe("suspended accounts", () => {
     const check = await request(app).get(`/api/auth/reset-password?token=${token}`);
     expect(check.status).toBe(403);
     expect(check.body).toEqual({ error: "Your account is suspended. Contact the shop.", code: "ACCOUNT_SUSPENDED" });
-    const res = await reset(token, "newpass12");
+    const res = await reset(token, "newpass-1234");
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("ACCOUNT_SUSPENDED");
     expect(await bcrypt.compare("oldpass1", (await raw("SELECT password_hash FROM users WHERE user_id = ?", [juan.id]))[0].password_hash)).toBe(true);

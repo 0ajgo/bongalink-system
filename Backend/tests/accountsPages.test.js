@@ -52,6 +52,23 @@ const listCalls = (page) => page.calls.filter(c => c.url.startsWith("/v1/admin/a
 const submit = (page, id) => page.$(id).dispatchEvent(new page.window.Event("submit", { cancelable: true }));
 
 describe("Accounts page", () => {
+  test("the activity log shows every logged value as text, never as HTML", async () => {
+    const evil = '<img src=x onerror="window.pwned=1">';
+    const page = await openPage("Pages/Admin/accounts.html", { role: "admin", username: "owner", api: adminApi({ answers: {
+      "GET /v1/admin/accounts/audit-log": () => ({ body: { entries: [
+        { audit_id: 1, admin: "owner", action: evil, target: "pedro", target_user_id: 7, reason: null,
+          old_value: { status: evil }, new_value: { status: "<b>x</b>" }, created_at: "2026-10-14T08:00:00Z" },
+        { audit_id: 2, admin: "owner", action: "promote", target: "ana", target_user_id: 8, reason: null,
+          old_value: { role: evil }, new_value: { role: "admin" }, created_at: "2026-10-14T08:00:00Z" },
+      ], total: 2, page: 1, per_page: 10 } }) } }) });
+    await page.until(() => page.$$("#logList .log-entry").length === 2);
+    expect(page.$("#logList img, #logList b")).toBeNull();
+    expect(page.$("#logList").textContent).toContain(evil);
+    expect(page.$("#logList").textContent).toContain("Status: " + evil + " → <b>x</b>");
+    expect(page.window.pwned).toBeUndefined();
+    page.close();
+  });
+
   test("tiles, the list with its columns, You badge, and the activity log", async () => {
     const page = await open();
     expect(page.$('.site-nav a[aria-current="page"]').textContent.trim()).toBe("Accounts");
@@ -298,12 +315,12 @@ describe("set-password page", () => {
     expect(page.$("#setUsername").value).toBe("ana.reyes");
     page.$("#newPassword").value = "abc";
     submit(page, "#setForm");
-    expect(page.$("#newPasswordError").textContent).toBe("Use at least 6 characters.");
-    page.$("#newPassword").value = "goodpass1";
-    page.$("#confirmPassword").value = "goodpass2";
+    expect(page.$("#newPasswordError").textContent).toBe("Use at least 10 characters for your password.");
+    page.$("#newPassword").value = "goodpass-111";
+    page.$("#confirmPassword").value = "goodpass-222";
     submit(page, "#setForm");
     expect(page.$("#confirmPasswordError").textContent).toBe("The two passwords don't match.");
-    page.$("#confirmPassword").value = "goodpass1";
+    page.$("#confirmPassword").value = "goodpass-111";
     submit(page, "#setForm");
     // The privacy notice has to be accepted, with the error next to the checkbox.
     expect(page.$("#setConsentError").textContent).toBe("Please accept the Privacy Policy to finish setting up your account.");
@@ -311,7 +328,7 @@ describe("set-password page", () => {
     page.$("#setConsent").checked = true;
     submit(page, "#setForm");
     await page.until(() => !page.$("#setMessage").hidden);
-    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass1", privacy_consent: true } });
+    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass-111", privacy_consent: true } });
     expect(page.$("#setMessage").textContent).toContain("Your password is set and your email is confirmed.");
     expect(page.$("#setMessage a").getAttribute("href")).toBe("login.html");
     page.close();
@@ -331,8 +348,8 @@ describe("registration privacy notice and the Privacy Policy page", () => {
   const fill = (page) => {
     page.$("#regUsername").value = "ana";
     page.$("#regEmail").value = "ana@example.com";
-    page.$("#regPassword").value = "secret123";
-    page.$("#regConfirmPassword").value = "secret123";
+    page.$("#regPassword").value = "secret-pass-123";
+    page.$("#regConfirmPassword").value = "secret-pass-123";
   };
 
   test("the notice says what's collected and why, links the policy, and consent is required", async () => {
@@ -356,7 +373,7 @@ describe("registration privacy notice and the Privacy Policy page", () => {
     submit(page, "#registerForm");
     await page.until(() => page.calls.length);
     expect(page.calls[0]).toEqual({ url: "/auth/register", method: "POST",
-      body: { username: "ana", email: "ana@example.com", password: "secret123", privacy_consent: true } });
+      body: { username: "ana", email: "ana@example.com", password: "secret-pass-123", privacy_consent: true } });
     await page.settle();
     page.close();
   });

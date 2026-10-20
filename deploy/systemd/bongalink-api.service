@@ -1,0 +1,29 @@
+# Bongalink API as a Linux service (without Docker). DEPLOYMENT.md, "Without Docker".
+#   sudo cp deploy/systemd/bongalink-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bongalink-api
+#   journalctl -u bongalink-api -f        (the log: startup checks, errors)
+# Paths assume the repository is at /opt/bongalink and a "bongalink" system user owns it.
+# Settings come from /opt/bongalink/Backend/.env (NODE_ENV=production there).
+[Unit]
+Description=Bongalink API (Node)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bongalink
+WorkingDirectory=/opt/bongalink/Backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node server.js
+# Started again whenever it stops on its own: a crash, or MySQL not reachable yet at boot.
+Restart=always
+RestartSec=5
+# Uploaded product photos are the only files it writes.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/bongalink/Backend/uploads
+
+[Install]
+WantedBy=multi-user.target

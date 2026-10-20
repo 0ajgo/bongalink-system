@@ -15,6 +15,7 @@
 
 const express = require("express");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { requireAuth, requireVerifiedEmail } = require("../middleware/auth");
 const { quoteOptions, REGIONS } = require("../services/shippingRates");
 const { encryptAddress, enc, logError } = require("../lib/pii");
@@ -23,6 +24,8 @@ const notifications = require("../services/notifications");
 const router = express.Router();
 
 const COURIERS = ["JNT", "LBC", "LALAMOVE"];
+// "Place order" again with an empty cart within this long of an unpaid order = a retry of it.
+const RECENT_ORDER_MINUTES = 15;
 
 // Optional map pin: both or neither, inside the Philippines' rough bounds.
 function parsePin(address) {
@@ -48,7 +51,7 @@ const sameCart = (a, b) =>
    pin is. expected_shipping_fee is the fee the customer was shown: if the
    recomputed fee differs, the order is refused (409 SHIPPING_FEE_CHANGED).
    --------------------------------------------------------------------- */
-router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
+router.post("/", requireAuth, requireVerifiedEmail, ah(async (req, res) => {
   const { contact, recipient, address, courier, payment, consent } = req.body || {};
 
   if (!contact?.email || !contact?.phone || !recipient?.firstName || !recipient?.lastName ||
@@ -81,6 +84,18 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     cartId = cartRows[0]?.cart_id;
     [quotedItems] = cartId ? await pool.query(cartItemsSql, [cartId]) : [[]];
     if (quotedItems.length === 0) {
+      // A retry after the page stopped waiting: the first request went through and
+      // emptied the cart (the order and the empty cart commit together, so the order
+      // can't be placed twice). Send the customer on to pay for that order.
+      const [[recent]] = await pool.query(
+        `SELECT order_id FROM orders WHERE user_id = ? AND status = 'pending_payment'
+            AND created_at >= NOW() - INTERVAL ? MINUTE ORDER BY order_id DESC LIMIT 1`,
+        [userId, RECENT_ORDER_MINUTES]
+      );
+      if (recent) {
+        return res.status(409).json({ error: "Your order was already placed. Continue to payment.",
+          code: "ORDER_ALREADY_PLACED", orderId: recent.order_id });
+      }
       return res.status(400).json({ error: "Your cart is empty." });
     }
 
@@ -247,14 +262,14 @@ router.post("/", requireAuth, requireVerifiedEmail, async (req, res) => {
     await connection.query("SET @app_user_id = NULL").catch(() => {});
     connection.release();
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/orders — this user's order history, newest first, each with
    its items. Powers Pages/COpage/orders.html; the tracking timeline of a
    shipped order comes from GET /api/v1/orders/:id/tracking.
    --------------------------------------------------------------------- */
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, ah(async (req, res) => {
   try {
     const [orders] = await pool.query(
       `SELECT order_id, status, total_amount, shipping_fee, courier, paid_at, created_at
@@ -278,6 +293,6 @@ router.get("/", requireAuth, async (req, res) => {
     logError("Loading orders failed", err);
     res.status(500).json({ error: "Could not load your orders." });
   }
-});
+}));
 
 module.exports = router;

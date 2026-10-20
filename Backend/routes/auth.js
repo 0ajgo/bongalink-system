@@ -11,6 +11,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { issueVerificationCode } = require("./emailVerification");
 const { rateLimit, MemoryStore } = require("express-rate-limit");
 const { startSession, endSession, bearer, SUSPENDED } = require("../middleware/auth");
@@ -20,6 +21,8 @@ const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
+const { MINUTE, HOUR, envLimit, limiter, resetAll, RATE_LIMIT_DEFAULTS } = require("../lib/rateLimit");
+const { newPasswordProblem } = require("../lib/passwordRule");
 
 const router = express.Router();
 
@@ -30,8 +33,19 @@ const router = express.Router();
    Accepting the privacy notice is required and recorded in consent_records.
    Always creates a regular "user" account — admins are provisioned
    directly in the database, never through this endpoint.
+   Rate limits per IP (each new account sends an email from the shop's
+   address): RATE_LIMIT_REGISTER_PER_IP_HOUR (default 5) and
+   RATE_LIMIT_REGISTER_PER_IP_DAY (default 20). A form the server sends
+   back as incomplete (400) doesn't count, so typos don't lock anyone out.
    --------------------------------------------------------------------- */
-router.post("/register", async (req, res) => {
+const tooManySignups = { error: "Too many new accounts from this network. Please try again later." };
+const notAFormError = { skipSuccessfulRequests: true, requestWasSuccessful: (req, res) => res.statusCode === 400 };
+const registerPerHour = limiter({ windowMs: HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_HOUR, RATE_LIMIT_DEFAULTS.RATE_LIMIT_REGISTER_PER_IP_HOUR),
+  message: tooManySignups, ...notAFormError });
+const registerPerDay = limiter({ windowMs: 24 * HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_DAY, RATE_LIMIT_DEFAULTS.RATE_LIMIT_REGISTER_PER_IP_DAY),
+  message: tooManySignups, ...notAFormError });
+
+router.post("/register", registerPerHour, registerPerDay, ah(async (req, res) => {
   try {
     const { username, password } = req.body;
     const email = String(req.body.email || "").trim();
@@ -39,9 +53,8 @@ router.post("/register", async (req, res) => {
     if (!username || !email || !password) {
       return res.status(400).json({ error: "Please fill in all fields." });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters." });
-    }
+    const weak = newPasswordProblem(password);
+    if (weak) return res.status(400).json(weak);
     if (req.body.privacy_consent !== true) {
       return res.status(400).json({ error: "Please read and accept the privacy notice to create an account.", code: "PRIVACY_CONSENT_REQUIRED" });
     }
@@ -101,15 +114,30 @@ router.post("/register", async (req, res) => {
     logError("Registration failed", err);
     res.status(500).json({ error: "Registration failed." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/auth/login
    Body: { username, password, remember?, role? }  -- role is the tab the user
    picked (User/Admin) on the login page; the server re-checks it
    against the real role in the database rather than trusting it blindly.
+   Rate limits count failed logins only, over 15 minutes: 10 per username
+   from one IP (fixed: stops password guessing on one account), and
+   RATE_LIMIT_LOGIN_PER_IP (default 50) per IP across all usernames.
    --------------------------------------------------------------------- */
-router.post("/login", async (req, res) => {
+const LOGIN_WINDOW_MS = 15 * MINUTE;
+const tooManyLogins = { error: "Too many failed logins. Please wait 15 minutes and try again, or reset your password." };
+const loginPerUser = limiter({ windowMs: LOGIN_WINDOW_MS, limit: 10, message: tooManyLogins, skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.username ?? "").trim().toLowerCase()}` });
+const loginPerIp = limiter({ windowMs: LOGIN_WINDOW_MS, limit: envLimit(process.env.RATE_LIMIT_LOGIN_PER_IP, RATE_LIMIT_DEFAULTS.RATE_LIMIT_LOGIN_PER_IP),
+  message: tooManyLogins, skipSuccessfulRequests: true });
+
+// Compared against when there is no real hash to check (unknown, deleted or not set up yet), so
+// every login takes about as long and the answer time doesn't tell which usernames exist.
+// Same cost (10) as the real hashes.
+const DUMMY_HASH = bcrypt.hashSync(require("crypto").randomBytes(16).toString("hex"), 10);
+
+router.post("/login", loginPerIp, loginPerUser, ah(async (req, res) => {
   try {
     const { username, password, role } = req.body;
 
@@ -124,18 +152,21 @@ router.post("/login", async (req, res) => {
     );
     // Deleted (anonymized) accounts look like unknown usernames.
     if (rows.length === 0 || rows[0].status === "deleted") {
+      await bcrypt.compare(String(password), DUMMY_HASH);
       return res.status(401).json({ error: "Invalid username or password." });
     }
 
     const user = rows[0];
-    // Created by an admin and not set up yet: there is no password to check.
+    // Created by an admin and not set up yet: there is no password to check. The hint comes
+    // after the same wait as a real check.
     if (user.must_set_password) {
+      await bcrypt.compare(String(password), DUMMY_HASH);
       return res.status(403).json({
         error: "Finish setting up your account first: open the link we emailed you to set your password. If it expired, ask the shop to send a new one.",
         code: "PASSWORD_NOT_SET"
       });
     }
-    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+    const passwordMatches = await bcrypt.compare(String(password), user.password_hash);
     if (!passwordMatches) {
       return res.status(401).json({ error: "Invalid username or password." });
     }
@@ -164,14 +195,14 @@ router.post("/login", async (req, res) => {
     logError("Login failed", err);
     res.status(500).json({ error: "Login failed." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/auth/logout — ends this device's session at once (the token
    stops working everywhere it was copied). Always answers 200, so the
    browser can always finish logging out.
    --------------------------------------------------------------------- */
-router.post("/logout", async (req, res) => {
+router.post("/logout", ah(async (req, res) => {
   const token = bearer(req);
   try {
     if (token) await endSession(token);
@@ -179,7 +210,7 @@ router.post("/logout", async (req, res) => {
     logError("Logout failed", err);
   }
   res.json({ ok: true });
-});
+}));
 
 /* ---------------------------------------------------------------------
    Set-password link for accounts created by an admin.
@@ -190,7 +221,7 @@ const setupLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHead
   message: { error: "Too many tries. Please wait a few minutes." } });
 const BAD_LINK = "This link is invalid, already used or expired. Ask the shop to send a new one.";
 
-router.get("/set-password", setupLimit, async (req, res) => {
+router.get("/set-password", setupLimit, ah(async (req, res) => {
   try {
     const setup = await findSetup(req.query.token);
     if (!setup) return res.status(400).json({ error: BAD_LINK });
@@ -199,21 +230,21 @@ router.get("/set-password", setupLimit, async (req, res) => {
     logError("Set-password link check failed", err);
     res.status(500).json({ error: "Could not check the link." });
   }
-});
+}));
 
-router.post("/set-password", setupLimit, async (req, res) => {
+router.post("/set-password", setupLimit, ah(async (req, res) => {
   try {
     if (req.body?.privacy_consent !== true) {
       return res.status(400).json({ error: "Please read and accept the privacy notice to finish setting up your account.", code: "PRIVACY_CONSENT_REQUIRED" });
     }
     const result = await completeSetup(req.body?.token, req.body?.password);
-    if (result.error) return res.status(400).json({ error: result.error });
+    if (result.error) return res.status(400).json({ error: result.error, ...(result.code && { code: result.code }) });
     res.json({ message: "Password set. You can log in now.", username: result.username });
   } catch (err) {
     logError("Set password failed", err);
     res.status(500).json({ error: "Could not set the password." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    Forgot password (services/passwordReset.js).
@@ -226,7 +257,7 @@ router.post("/set-password", setupLimit, async (req, res) => {
 const RESET_SENT = "If that email has an account, we've sent a reset link. It works for 30 minutes.";
 const tooMany = { error: "Too many reset requests. Please wait a while and try again.", code: "RATE_LIMITED" };
 const resetStores = [new MemoryStore(), new MemoryStore(), new MemoryStore()];
-const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, store: resetStores[0],
+const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_FORGOT_PASSWORD_PER_IP, RATE_LIMIT_DEFAULTS.RATE_LIMIT_FORGOT_PASSWORD_PER_IP), store: resetStores[0],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany });
 const forgotPerEmail = rateLimit({ windowMs: 60 * 60 * 1000, limit: 3, store: resetStores[1],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany,
@@ -235,7 +266,7 @@ const resetLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, store: reset
   standardHeaders: "draft-7", legacyHeaders: false, message: { error: "Too many tries. Please wait a few minutes." } });
 const BAD_RESET_LINK = "This link is invalid, already used or expired. Ask for a new one from the login page.";
 
-router.post("/forgot-password", forgotPerIp, forgotPerEmail, async (req, res) => {
+router.post("/forgot-password", forgotPerIp, forgotPerEmail, ah(async (req, res) => {
   const email = String(req.body?.email || "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 150) {
     return res.status(400).json({ error: "Enter the email address of your account." });
@@ -244,9 +275,9 @@ router.post("/forgot-password", forgotPerIp, forgotPerEmail, async (req, res) =>
   // response time, whether or not the email has an account. Failures are only logged.
   requestReset(email).catch((err) => logError("Password reset request failed", err));
   res.json({ message: RESET_SENT });
-});
+}));
 
-router.get("/reset-password", resetLimit, async (req, res) => {
+router.get("/reset-password", resetLimit, ah(async (req, res) => {
   try {
     const reset = await findReset(req.query.token);
     if (!reset) return res.status(400).json({ error: BAD_RESET_LINK });
@@ -256,21 +287,21 @@ router.get("/reset-password", resetLimit, async (req, res) => {
     logError("Reset link check failed", err);
     res.status(500).json({ error: "Could not check the link." });
   }
-});
+}));
 
-router.post("/reset-password", resetLimit, async (req, res) => {
+router.post("/reset-password", resetLimit, ah(async (req, res) => {
   try {
     const result = await completeReset(req.body?.token, req.body?.password);
     if (result.code === "ACCOUNT_SUSPENDED") return res.status(403).json(SUSPENDED);
-    if (result.error) return res.status(400).json({ error: result.error });
+    if (result.error) return res.status(400).json({ error: result.error, ...(result.code && { code: result.code }) });
     res.json({ message: "Your password was changed. Log in with the new one.", username: result.username });
   } catch (err) {
     logError("Password reset failed", err);
     res.status(500).json({ error: "Could not reset the password." });
   }
-});
+}));
 
 // Tests: start every test from empty rate-limit counters.
-router.resetRateLimits = () => Promise.all(resetStores.map((s) => s.resetAll()));
+router.resetRateLimits = () => Promise.all([...resetStores.map((s) => s.resetAll()), resetAll()]);
 
 module.exports = router;

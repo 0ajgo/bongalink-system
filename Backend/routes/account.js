@@ -34,7 +34,15 @@ const { blindIndex } = require("../lib/dataProtection");
 
 router.use(requireAuth);
 
-const MIN_PASSWORD = 6;   // same rule as POST /api/auth/register
+// Changes that check the current password (email, password): failed ones are counted per account,
+// so a stolen login can't be used to guess the password. RATE_LIMIT_ACCOUNT_PER_USER, default 10
+// per 15 minutes.
+const { MINUTE, envLimit, limiter, RATE_LIMIT_DEFAULTS } = require("../lib/rateLimit");
+const passwordCheckLimit = limiter({ windowMs: 15 * MINUTE, limit: envLimit(process.env.RATE_LIMIT_ACCOUNT_PER_USER, RATE_LIMIT_DEFAULTS.RATE_LIMIT_ACCOUNT_PER_USER),
+  skipSuccessfulRequests: true, keyGenerator: (req) => `user:${req.user.userId}`,
+  message: { error: "Too many failed tries. Please wait 15 minutes and try again." } });
+
+const { newPasswordProblem } = require("../lib/passwordRule");   // same rule as POST /api/auth/register
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
 const PHONE_RE = /^(09\d{9}|639\d{9})$/;
@@ -57,7 +65,7 @@ router.get("/me", ah(async (req, res) => {
 
 // Changing the email needs the current password, marks the new address
 // unverified and emails it a fresh code.
-router.patch("/me", ah(async (req, res) => {
+router.patch("/me", passwordCheckLimit, ah(async (req, res) => {
   const current = await profile(req.user.userId);
   if (!current) return res.status(404).json({ error: "Account not found." });
 
@@ -104,11 +112,10 @@ router.patch("/me", ah(async (req, res) => {
 }));
 
 /* ---------------------------------------------------------------- password */
-router.post("/password", ah(async (req, res) => {
+router.post("/password", passwordCheckLimit, ah(async (req, res) => {
   const { current_password, new_password } = req.body || {};
-  if (!new_password || String(new_password).length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD} characters.` });
-  }
+  const weak = newPasswordProblem(new_password);
+  if (weak) return res.status(400).json(weak);
   const [[row]] = await pool.query("SELECT password_hash FROM users WHERE user_id = ?", [req.user.userId]);
   if (!row || !current_password || !(await bcrypt.compare(String(current_password), row.password_hash))) {
     return res.status(400).json({ error: "Your current password is incorrect." });

@@ -35,6 +35,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 const notifications = require("../services/notifications");
@@ -183,7 +184,7 @@ async function readProductFields(body, { partial }) {
    `stock` is AVAILABLE stock: on hand minus units reserved by unpaid
    orders (anti ghost stock). 0 means out of stock.
    --------------------------------------------------------------------- */
-router.get("/", async (req, res) => {
+router.get("/", ah(async (req, res) => {
   const { category, search } = req.query;
 
   let sql = `
@@ -211,7 +212,7 @@ router.get("/", async (req, res) => {
 
   const [rows] = await pool.query(sql, params);
   res.json(rows);
-});
+}));
 
 async function productImages(productId) {
   const [rows] = await pool.query(
@@ -223,7 +224,7 @@ async function productImages(productId) {
    GET /api/products/:id — public product page. Hidden products are 404.
    images: the cover first, then gallery photos.
    --------------------------------------------------------------------- */
-router.get("/:id(\\d+)", async (req, res) => {
+router.get("/:id(\\d+)", ah(async (req, res) => {
   try {
     const [[p]] = await pool.query(
       `SELECT p.product_id AS id, p.name, c.name AS category, p.brand, p.price,
@@ -240,13 +241,13 @@ router.get("/:id(\\d+)", async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the product." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/products/:id/admin — the edit form: hidden products too,
    with on-hand, reserved and available stock.
    --------------------------------------------------------------------- */
-router.get("/:id(\\d+)/admin", requireAdmin, async (req, res) => {
+router.get("/:id(\\d+)/admin", requireAdmin, ah(async (req, res) => {
   try {
     const [[p]] = await pool.query(
       `SELECT p.product_id AS id, p.name, c.name AS category, p.brand, p.price, p.description, p.weight_kg,
@@ -261,12 +262,12 @@ router.get("/:id(\\d+)/admin", requireAdmin, async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the product." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/products/:id/history — product_changes, newest first.
    --------------------------------------------------------------------- */
-router.get("/:id(\\d+)/history", requireAdmin, async (req, res) => {
+router.get("/:id(\\d+)/history", requireAdmin, ah(async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT h.change_id, h.field, h.old_value, h.new_value, h.reason, h.changed_at,
@@ -280,13 +281,13 @@ router.get("/:id(\\d+)/history", requireAdmin, async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Could not load the history." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/products — create. multipart/form-data: name, category,
    brand?, price, stock, description?, weight_kg?, image?
    --------------------------------------------------------------------- */
-router.post("/", requireAdmin, photoUpload("image"), async (req, res) => {
+router.post("/", requireAdmin, photoUpload("image"), ah(async (req, res) => {
   try {
     const { values, error } = await readProductFields(req.body, { partial: false });
     const stock = Number(req.body.stock);
@@ -310,7 +311,7 @@ router.post("/", requireAdmin, photoUpload("image"), async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to add product." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    PATCH /api/products/:id — JSON, every field optional:
@@ -318,7 +319,7 @@ router.post("/", requireAdmin, photoUpload("image"), async (req, res) => {
    Stock is NOT edited here: use POST /:id/stock, which needs a reason.
    Works on hidden products too (to edit or restore them).
    --------------------------------------------------------------------- */
-router.patch("/:id(\\d+)", requireAdmin, async (req, res) => {
+router.patch("/:id(\\d+)", requireAdmin, ah(async (req, res) => {
   try {
     const body = req.body || {};
     if (body.stock !== undefined || body.stock_quantity !== undefined) {
@@ -344,7 +345,7 @@ router.patch("/:id(\\d+)", requireAdmin, async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to update product." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    POST /api/products/:id/stock — { change, reason, note? }
@@ -356,7 +357,7 @@ router.patch("/:id(\\d+)", requireAdmin, async (req, res) => {
    --------------------------------------------------------------------- */
 const STOCK_REASONS = { restock: 1, return: 1, damaged: -1, correction: 0 };
 
-router.post("/:id(\\d+)/stock", requireAdmin, async (req, res) => {
+router.post("/:id(\\d+)/stock", requireAdmin, ah(async (req, res) => {
   try {
     const { change: rawChange, reason, note } = req.body || {};
     const change = Number(rawChange);
@@ -397,13 +398,13 @@ router.post("/:id(\\d+)/stock", requireAdmin, async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to adjust stock." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    Photos: replace the cover, add / remove gallery photos.
    Old files stay on disk: the history still points at them.
    --------------------------------------------------------------------- */
-router.post("/:id(\\d+)/image", requireAdmin, photoUpload("image"), async (req, res) => {
+router.post("/:id(\\d+)/image", requireAdmin, photoUpload("image"), ah(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Choose a photo to upload." });
   try {
     const [result] = await asUser(req.user.userId, connection =>
@@ -418,9 +419,9 @@ router.post("/:id(\\d+)/image", requireAdmin, photoUpload("image"), async (req, 
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to save the photo." });
   }
-});
+}));
 
-router.post("/:id(\\d+)/images", requireAdmin, photoUpload("image"), async (req, res) => {
+router.post("/:id(\\d+)/images", requireAdmin, photoUpload("image"), ah(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Choose a photo to upload." });
   try {
     const result = await asUser(req.user.userId, connection => inTransaction(connection, async () => {
@@ -439,9 +440,9 @@ router.post("/:id(\\d+)/images", requireAdmin, photoUpload("image"), async (req,
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to save the photo." });
   }
-});
+}));
 
-router.delete("/:id(\\d+)/images/:imageId(\\d+)", requireAdmin, async (req, res) => {
+router.delete("/:id(\\d+)/images/:imageId(\\d+)", requireAdmin, ah(async (req, res) => {
   try {
     const [result] = await asUser(req.user.userId, connection =>
       connection.query("DELETE FROM product_images WHERE image_id = ? AND product_id = ?", [req.params.imageId, req.params.id]));
@@ -451,14 +452,14 @@ router.delete("/:id(\\d+)/images/:imageId(\\d+)", requireAdmin, async (req, res)
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to remove the photo." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    DELETE /api/products/:id — hide (soft delete): out of the catalog,
    carts and new predictions, but kept for order history and trends.
    Restore it from the edit form (PATCH is_active).
    --------------------------------------------------------------------- */
-router.delete("/:id(\\d+)", requireAdmin, async (req, res) => {
+router.delete("/:id(\\d+)", requireAdmin, ah(async (req, res) => {
   try {
     const removed = await asUser(req.user.userId, connection => inTransaction(connection, async () => {
       const [result] = await connection.query(
@@ -474,6 +475,6 @@ router.delete("/:id(\\d+)", requireAdmin, async (req, res) => {
     logError("Products request failed", err);
     res.status(500).json({ error: "Failed to delete product." });
   }
-});
+}));
 
 module.exports = router;

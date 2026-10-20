@@ -13,6 +13,7 @@
 
 const express = require("express");
 const pool = require("../db");
+const ah = require("../lib/asyncHandler");
 const { logError } = require("../lib/pii");
 const { requireAdmin } = require("../middleware/auth");
 const { LOW_STOCK } = require("../lib/stock");
@@ -29,7 +30,7 @@ const WORKER_TIMEOUT_SECONDS = 120;
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/status — banner: last model update + state
    --------------------------------------------------------------------- */
-router.get("/status", async (req, res) => {
+router.get("/status", ah(async (req, res) => {
   try {
     const [[status]] = await pool.query(
       `SELECT state, last_update_at, last_error, last_train_at, last_train_status,
@@ -56,13 +57,13 @@ router.get("/status", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load model status." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/predictions — one row per ACTIVE product. Products
    the worker hasn't scored yet come back with prediction fields null.
    --------------------------------------------------------------------- */
-router.get("/predictions", async (req, res) => {
+router.get("/predictions", ah(async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT p.product_id, p.name, c.name AS category, p.price, p.stock_quantity,
@@ -86,13 +87,13 @@ router.get("/predictions", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load predictions." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/products — every product INCLUDING removed ones,
    for the history chart picker (removed products keep their history).
    --------------------------------------------------------------------- */
-router.get("/products", async (req, res) => {
+router.get("/products", ah(async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT p.product_id, p.name, c.name AS category, p.is_active
@@ -104,7 +105,7 @@ router.get("/products", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load products." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/dashboard?group=day|week|month&range=N — read-only
@@ -185,7 +186,7 @@ async function salesTile(conn, start, next, previous) {
   };
 }
 
-router.get("/dashboard", async (req, res) => {
+router.get("/dashboard", ah(async (req, res) => {
   try {
     const group = TREND_GROUPS[req.query.group] ? req.query.group : "day";
     const asked = Number(req.query.range ?? (group === "day" ? req.query.days : undefined));
@@ -267,13 +268,13 @@ router.get("/dashboard", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load the dashboard." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/history/:id?days=84 — units sold per day (oldest
    first, zero-filled), for active and removed products alike.
    --------------------------------------------------------------------- */
-router.get("/history/:id", async (req, res) => {
+router.get("/history/:id", ah(async (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(req.query.days, 10) || 84, 7), 365);
 
@@ -311,12 +312,12 @@ router.get("/history/:id", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load sales history." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    GET /api/admin/ml/events?limit=25 — recent audit-trail entries
    --------------------------------------------------------------------- */
-router.get("/events", async (req, res) => {
+router.get("/events", ah(async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 200);
     const [rows] = await pool.query(
@@ -334,7 +335,7 @@ router.get("/events", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load change log." });
   }
-});
+}));
 
 /* ---------------------------------------------------------------------
    RETRAINING (REQ028) — the "Update forecasts & trends" button.
@@ -364,7 +365,7 @@ async function workerHeartbeatAge(conn = pool) {
 }
 
 // GET /api/admin/ml/training — the current run, recent runs, model accuracy, automatic triggers.
-router.get("/training", async (req, res) => {
+router.get("/training", ah(async (req, res) => {
   try {
     const [[current]] = await pool.query("SELECT * FROM ml_training_runs WHERE active_slot = 1");
     const [runs] = await pool.query("SELECT * FROM ml_training_runs ORDER BY run_id DESC LIMIT 10");
@@ -399,14 +400,14 @@ router.get("/training", async (req, res) => {
     logError("Forecasts request failed", err);
     res.status(500).json({ error: "Could not load the training status." });
   }
-});
+}));
 
 // POST /api/admin/ml/training — queue a retrain (the button). 202 with the run; 409 if one is running.
 // Requests to queue a retrain run one at a time (a named lock), so two admins clicking at
 // the same moment get one run and one "already queued", never a database deadlock.
 const QUEUE_LOCK = "bongalink_ml_retrain";
 
-router.post("/training", async (req, res) => {
+router.post("/training", ah(async (req, res) => {
   const conn = await pool.getConnection();
   let locked = false;
   try {
@@ -454,6 +455,6 @@ router.post("/training", async (req, res) => {
     if (locked) await conn.query("DO RELEASE_LOCK(?)", [QUEUE_LOCK]).catch(() => {});
     conn.release();
   }
-});
+}));
 
 module.exports = router;

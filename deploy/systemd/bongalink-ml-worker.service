@@ -1,0 +1,31 @@
+# Bongalink ML worker as a long-running Linux service (without Docker). DEPLOYMENT.md, "Without Docker".
+#   sudo cp deploy/systemd/bongalink-ml-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bongalink-ml-worker
+#   journalctl -u bongalink-ml-worker -f
+# Paths assume the repository is at /opt/bongalink, the worker's venv at ml/worker/.venv
+# (python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt -c requirements.lock),
+# and a "bongalink" system user that owns it. Settings: /opt/bongalink/ml/worker/.env.
+# The worker keeps going after errors inside its loop (ML_RETRY_SECONDS); systemd starts it
+# again if the process itself stops, e.g. MySQL not reachable at boot.
+[Unit]
+Description=Bongalink ML worker (stock forecasts, automatic retraining)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bongalink
+WorkingDirectory=/opt/bongalink/ml/worker
+Environment=PYTHONUNBUFFERED=1 TF_CPP_MIN_LOG_LEVEL=2
+ExecStart=/opt/bongalink/ml/worker/.venv/bin/python -m bongalink_ml
+Restart=always
+RestartSec=15
+# On stop it exits at once; a training run cut short is marked failed at the next start.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/bongalink/ml/worker/models
+
+[Install]
+WantedBy=multi-user.target

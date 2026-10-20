@@ -26,6 +26,8 @@ const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const REMEMBER_DAYS = 30;
+// The only signing algorithm we use and accept (jsonwebtoken's default, pinned so a token can't pick another).
+const JWT_ALGORITHM = "HS256";
 
 const SUSPENDED = { error: "Your account is suspended. Contact the shop.", code: "ACCOUNT_SUSPENDED" };
 const ENDED = { error: "Your session has ended. Please log in again.", code: "SESSION_ENDED" };
@@ -39,7 +41,7 @@ const bearer = (req) => {
 async function checkToken(token) {
   let payload;
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET);
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
   } catch (err) {
     return { status: 401, body: { error: "Session expired or invalid. Please log in again." } };
   }
@@ -128,7 +130,7 @@ async function startSession(user, { remember = false, conn = pool } = {}) {
   const token = jwt.sign(
     { userId: user.user_id, username: user.username, role: user.role, tv: user.token_version || 0, sid: sessionId },
     process.env.JWT_SECRET,
-    { expiresIn: remember ? `${REMEMBER_DAYS}d` : process.env.JWT_EXPIRES_IN || "7d" }
+    { algorithm: JWT_ALGORITHM, expiresIn: remember ? `${REMEMBER_DAYS}d` : process.env.JWT_EXPIRES_IN || "7d" }
   );
   const { exp } = jwt.decode(token);
   // Tidy up this account's old sessions while we're here.
@@ -144,7 +146,7 @@ async function startSession(user, { remember = false, conn = pool } = {}) {
 async function endSession(token) {
   let payload;
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: [JWT_ALGORITHM], ignoreExpiration: true });
   } catch (err) {
     return false;
   }
@@ -163,7 +165,7 @@ function signToken(user) {
   return jwt.sign(
     { userId: user.user_id, username: user.username, role: user.role, tv: user.token_version || 0 },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    { algorithm: JWT_ALGORITHM, expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
 }
 

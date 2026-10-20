@@ -55,9 +55,10 @@ document.getElementById("setConsent").addEventListener("change", (e) => {
 setForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const password = newPassword.value;
-  fieldError(newPassword, password.length < 6 ? "Use at least 6 characters." : "");
-  fieldError(confirmPassword, password.length >= 6 && confirmPassword.value !== password ? "The two passwords don't match." : "");
-  if (password.length < 6) return newPassword.focus();
+  const weak = newPasswordProblem(password);
+  fieldError(newPassword, weak);
+  fieldError(confirmPassword, !weak && confirmPassword.value !== password ? "The two passwords don't match." : "");
+  if (weak) return newPassword.focus();
   if (confirmPassword.value !== password) return confirmPassword.focus();
   const consent = document.getElementById("setConsent");
   if (!consent.checked) {
@@ -75,7 +76,12 @@ setForm.addEventListener("submit", async (event) => {
     setLead.textContent = "All set.";
     setMessage(`Your password is set and your email is confirmed. <a href="login.html">Log in as ${escapeHTML(username)}</a>.`, "success");
   } catch (err) {
-    setMessage(escapeHTML(err.message), "error");
+    if (err.code === "WEAK_PASSWORD") {
+      fieldError(newPassword, err.message);
+      newPassword.focus();
+    } else {
+      setMessage(escapeHTML(err.message), "error");
+    }
     submit.disabled = false;
     submit.classList.remove("is-loading");
   }

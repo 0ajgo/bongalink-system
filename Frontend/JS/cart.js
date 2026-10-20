@@ -100,11 +100,13 @@ const cartApi = {
     await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
     return syncCartFromServer();
   },
-  // The API has add/remove only, so a new quantity is "remove, then add N".
+  // Sets the line to exactly `quantity` in one request (0 removes it). If the server
+  // refuses (e.g. more than available), the line keeps its old quantity.
   async setQuantity(productId, quantity) {
-    await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
     if (quantity > 0) {
-      await apiFetch("/cart", { method: "POST", body: JSON.stringify({ productId, quantity }) });
+      await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "PUT", body: JSON.stringify({ quantity }) });
+    } else {
+      await apiFetch(`/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
     }
     return syncCartFromServer();
   }

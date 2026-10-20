@@ -105,9 +105,28 @@ describe("cart page (server cart)", () => {
         else items.push({ id: Number(body.productId), quantity: body.quantity, name: "Part", price: "100.00", image: null, stock: 9 });
         return { body: {} };
       }
+      if (url.startsWith("/cart/") && method === "PUT") {
+        const row = items.find(i => i.id === Number(url.split("/")[2]));
+        if (body.quantity > row.stock) return { status: 400, body: { error: `Only ${row.stock} available.` } };
+        row.quantity = body.quantity;
+        return { body: {} };
+      }
       return { body: [] };
     };
   }
+
+  test("a refused change (more than available) keeps the line and its quantity", async () => {
+    const items = [{ id: 7, quantity: 2, name: "Fuser unit", price: "500.00", image: null, stock: 5 }];
+    const page = await openPage("Pages/COpage/cart.html", { api: cartApi(items) });
+    items[0].stock = 2;   // someone else bought the rest; the page still thinks 5 are available
+    page.$('[data-step="1"][data-id="7"]').click();
+    await page.until(() => page.calls.some(c => c.method === "PUT"));
+    await page.settle();
+    expect(page.calls.filter(c => c.method !== "GET").map(c => c.method)).toEqual(["PUT"]);   // no DELETE first
+    expect(page.$$(".line")).toHaveLength(1);
+    expect(items[0].quantity).toBe(2);
+    page.close();
+  });
 
   test("shows the server cart; + sets the new quantity on the server; Remove deletes it there", async () => {
     const page = await openPage("Pages/COpage/cart.html", { api: cartApi([
@@ -122,7 +141,7 @@ describe("cart page (server cart)", () => {
     page.$('[data-step="1"][data-id="7"]').click();
     await page.until(() => page.$(".summary-total .price")?.textContent === "₱1,200.00");
     const changes = page.calls.filter(c => c.method !== "GET").map(c => [c.method, c.url, c.body]);
-    expect(changes).toEqual([["DELETE", "/cart/7", undefined], ["POST", "/cart", { productId: "7", quantity: 2 }]]);
+    expect(changes).toEqual([["PUT", "/cart/7", { quantity: 2 }]]);   // one request sets the new quantity
 
     page.$('[data-remove="8"]').click();
     await page.until(() => page.$$(".line").length === 1);
@@ -226,8 +245,8 @@ describe("profile page", () => {
     page.$("#infoEmail").dispatchEvent(new page.window.Event("input"));
     expect(page.$("#infoPasswordField").hidden).toBe(false);
 
-    page.$("#newPassword").value = "abcdef";
-    page.$("#confirmPassword").value = "abcdeg";
+    page.$("#newPassword").value = "abcdef-1234";
+    page.$("#confirmPassword").value = "abcdef-1235";
     page.$("#passwordForm").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
     expect(page.$("#passwordError").textContent).toBe("The new passwords don't match.");
     expect(page.calls.some(c => c.url === "/v1/account/password")).toBe(false);

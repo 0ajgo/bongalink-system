@@ -42,7 +42,7 @@ class Settings:
     db_port: int = _int("DB_PORT", 3306)
     db_user: str = os.environ.get("DB_USER", "root")
     db_password: str = os.environ.get("DB_PASSWORD", "")
-    db_name: str = os.environ.get("DB_NAME", "bongalink")
+    db_name: str = os.environ.get("DB_NAME", "bongalink_real")
 
     poll_seconds: int = _int("ML_POLL_SECONDS", 5)
     quiet_seconds: int = _int("ML_QUIET_SECONDS", 10)          # debounce: wait for edits to stop...

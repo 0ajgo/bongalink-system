@@ -20,6 +20,54 @@ function fakeEventSource(window) {
   return sources;
 }
 
+// One fake browser shared by several pages (tabs): the Web Locks API, a BroadcastChannel
+// between the tabs and the EventSources they open. jsdom has none of these.
+function fakeBrowser() {
+  const sources = [];
+  const channels = new Set();
+  const waiting = [];
+  let held = null;
+  const grant = () => {
+    if (held || !waiting.length) return;
+    held = waiting.shift();
+    Promise.resolve(held.callback()).then((value) => { const done = held; held = null; done.resolve(value); grant(); });
+  };
+  const locks = {
+    request(name, { signal } = {}, callback) {
+      return new Promise((resolve, reject) => {
+        const entry = { callback, resolve };
+        signal?.addEventListener("abort", () => {
+          const i = waiting.indexOf(entry);
+          if (i >= 0) { waiting.splice(i, 1); reject(new Error("AbortError")); }
+        });
+        waiting.push(entry);
+        grant();
+      });
+    }
+  };
+  class Channel {
+    constructor(name) { this.name = name; channels.add(this); }
+    postMessage(data) {
+      const copy = JSON.parse(JSON.stringify(data));
+      for (const c of channels) if (c !== this && c.name === this.name) setTimeout(() => c.onmessage?.({ data: copy }), 0);
+    }
+    close() { channels.delete(this); }
+  }
+  return {
+    sources,
+    install(window) {
+      Object.defineProperty(window.navigator, "locks", { value: locks, configurable: true });
+      window.BroadcastChannel = Channel;
+      window.EventSource = class {
+        constructor(url) { this.url = url; this.listeners = {}; this.closed = false; this.window = window; sources.push(this); }
+        addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+        emit(type, data) { (this.listeners[type] || []).forEach((fn) => fn({ data: JSON.stringify(data) })); }
+        close() { this.closed = true; }
+      };
+    }
+  };
+}
+
 // Stubbed notification API with server-side state, so read / mark-all change what comes back.
 function bellApi({ items = [], unread = items.filter((n) => !n.read).length, extra = {} } = {}) {
   const state = { items: items.map((n) => ({ ...n })), unread, tickets: 0 };
@@ -192,5 +240,92 @@ describe("notification bell", () => {
     expect(page.calls.slice(before).map((c) => c.url)).toEqual(["/v1/admin/notifications/unread-count"]);
     expect(sources).toHaveLength(2);
     page.close();
+  });
+
+  test("without shared tabs (no Web Locks): a hidden tab closes its stream and polls, and reconnects when shown", async () => {
+    let sources, visibility = "visible";
+    const intervals = [];
+    const { handler } = bellApi({ unread: 1 });
+    const page = await open({ api: handler, setup: (w) => {
+      sources = fakeEventSource(w);
+      Object.defineProperty(w.document, "visibilityState", { get: () => visibility, configurable: true });
+      const real = w.setInterval;
+      w.setInterval = (fn, ms) => { intervals.push(ms); return real(fn, ms); };
+    } });
+    await page.until(() => sources.length === 1);
+    expect(page.window.navigator.locks).toBeUndefined();
+
+    visibility = "hidden";
+    page.doc.dispatchEvent(new page.window.Event("visibilitychange"));
+    expect(sources[0].closed).toBe(true);
+    expect(intervals).toContain(30000);
+
+    visibility = "visible";
+    page.doc.dispatchEvent(new page.window.Event("visibilitychange"));
+    await page.until(() => sources.length === 2);
+    expect(sources[1].url).toMatch(/ticket=ticket-2$/);
+    page.close();
+  });
+});
+
+describe("notification bell across tabs: one stream per browser", () => {
+  const openTabs = async (browser, count, api, opts = {}) => {
+    const tabs = [];
+    for (let i = 0; i < count; i++) tabs.push(await open({ api, setup: (w) => browser.install(w), ...opts }));
+    return tabs;
+  };
+
+  test("8 admin tabs share ONE stream (the browser's 6-connection limit is never used up); every tab gets each notification", async () => {
+    const browser = fakeBrowser();
+    const { handler, state } = bellApi({ unread: 2 });
+    const tabs = await openTabs(browser, 8, handler);
+    await tabs[0].until(() => browser.sources.length === 1);
+    browser.sources[0].emit("ready", { unread: 2 });
+    await Promise.all(tabs.map((t) => t.until(() => badge(t).textContent === "2")));
+    await tabs[7].settle();
+    expect(browser.sources).toHaveLength(1);
+    expect(state.tickets).toBe(1);   // one stream ticket for the whole browser
+
+    browser.sources[0].emit("notification", item(9, { title: "New sale: order #9" }));
+    await Promise.all(tabs.map((t) => t.until(() => badge(t).textContent === "3")));
+    expect(tabs.every((t) => badge(t).textContent === "3")).toBe(true);
+    tabs.forEach((t) => t.close());
+  });
+
+  test("when the tab holding the stream closes, another tab takes it over", async () => {
+    const browser = fakeBrowser();
+    const { handler, state } = bellApi({ unread: 0 });
+    const [first, second, third] = await openTabs(browser, 3, handler);
+    await first.until(() => browser.sources.length === 1);
+    const holder = [first, second, third].find((t) => t.window === browser.sources[0].window);
+    browser.sources[0].emit("ready", { unread: 0 });
+
+    holder.window.startNotificationBell.stop();   // what closing the tab does: the lock is released
+    holder.close();
+    await second.until(() => browser.sources.length === 2);
+    expect(browser.sources[0].closed).toBe(true);
+    expect(state.tickets).toBe(2);
+    const others = [first, second, third].filter((t) => t !== holder);
+    browser.sources[1].emit("ready", { unread: 0 });
+    browser.sources[1].emit("notification", item(4));
+    await Promise.all(others.map((t) => t.until(() => badge(t).textContent === "1")));
+    others.forEach((t) => t.close());
+  });
+
+  test("marking notifications read in one tab updates the same admin's other tabs", async () => {
+    const browser = fakeBrowser();
+    const { handler } = bellApi({ items: [item(2), item(1)] });
+    const [a, b] = await openTabs(browser, 2, handler);
+    await a.until(() => browser.sources.length === 1);
+    browser.sources[0].emit("ready", { unread: 2 });
+    await Promise.all([a, b].map((t) => t.until(() => badge(t).textContent === "2")));
+
+    bellButton(a).click();
+    await a.until(() => a.$$(".notif-item").length === 2);
+    a.$("[data-notif-read-all]").click();
+    await a.until(() => badge(a).hidden);
+    await b.until(() => badge(b).hidden);
+    expect(b.calls.at(-1).url).toBe("/v1/admin/notifications/unread-count");
+    a.close(); b.close();
   });
 });

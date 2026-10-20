@@ -14,7 +14,7 @@ const historyDays = document.getElementById("historyDays");
 const chartEl = document.getElementById("historyChart");
 
 let predictions = [];
-let lastSeenUpdate = null;
+let lastSeenUpdate;   // undefined until the first status; null = reload on the next one
 let editing = false;   // don't redraw the table under the admin's cursor
 
 const num = (value, digits = 1) => value === null || value === undefined ? null : Number(value).toFixed(digits);
@@ -59,13 +59,52 @@ async function loadStatus() {
   document.getElementById("statusModel").innerHTML = m
     ? `Model <strong>${escapeHTML(m.version)}</strong><br><span class="muted">${escapeHTML(m.trained_with)}</span>` : "";
 
-  // New predictions landed: refresh the table and change log.
+  // New predictions landed: refresh the table and change log (the page loads them itself at first).
+  const first = lastSeenUpdate === undefined;
   if (s.last_update_at !== lastSeenUpdate) {
     lastSeenUpdate = s.last_update_at;
-    await Promise.all([loadPredictions(), loadEvents()]);
-    if (historyProduct.value) loadHistory();
+    if (first) return;
+    await Promise.all([showPredictions(), showEvents()]);
+    if (historyProduct.value) showHistory();
   }
 }
+
+/* ---------------------------------------------------------------------
+   SECTIONS — each loads on its own and shows its own error with Try
+   again, so one slow or failed request never leaves the others on their
+   loading placeholders (api.js gives up on a request after 20 s).
+   --------------------------------------------------------------------- */
+const section = (load, fail) => async function show() {
+  try { await load(); } catch (err) { fail(err, show); }
+};
+// Puts html (with a Try again button #id) in el and wires the button to retry.
+function retryable(el, html, id, retry) {
+  el.innerHTML = html;
+  document.getElementById(id)?.addEventListener("click", retry);
+}
+const errorRow = (cols, message, id) => `<tr><td colspan="${cols}">${UIState.error(message, id)}</td></tr>`;
+
+const showStatus = section(loadStatus, (err, retry) => {
+  const badge = document.getElementById("statusBadge");
+  badge.className = "badge badge--warning";
+  badge.innerHTML = `${icon("triangle-alert", { size: 14 })} Unavailable`;
+  document.getElementById("lastUpdate").textContent = "couldn't load";
+  retryable(document.getElementById("statusSub"), `${escapeHTML(`Couldn't load the forecast status: ${err.message}`)}
+    <button class="btn btn--ghost btn--sm" type="button" id="retryStatus">${icon("refresh-cw", { size: 14 })} Try again</button>`,
+    "retryStatus", retry);
+});
+const showPredictions = section(loadPredictions, (err, retry) =>
+  retryable(predRows, errorRow(9, `Couldn't load the stock forecast: ${err.message}`, "retryForecast"), "retryForecast", retry));
+const showEvents = section(loadEvents, (err, retry) =>
+  retryable(document.getElementById("eventRows"), errorRow(7, `Couldn't load the change log: ${err.message}`, "retryEvents"),
+    "retryEvents", retry));
+function historyFailed(err, retry) {
+  retryable(chartEl, UIState.error(`Couldn't load the sales history: ${err.message}`, "retryHistory"), "retryHistory", retry);
+  document.getElementById("historyTable").innerHTML = "";
+  document.getElementById("historyNote").textContent = "";
+}
+const showHistory = section(() => loadHistory(), historyFailed);
+const showProductsAndHistory = section(async () => { await loadProducts(); await loadHistory(); }, historyFailed);
 
 /* ---------------------------------------------------------------------
    FORECAST TABLE
@@ -341,9 +380,28 @@ async function loadProducts() {
   // Hidden parts: open the editor to show them in the shop again.
   const hidden = products.filter(p => !p.is_active);
   document.getElementById("hiddenSection").hidden = hidden.length === 0;
+  document.getElementById("hiddenLabel").textContent = `Hidden parts (${hidden.length})`;
   document.getElementById("hiddenList").innerHTML = hidden.map(p => `
     <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}">${icon("pencil", { size: 14 })} ${escapeHTML(p.name)}</button>`).join("");
 }
+
+/* Hidden parts open and close from their title; collapsed by default. Each admin's
+   choice is remembered in this browser (localStorage, keyed by username). */
+const HIDDEN_OPEN_KEY = `bongalink.inventory.hiddenOpen.${session.username}`;
+function setHiddenOpen(open, { save = true } = {}) {
+  document.getElementById("hiddenToggle").setAttribute("aria-expanded", String(open));
+  document.getElementById("hiddenBody").hidden = !open;
+  document.getElementById("hiddenSection").classList.toggle("is-collapsed", !open);
+  if (!save) return;
+  try { localStorage.setItem(HIDDEN_OPEN_KEY, open ? "1" : "0"); } catch (e) { /* storage blocked: not remembered */ }
+}
+document.getElementById("hiddenToggle").addEventListener("click", (e) =>
+  setHiddenOpen(e.currentTarget.getAttribute("aria-expanded") !== "true"));
+(function restoreHiddenOpen() {
+  let open = false;
+  try { open = localStorage.getItem(HIDDEN_OPEN_KEY) === "1"; } catch (e) { /* storage blocked: collapsed */ }
+  setHiddenOpen(open, { save: false });
+})();
 
 /* ---------------------------------------------------------------------
    EDIT PART — js/product-editor.js. After any save, refresh the table,
@@ -353,7 +411,7 @@ function openEditor(id) {
   openProductEditor(id, {
     onChange: () => {
       editing = false;
-      return Promise.all([loadPredictions(), loadProducts(), loadEvents()]).catch(() => {});
+      return Promise.all([showPredictions(), loadProducts().catch(() => {}), showEvents()]);
     }
   });
 }
@@ -388,9 +446,9 @@ async function loadHistory() {
   document.getElementById("historyNote").textContent = note;
 }
 
-historyProduct.addEventListener("change", loadHistory);
-historyDays.addEventListener("change", loadHistory);
-window.addEventListener("resize", () => { clearTimeout(loadHistory.t); loadHistory.t = setTimeout(loadHistory, 200); });
+historyProduct.addEventListener("change", showHistory);
+historyDays.addEventListener("change", showHistory);
+window.addEventListener("resize", () => { clearTimeout(loadHistory.t); loadHistory.t = setTimeout(showHistory, 200); });
 
 /* ---------------------------------------------------------------------
    CHANGE LOG
@@ -419,25 +477,19 @@ async function init() {
   predRows.innerHTML = UIState.rowSkeletons(9, 5);
   document.getElementById("eventRows").innerHTML = UIState.rowSkeletons(7, 3);
   chartEl.innerHTML = `<span class="skeleton skeleton--media"></span>`;
-  try {
-    await loadProducts();
-    await loadStatus();          // also loads predictions + events the first time
-    await loadHistory();
-  } catch (err) {
-    predRows.innerHTML = `<tr><td colspan="9">${UIState.error(err.message, "retryInventory")}</td></tr>`;
-    document.getElementById("retryInventory").addEventListener("click", init);
-    return;
-  }
+  // All sections in parallel; the chart is drawn again once the forecasts are in (its forecast line).
+  await Promise.all([showStatus(), showEvents(), showProductsAndHistory(),
+    showPredictions().then(() => { if (historyProduct.value) return showHistory(); })]);
   if (location.hash === "#forecasts") document.getElementById("forecasts").scrollIntoView();
   // inventory.html?edit=12 (e.g. "Edit this part" on the product page) opens the editor.
   const editId = new URLSearchParams(location.search).get("edit");
   if (/^\d+$/.test(editId || "")) openEditor(editId);
-  setInterval(() => loadStatus().catch(() => {}), STATUS_POLL_MS);
+  setInterval(showStatus, STATUS_POLL_MS);
   // A finished retrain brings new forecasts and trend labels: reload them and the chart.
   MLTraining.mount(document.getElementById("modelTraining"), {
     onFinished: () => {
       lastSeenUpdate = null;
-      loadStatus().then(() => loadHistory()).catch(() => {});
+      showStatus().then(showHistory);
     }
   });
 }

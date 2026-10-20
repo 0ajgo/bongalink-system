@@ -56,7 +56,7 @@ $("resendCode").addEventListener("click", async (event) => {
   busy(button, true);
   $("verifyMessage").textContent = "";
   try {
-    const r = await apiFetch("/v1/auth/verify-email/send", { method: "POST", body: JSON.stringify({ email: me.email }) });
+    const r = await apiFetch("/v1/auth/verify-email/send", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ email: me.email }) });
     toast(r.message, "success");
   } catch (err) {
     $("verifyMessage").textContent = err.message;
@@ -119,7 +119,8 @@ $("passwordForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("passwordError").textContent = "";
   const current = $("currentPassword").value, next = $("newPassword").value;
-  if (next.length < 6) return ($("passwordError").textContent = "New password must be at least 6 characters.");
+  const weak = newPasswordProblem(next);
+  if (weak) return ($("passwordError").textContent = weak);
   if (next !== $("confirmPassword").value) return ($("passwordError").textContent = "The new passwords don't match.");
   busy($("passwordSubmit"), true);
   try {
