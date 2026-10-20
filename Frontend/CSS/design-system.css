@@ -140,7 +140,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .layout-aside   { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--space-6); align-items: start; }
 .stack > * + * { margin-top: var(--space-4); }
 .row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 
 @media (max-width: 960px) {
   .layout-sidebar, .layout-aside { grid-template-columns: minmax(0, 1fr); }
@@ -149,7 +148,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .container { padding: 0 var(--space-4); }
   .page { padding-top: var(--space-5); padding-bottom: var(--space-7); }
   h1 { font-size: var(--text-2xl); }
-  .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---------------------------------------------------------------- 4. BUTTONS */
