@@ -1,8 +1,8 @@
 """Import the hand-kept sales sheet into a FRESH copy of the Bongalink database.
 
     python import_sales.py --dry-run                  # clean + report, writes nothing
-    python import_sales.py                            # (re)creates bongalink_real and imports
-    python import_sales.py --file other.xlsx --database bongalink_real2
+    python import_sales.py                            # (re)creates bongalink_import and imports
+    python import_sales.py --file other.xlsx --database bongalink_import2
 
 What it does (see the report it prints):
   * reads tab "SALES" (headers in row 1, data from row 3), skipping blank separator rows;
@@ -14,7 +14,9 @@ What it does (see the report it prints):
 
 Destructive only for the target database: it is dropped and rebuilt from
 Backend/database/bongalink_schema.sql + migrations/003_ml_sync.sql every run.
-It refuses to touch the production database name ("bongalink").
+It refuses the shop's databases, "bongalink_real" (the shop's own server) and "bongalink" (Docker):
+they hold real orders, accounts and stock changes made since the first import, which a rebuild
+would erase. Import into a new name, check it, and copy what you need.
 AFTER AN IMPORT, encrypt the personal data it wrote (the placeholder customer's email and the
 copied admin accounts): run migrations 004-009 on the new database, then
     node Backend/scripts/encrypt-personal-data.js --apply --database <name>
@@ -48,7 +50,9 @@ ROOT = WORKER.parents[1]
 SCHEMA = ROOT / "Backend" / "database" / "bongalink_schema.sql"
 MIGRATION = ROOT / "Backend" / "database" / "migrations" / "003_ml_sync.sql"
 DEFAULT_FILE = WORKER / "data" / "2026 Bongalink Sheet SALES.xlsx"
-PRODUCTION_DB = "bongalink"
+# The shop's databases: never imported into; read only for categories and admin accounts.
+PROTECTED_DBS = ("bongalink_real", "bongalink")
+DEFAULT_DATABASE = "bongalink_import"
 DEFAULT_STOCK = 5
 IMPORT_USER = "import_walkin"
 
@@ -444,17 +448,22 @@ def import_rows(rows: list[Row], database: str, s) -> dict:
     conn.autocommit(False)
 
     with conn.cursor() as cur:
-        # Same categories as production, plus Printers (the sheet sells whole printers).
-        cur.execute(f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = 'categories'",
-                    (PRODUCTION_DB,))
-        have_prod = cur.fetchone()[0] == 1
-        if have_prod:
-            cur.execute(f"INSERT INTO categories (category_id, name) SELECT category_id, name FROM `{PRODUCTION_DB}`.categories")
+        # Same categories as the shop's database (the first of PROTECTED_DBS on this server), plus
+        # Printers (the sheet sells whole printers).
+        source = None
+        for name in PROTECTED_DBS:
+            cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = 'categories'",
+                        (name,))
+            if cur.fetchone()[0] == 1:
+                source = name
+                break
+        if source:
+            cur.execute(f"INSERT INTO categories (category_id, name) SELECT category_id, name FROM `{source}`.categories")
             # Admin accounts are copied so you can log in to verify; customers are not.
             cur.execute(f"""INSERT INTO users (user_id, username, email, password_hash, role, created_at)
                             SELECT user_id, username, email, password_hash, role, created_at
-                            FROM `{PRODUCTION_DB}`.users WHERE role = 'admin'""")
-        admins_copied = cur.rowcount if have_prod else 0
+                            FROM `{source}`.users WHERE role = 'admin'""")
+        admins_copied = cur.rowcount if source else 0
         for name in ("Printer Parts", "Computer Parts", "Laptop Parts", "Accessories", "Electronics", "Other", "Printers"):
             cur.execute("INSERT IGNORE INTO categories (name) VALUES (%s)", (name,))
         cur.execute("SELECT name, category_id FROM categories")
@@ -498,18 +507,18 @@ def import_rows(rows: list[Row], database: str, s) -> dict:
             orders += 1
     conn.commit()
     conn.close()
-    return {"products": len(product_ids), "orders": orders, "admins_copied": admins_copied}
+    return {"products": len(product_ids), "orders": orders, "admins_copied": admins_copied, "source": source}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--file", type=Path, default=DEFAULT_FILE)
-    ap.add_argument("--database", default="bongalink_real")
+    ap.add_argument("--database", default=DEFAULT_DATABASE)
     ap.add_argument("--dry-run", action="store_true", help="clean and report only; write nothing")
     args = ap.parse_args()
 
-    if args.database == PRODUCTION_DB:
-        raise SystemExit(f"refusing to import into '{PRODUCTION_DB}' (production): this script drops and "
+    if args.database in PROTECTED_DBS:
+        raise SystemExit(f"refusing to import into '{args.database}' (the shop's database): this script drops and "
                          "recreates its target. Import into a copy and verify first.")
     rows, report = clean(args.file)
     print_report(rows, report, args.file)
@@ -519,12 +528,12 @@ def main() -> int:
 
     s = config.load()
     print(f"\nIMPORTING into database '{args.database}' on {s.db_host}:{s.db_port} "
-          f"(dropped and recreated; production '{PRODUCTION_DB}' is only read for categories/admin accounts)")
+          f"(dropped and recreated; the shop's database is only read for categories/admin accounts)")
     result = import_rows(rows, args.database, s)
     print(f"done: {result['products']} products, {result['orders']} orders (status 'completed') in '{args.database}'"
-          + (f"; {result['admins_copied']} admin account(s) copied from '{PRODUCTION_DB}'" if result["admins_copied"] else
-             f"\nNOTE: '{PRODUCTION_DB}' has no admin accounts to copy, so '{args.database}' has none. To log in to the "
-             "dashboard, create one as in Backend/README.md (section 2), using this database name."))
+          + (f"; {result['admins_copied']} admin account(s) copied from '{result['source']}'" if result["admins_copied"] else
+             f"\nNOTE: no admin accounts to copy (from {' or '.join(PROTECTED_DBS)}), so '{args.database}' has none. To log "
+             "in to the dashboard, sign up and promote an account as in Backend/README.md (section 4), using this database name."))
     return 0
 
 
