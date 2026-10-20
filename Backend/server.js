@@ -34,8 +34,12 @@ const { LogisticsError } = require("./services/lalamove");
 const { startOrderExpiryJob } = require("./jobs/expireOrders");
 const { statusLines } = require("./lib/integrationStatus");
 const { logError } = require("./lib/pii");
+const { trustProxySetting } = require("./lib/trustProxy");
 
 const app = express();
+
+// Behind a proxy, req.ip (and so every per-IP rate limit) must be the visitor's address.
+app.set("trust proxy", trustProxySetting());
 
 // PayMongo signs the RAW body, so this route must come BEFORE express.json().
 app.post("/api/v1/webhooks/paymongo", express.raw({ type: "application/json" }), ah(paymongoWebhook));
