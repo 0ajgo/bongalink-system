@@ -21,7 +21,7 @@ const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
-const { MINUTE, HOUR, envLimit, limiter, resetAll } = require("../lib/rateLimit");
+const { MINUTE, HOUR, envLimit, limiter, resetAll, RATE_LIMIT_DEFAULTS } = require("../lib/rateLimit");
 const { newPasswordProblem } = require("../lib/passwordRule");
 
 const router = express.Router();
@@ -40,9 +40,9 @@ const router = express.Router();
    --------------------------------------------------------------------- */
 const tooManySignups = { error: "Too many new accounts from this network. Please try again later." };
 const notAFormError = { skipSuccessfulRequests: true, requestWasSuccessful: (req, res) => res.statusCode === 400 };
-const registerPerHour = limiter({ windowMs: HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_HOUR, 5),
+const registerPerHour = limiter({ windowMs: HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_HOUR, RATE_LIMIT_DEFAULTS.RATE_LIMIT_REGISTER_PER_IP_HOUR),
   message: tooManySignups, ...notAFormError });
-const registerPerDay = limiter({ windowMs: 24 * HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_DAY, 20),
+const registerPerDay = limiter({ windowMs: 24 * HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_DAY, RATE_LIMIT_DEFAULTS.RATE_LIMIT_REGISTER_PER_IP_DAY),
   message: tooManySignups, ...notAFormError });
 
 router.post("/register", registerPerHour, registerPerDay, ah(async (req, res) => {
@@ -129,7 +129,7 @@ const LOGIN_WINDOW_MS = 15 * MINUTE;
 const tooManyLogins = { error: "Too many failed logins. Please wait 15 minutes and try again, or reset your password." };
 const loginPerUser = limiter({ windowMs: LOGIN_WINDOW_MS, limit: 10, message: tooManyLogins, skipSuccessfulRequests: true,
   keyGenerator: (req) => `${req.ip}|${String(req.body?.username ?? "").trim().toLowerCase()}` });
-const loginPerIp = limiter({ windowMs: LOGIN_WINDOW_MS, limit: envLimit(process.env.RATE_LIMIT_LOGIN_PER_IP, 50),
+const loginPerIp = limiter({ windowMs: LOGIN_WINDOW_MS, limit: envLimit(process.env.RATE_LIMIT_LOGIN_PER_IP, RATE_LIMIT_DEFAULTS.RATE_LIMIT_LOGIN_PER_IP),
   message: tooManyLogins, skipSuccessfulRequests: true });
 
 // Compared against when there is no real hash to check (unknown, deleted or not set up yet), so
@@ -257,7 +257,7 @@ router.post("/set-password", setupLimit, ah(async (req, res) => {
 const RESET_SENT = "If that email has an account, we've sent a reset link. It works for 30 minutes.";
 const tooMany = { error: "Too many reset requests. Please wait a while and try again.", code: "RATE_LIMITED" };
 const resetStores = [new MemoryStore(), new MemoryStore(), new MemoryStore()];
-const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_FORGOT_PASSWORD_PER_IP, 10), store: resetStores[0],
+const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_FORGOT_PASSWORD_PER_IP, RATE_LIMIT_DEFAULTS.RATE_LIMIT_FORGOT_PASSWORD_PER_IP), store: resetStores[0],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany });
 const forgotPerEmail = rateLimit({ windowMs: 60 * 60 * 1000, limit: 3, store: resetStores[1],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany,

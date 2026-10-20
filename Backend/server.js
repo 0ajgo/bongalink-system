@@ -1,11 +1,13 @@
 /* =====================================================================
    server.js — Bongalink API entry point
    Run with:  npm run dev   (local development, auto-restarts)
-              npm start     (production)
+              npm start     (production: NODE_ENV=production, under Docker or
+                             systemd so it restarts on failure, DEPLOYMENT.md)
    Tests import `app` from here without starting the listener.
    ===================================================================== */
 
-require("dotenv").config();
+// Backend/.env, wherever the process was started from (a service manager may use another folder).
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -35,7 +37,7 @@ const { statusLines } = require("./lib/integrationStatus");
 const { logError } = require("./lib/pii");
 const { trustProxySetting } = require("./lib/trustProxy");
 const { securityHeaders, allowCrossOriginImages } = require("./lib/securityHeaders");
-const { envLimit, limiter } = require("./lib/rateLimit");
+const { envLimit, limiter, RATE_LIMIT_DEFAULTS } = require("./lib/rateLimit");
 
 const app = express();
 
@@ -69,7 +71,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/admin/ml", mlRoutes);
 
 // Limit code requests/guesses per IP (on top of the per-code attempt limit).
-const verifyEmailPerIp = limiter({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_VERIFY_EMAIL_PER_IP, 20),
+const verifyEmailPerIp = limiter({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_VERIFY_EMAIL_PER_IP, RATE_LIMIT_DEFAULTS.RATE_LIMIT_VERIFY_EMAIL_PER_IP),
   message: { error: "Too many tries. Please wait a few minutes." } });
 app.use("/api/v1/auth/verify-email", verifyEmailPerIp, verifyEmailRoutes);
 app.use("/api/v1/account", accountRoutes);   // profile, password, saved addresses
@@ -115,15 +117,32 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  // The ML worker is a separate process; this says whether it's running and when it last trained.
-  require("./lib/mlStatus").mlStatusLine(require("./db")).then((line) => {
-    console.log(`  ${line}`);
-    const PORT = process.env.PORT || 4000;
-    app.listen(PORT, () => {
-      console.log(`Bongalink API running on http://localhost:${PORT}`);
+  // Production settings (lib/productionChecks.js): errors stop the start, warnings are listed.
+  const { errors, warnings } = require("./lib/productionChecks").startupChecks();
+  warnings.forEach((w) => console.warn(`WARNING: ${w}`));
+  if (errors.length) {
+    errors.forEach((e) => console.error(`ERROR: ${e}`));
+    console.error("The server will not start in production until these are fixed in Backend/.env (see DEPLOYMENT.md).");
+    process.exit(1);
+  }
+
+  // If MySQL can't be reached, stop here instead of answering every request with an error:
+  // Docker or the service manager starts the API again a few seconds later (DEPLOYMENT.md).
+  const pool = require("./db");
+  pool.query("SELECT 1").catch((err) => {
+    console.error(`Database: can't connect (${err.code || err.message}). Check DB_HOST, DB_USER, DB_PASSWORD and DB_NAME in Backend/.env.`);
+    process.exit(1);
+  })
+    // The ML worker is a separate process; this says whether it's running and when it last trained.
+    .then(() => require("./lib/mlStatus").mlStatusLine(pool))
+    .then((line) => {
+      console.log(`  ${line}`);
+      const PORT = process.env.PORT || 4000;
+      app.listen(PORT, () => {
+        console.log(`Bongalink API running on http://localhost:${PORT}`);
+      });
+      startOrderExpiryJob();
     });
-    startOrderExpiryJob();
-  });
 }
 
 module.exports = app;

@@ -37,8 +37,8 @@ router.use(requireAuth);
 // Changes that check the current password (email, password): failed ones are counted per account,
 // so a stolen login can't be used to guess the password. RATE_LIMIT_ACCOUNT_PER_USER, default 10
 // per 15 minutes.
-const { MINUTE, envLimit, limiter } = require("../lib/rateLimit");
-const passwordCheckLimit = limiter({ windowMs: 15 * MINUTE, limit: envLimit(process.env.RATE_LIMIT_ACCOUNT_PER_USER, 10),
+const { MINUTE, envLimit, limiter, RATE_LIMIT_DEFAULTS } = require("../lib/rateLimit");
+const passwordCheckLimit = limiter({ windowMs: 15 * MINUTE, limit: envLimit(process.env.RATE_LIMIT_ACCOUNT_PER_USER, RATE_LIMIT_DEFAULTS.RATE_LIMIT_ACCOUNT_PER_USER),
   skipSuccessfulRequests: true, keyGenerator: (req) => `user:${req.user.userId}`,
   message: { error: "Too many failed tries. Please wait 15 minutes and try again." } });
 

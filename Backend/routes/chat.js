@@ -5,7 +5,7 @@ const express = require('express');
 const { rateLimit, MemoryStore } = require('express-rate-limit');
 const ah = require('../lib/asyncHandler');
 const { optionalAuth } = require('../middleware/auth');
-const { envLimit } = require('../lib/rateLimit');
+const { envLimit, RATE_LIMIT_DEFAULTS } = require('../lib/rateLimit');
 const { handleMessage, MAX_MESSAGE } = require('../services/chatbot');
 
 const router = express.Router();
@@ -20,8 +20,8 @@ const limiter = (windowMs, limit, store, extra = {}) =>
   rateLimit({ windowMs, limit, store, standardHeaders: 'draft-7', legacyHeaders: false, message: tooFast, ...extra });
 const perSession = limiter(60 * 1000, 8, stores[0], { keyGenerator: (req) => `session:${req.body?.session_id}` });
 // The per-IP ones are raisable in .env for a test session on one shared IP.
-const perIp = limiter(60 * 1000, envLimit(process.env.RATE_LIMIT_CHAT_PER_IP_MINUTE, 20), stores[1]);
-const perIpDaily = limiter(24 * 60 * 60 * 1000, envLimit(process.env.RATE_LIMIT_CHAT_PER_IP_DAY, 300), stores[2], {
+const perIp = limiter(60 * 1000, envLimit(process.env.RATE_LIMIT_CHAT_PER_IP_MINUTE, RATE_LIMIT_DEFAULTS.RATE_LIMIT_CHAT_PER_IP_MINUTE), stores[1]);
+const perIpDaily = limiter(24 * 60 * 60 * 1000, envLimit(process.env.RATE_LIMIT_CHAT_PER_IP_DAY, RATE_LIMIT_DEFAULTS.RATE_LIMIT_CHAT_PER_IP_DAY), stores[2], {
   message: { error: "You've reached today's chat limit. Please contact the shop directly.", code: 'RATE_LIMITED' },
 });
 
