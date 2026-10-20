@@ -5,6 +5,7 @@ const { blindIndex } = require("../lib/dataProtection");
 const app = require("../server");
 const { mail } = require("../services/mailer");
 const { pool, resetDb } = require("./helpers");
+const rateLimits = require("../lib/rateLimit");
 
 const lastCode = () => mail.verificationCode.mock.calls.at(-1)[2];
 
@@ -17,6 +18,7 @@ async function register(email = "new@example.com") {
 
 beforeEach(async () => {
   await resetDb();
+  await rateLimits.resetAll();   // each test registers from the same IP
   jest.clearAllMocks();
 });
 afterAll(() => pool.end());

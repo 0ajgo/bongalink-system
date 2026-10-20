@@ -90,3 +90,55 @@ describe("login", () => {
     expect(envLimit(" 400 ", 50)).toBe(400);
   });
 });
+
+describe("register", () => {
+  const register = (server, n, overrides = {}) => request(server).post("/api/auth/register")
+    .send({ username: `new${n}`, email: `new${n}@example.com`, password: "a-long-password-1", privacy_consent: true, ...overrides });
+
+  test("5 new accounts per IP per hour, then 429 (each one sends an email)", async () => {
+    for (let i = 1; i <= 5; i++) expect((await register(app, i)).status).toBe(201);
+    const blocked = await register(app, 6);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual({ error: "Too many new accounts from this network. Please try again later.", code: "RATE_LIMITED" });
+    const [rows] = await pool.query("SELECT COUNT(*) AS n FROM users WHERE username LIKE 'new%'");
+    expect(rows[0].n).toBe(5);
+  });
+
+  test("a form sent back as incomplete doesn't count; a taken username does", async () => {
+    for (let i = 0; i < 6; i++) expect((await register(app, 1, { privacy_consent: false })).status).toBe(400);
+    expect((await register(app, 1)).status).toBe(201);
+    for (let i = 0; i < 4; i++) expect((await register(app, 1)).status).toBe(409);
+    expect((await register(app, 2)).status).toBe(429);
+  });
+
+  test("a shared-IP test session raises it with RATE_LIMIT_REGISTER_PER_IP_HOUR / _DAY", async () => {
+    const api = appWith({ RATE_LIMIT_REGISTER_PER_IP_HOUR: "40", RATE_LIMIT_REGISTER_PER_IP_DAY: "40" });
+    try {
+      for (let i = 1; i <= 8; i++) expect((await register(api.app, i)).status).toBe(201);
+    } finally { await api.pool.end(); }
+  });
+
+  test("the day limit applies even when the hour limit is raised", async () => {
+    const api = appWith({ RATE_LIMIT_REGISTER_PER_IP_HOUR: "40", RATE_LIMIT_REGISTER_PER_IP_DAY: "3" });
+    try {
+      for (let i = 1; i <= 3; i++) expect((await register(api.app, i)).status).toBe(201);
+      expect((await register(api.app, 4)).status).toBe(429);
+    } finally { await api.pool.end(); }
+  });
+});
+
+describe("the other per-IP limits a shared-IP session would hit are raisable too", () => {
+  test.each([
+    ["RATE_LIMIT_VERIFY_EMAIL_PER_IP", (s) => request(s).post("/api/v1/auth/verify-email/send").send({})],
+    ["RATE_LIMIT_FORGOT_PASSWORD_PER_IP", (s) => request(s).post("/api/auth/forgot-password").send({ email: "not-an-email" })],
+    ["RATE_LIMIT_CHAT_PER_IP_MINUTE", (s) => request(s).post("/api/v1/chat/messages").send({ session_id: "bad", message: "hi" })],
+    ["RATE_LIMIT_CHAT_PER_IP_DAY", (s) => request(s).post("/api/v1/chat/messages").send({ session_id: "bad", message: "hi" })],
+  ])("%s", async (name, call) => {
+    const api = appWith({ [name]: "2" });
+    try {
+      expect((await call(api.app)).status).not.toBe(429);
+      expect((await call(api.app)).status).not.toBe(429);
+      expect((await call(api.app)).status).toBe(429);
+    } finally { await api.pool.end(); }
+  });
+});

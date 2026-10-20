@@ -21,7 +21,7 @@ const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
-const { MINUTE, envLimit, limiter, resetAll } = require("../lib/rateLimit");
+const { MINUTE, HOUR, envLimit, limiter, resetAll } = require("../lib/rateLimit");
 
 const router = express.Router();
 
@@ -32,8 +32,19 @@ const router = express.Router();
    Accepting the privacy notice is required and recorded in consent_records.
    Always creates a regular "user" account — admins are provisioned
    directly in the database, never through this endpoint.
+   Rate limits per IP (each new account sends an email from the shop's
+   address): RATE_LIMIT_REGISTER_PER_IP_HOUR (default 5) and
+   RATE_LIMIT_REGISTER_PER_IP_DAY (default 20). A form the server sends
+   back as incomplete (400) doesn't count, so typos don't lock anyone out.
    --------------------------------------------------------------------- */
-router.post("/register", ah(async (req, res) => {
+const tooManySignups = { error: "Too many new accounts from this network. Please try again later." };
+const notAFormError = { skipSuccessfulRequests: true, requestWasSuccessful: (req, res) => res.statusCode === 400 };
+const registerPerHour = limiter({ windowMs: HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_HOUR, 5),
+  message: tooManySignups, ...notAFormError });
+const registerPerDay = limiter({ windowMs: 24 * HOUR, limit: envLimit(process.env.RATE_LIMIT_REGISTER_PER_IP_DAY, 20),
+  message: tooManySignups, ...notAFormError });
+
+router.post("/register", registerPerHour, registerPerDay, ah(async (req, res) => {
   try {
     const { username, password } = req.body;
     const email = String(req.body.email || "").trim();
@@ -238,7 +249,7 @@ router.post("/set-password", setupLimit, ah(async (req, res) => {
 const RESET_SENT = "If that email has an account, we've sent a reset link. It works for 30 minutes.";
 const tooMany = { error: "Too many reset requests. Please wait a while and try again.", code: "RATE_LIMITED" };
 const resetStores = [new MemoryStore(), new MemoryStore(), new MemoryStore()];
-const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, store: resetStores[0],
+const forgotPerIp = rateLimit({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_FORGOT_PASSWORD_PER_IP, 10), store: resetStores[0],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany });
 const forgotPerEmail = rateLimit({ windowMs: 60 * 60 * 1000, limit: 3, store: resetStores[1],
   standardHeaders: "draft-7", legacyHeaders: false, message: tooMany,

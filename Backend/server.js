@@ -10,7 +10,6 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
-const rateLimit = require("express-rate-limit");
 const ah = require("./lib/asyncHandler");
 
 const authRoutes = require("./routes/auth");
@@ -35,6 +34,7 @@ const { startOrderExpiryJob } = require("./jobs/expireOrders");
 const { statusLines } = require("./lib/integrationStatus");
 const { logError } = require("./lib/pii");
 const { trustProxySetting } = require("./lib/trustProxy");
+const { envLimit, limiter } = require("./lib/rateLimit");
 
 const app = express();
 
@@ -65,7 +65,9 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/admin/ml", mlRoutes);
 
 // Limit code requests/guesses per IP (on top of the per-code attempt limit).
-app.use("/api/v1/auth/verify-email", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20 }), verifyEmailRoutes);
+const verifyEmailPerIp = limiter({ windowMs: 15 * 60 * 1000, limit: envLimit(process.env.RATE_LIMIT_VERIFY_EMAIL_PER_IP, 20),
+  message: { error: "Too many tries. Please wait a few minutes." } });
+app.use("/api/v1/auth/verify-email", verifyEmailPerIp, verifyEmailRoutes);
 app.use("/api/v1/account", accountRoutes);   // profile, password, saved addresses
 app.use("/api/v1/geo", geoRoutes);            // map pin -> region/province/city (Nominatim, server-side)
 app.use("/api/v1/admin/shipping-rates", rateRoutes);
