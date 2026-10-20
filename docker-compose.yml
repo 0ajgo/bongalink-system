@@ -66,6 +66,8 @@ services:
       DB_NAME: ${DB_NAME:-bongalink}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      # Per-IP rate limits (blank = the defaults in the code); raised only for a shared-IP test session.
+      RATE_LIMIT_LOGIN_PER_IP: ${RATE_LIMIT_LOGIN_PER_IP:-}
       # Encryption of personal information (migration 009): the API won't start without these.
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
       DATA_INDEX_KEY: ${DATA_INDEX_KEY:?set DATA_INDEX_KEY in .env}

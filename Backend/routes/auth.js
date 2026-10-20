@@ -21,6 +21,7 @@ const { emailColumns, logError } = require("../lib/pii");
 const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
+const { MINUTE, envLimit, limiter, resetAll } = require("../lib/rateLimit");
 
 const router = express.Router();
 
@@ -109,8 +110,18 @@ router.post("/register", ah(async (req, res) => {
    Body: { username, password, remember?, role? }  -- role is the tab the user
    picked (User/Admin) on the login page; the server re-checks it
    against the real role in the database rather than trusting it blindly.
+   Rate limits count failed logins only, over 15 minutes: 10 per username
+   from one IP (fixed: stops password guessing on one account), and
+   RATE_LIMIT_LOGIN_PER_IP (default 50) per IP across all usernames.
    --------------------------------------------------------------------- */
-router.post("/login", ah(async (req, res) => {
+const LOGIN_WINDOW_MS = 15 * MINUTE;
+const tooManyLogins = { error: "Too many failed logins. Please wait 15 minutes and try again, or reset your password." };
+const loginPerUser = limiter({ windowMs: LOGIN_WINDOW_MS, limit: 10, message: tooManyLogins, skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.username ?? "").trim().toLowerCase()}` });
+const loginPerIp = limiter({ windowMs: LOGIN_WINDOW_MS, limit: envLimit(process.env.RATE_LIMIT_LOGIN_PER_IP, 50),
+  message: tooManyLogins, skipSuccessfulRequests: true });
+
+router.post("/login", loginPerIp, loginPerUser, ah(async (req, res) => {
   try {
     const { username, password, role } = req.body;
 
@@ -272,6 +283,6 @@ router.post("/reset-password", resetLimit, ah(async (req, res) => {
 }));
 
 // Tests: start every test from empty rate-limit counters.
-router.resetRateLimits = () => Promise.all(resetStores.map((s) => s.resetAll()));
+router.resetRateLimits = () => Promise.all([...resetStores.map((s) => s.resetAll()), resetAll()]);
 
 module.exports = router;
