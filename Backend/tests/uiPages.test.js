@@ -245,8 +245,8 @@ describe("profile page", () => {
     page.$("#infoEmail").dispatchEvent(new page.window.Event("input"));
     expect(page.$("#infoPasswordField").hidden).toBe(false);
 
-    page.$("#newPassword").value = "abcdef";
-    page.$("#confirmPassword").value = "abcdeg";
+    page.$("#newPassword").value = "abcdef-1234";
+    page.$("#confirmPassword").value = "abcdef-1235";
     page.$("#passwordForm").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
     expect(page.$("#passwordError").textContent).toBe("The new passwords don't match.");
     expect(page.calls.some(c => c.url === "/v1/account/password")).toBe(false);

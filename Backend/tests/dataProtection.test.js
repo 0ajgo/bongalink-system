@@ -92,12 +92,12 @@ describe("AES-256-GCM field encryption", () => {
 /* ------------------------------------------------------------ stored encrypted */
 describe("stored encrypted in the database (raw check)", () => {
   test("registration: email encrypted with its blind index; privacy consent required and recorded", async () => {
-    const missing = await request(app).post("/api/auth/register").send({ username: "ana", email: "Ana.Reyes@example.com", password: "secret123" });
+    const missing = await request(app).post("/api/auth/register").send({ username: "ana", email: "Ana.Reyes@example.com", password: "secret-pass-123" });
     expect(missing.status).toBe(400);
     expect(missing.body.code).toBe("PRIVACY_CONSENT_REQUIRED");
 
     const res = await request(app).post("/api/auth/register")
-      .send({ username: "ana", email: "Ana.Reyes@example.com", password: "secret123", privacy_consent: true });
+      .send({ username: "ana", email: "Ana.Reyes@example.com", password: "secret-pass-123", privacy_consent: true });
     expect(res.status).toBe(201);
     const [user] = await raw("SELECT user_id, email, email_bidx FROM users WHERE username = 'ana'");
     expect(user.email).toMatch(ENC);
@@ -109,14 +109,14 @@ describe("stored encrypted in the database (raw check)", () => {
 
     // Duplicates are found through the index, whatever the case.
     const dup = await request(app).post("/api/auth/register")
-      .send({ username: "ana2", email: "ANA.REYES@example.com", password: "secret123", privacy_consent: true });
+      .send({ username: "ana2", email: "ANA.REYES@example.com", password: "secret-pass-123", privacy_consent: true });
     expect(dup.status).toBe(409);
     // Verification looks the email up by its index, and mails the decrypted address.
     expect(mail.verificationCode).toHaveBeenCalledWith("Ana.Reyes@example.com", "ana", expect.stringMatching(/^\d{6}$/), 15);
     const code = mail.verificationCode.mock.calls[0][2];
     expect((await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "ana.reyes@EXAMPLE.com", code })).status).toBe(200);
     // Login (by username) still works.
-    expect((await request(app).post("/api/auth/login").send({ username: "ana", password: "secret123" })).status).toBe(200);
+    expect((await request(app).post("/api/auth/login").send({ username: "ana", password: "secret-pass-123" })).status).toBe(200);
   });
 
   test("checkout: every personal address field and the contact email are encrypted; areas stay plain", async () => {
@@ -201,7 +201,7 @@ describe("masking and logs", () => {
     try {
       // A mail server that echoes the recipient.
       mail.verificationCode.mockRejectedValueOnce(new Error("550 5.1.1 <leak.me@example.com>: Recipient address rejected"));
-      await request(app).post("/api/auth/register").send({ username: "leaky", email: "leak.me@example.com", password: "secret123", privacy_consent: true });
+      await request(app).post("/api/auth/register").send({ username: "leaky", email: "leak.me@example.com", password: "secret-pass-123", privacy_consent: true });
 
       // A database error carrying the SQL and its values, through the global error handler.
       const user = await createUser();

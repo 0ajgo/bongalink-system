@@ -119,7 +119,8 @@ $("passwordForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("passwordError").textContent = "";
   const current = $("currentPassword").value, next = $("newPassword").value;
-  if (next.length < 6) return ($("passwordError").textContent = "New password must be at least 6 characters.");
+  const weak = newPasswordProblem(next);
+  if (weak) return ($("passwordError").textContent = weak);
   if (next !== $("confirmPassword").value) return ($("passwordError").textContent = "The new passwords don't match.");
   busy($("passwordSubmit"), true);
   try {

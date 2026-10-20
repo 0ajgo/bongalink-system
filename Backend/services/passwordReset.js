@@ -11,7 +11,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const { mail } = require('./mailer');
-const { hashToken, MIN_PASSWORD } = require('./accountSetup');
+const { hashToken } = require('./accountSetup');
+const { newPasswordProblem } = require('../lib/passwordRule');
 const { blindIndex } = require('../lib/dataProtection');
 const { dec, logError } = require('../lib/pii');
 const { endAllSessions } = require('../middleware/auth');
@@ -57,9 +58,8 @@ async function findReset(token, conn = pool, lock = false) {
 
 // -> { username } | { error, code? }
 async function completeReset(token, password) {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD) {
-    return { error: `Password must be at least ${MIN_PASSWORD} characters.` };
-  }
+  const weak = newPasswordProblem(password);
+  if (weak) return weak;
   const passwordHash = await bcrypt.hash(password, 10);
   const conn = await pool.getConnection();
   let reset;

@@ -56,6 +56,23 @@ function stockBadge(available) {
   return `<span class="badge badge--success">In stock</span>`;
 }
 
+/* --- A new password (register, reset, set up, change) ----------------
+   Same rule as the server (Backend/lib/passwordRule.js). The length is
+   checked here so the form answers at once; the server also refuses
+   well-known passwords and answers with code WEAK_PASSWORD, which the
+   forms show next to the password field too. Logging in never checks it. */
+const PASSWORD_MIN = 10;
+const PASSWORD_MAX_BYTES = 72;   // bcrypt ignores the rest
+function newPasswordProblem(password) {
+  if (password.length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters for your password.`;
+  // UTF-8 bytes, as bcrypt counts them: 1 to 4 per character.
+  const bytes = [...password].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
+  if (bytes > PASSWORD_MAX_BYTES) {
+    return "That password is too long: use at most 72 characters (fewer if it has emoji or accented letters).";
+  }
+  return "";
+}
+
 /* --- Product card (catalog, related products) ------------------------
    Consistent 4:3 image, name (2 lines max), price, stock badge from
    AVAILABLE stock, Add to cart disabled when out. Image and name link to

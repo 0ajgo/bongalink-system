@@ -298,12 +298,12 @@ describe("set-password page", () => {
     expect(page.$("#setUsername").value).toBe("ana.reyes");
     page.$("#newPassword").value = "abc";
     submit(page, "#setForm");
-    expect(page.$("#newPasswordError").textContent).toBe("Use at least 6 characters.");
-    page.$("#newPassword").value = "goodpass1";
-    page.$("#confirmPassword").value = "goodpass2";
+    expect(page.$("#newPasswordError").textContent).toBe("Use at least 10 characters for your password.");
+    page.$("#newPassword").value = "goodpass-111";
+    page.$("#confirmPassword").value = "goodpass-222";
     submit(page, "#setForm");
     expect(page.$("#confirmPasswordError").textContent).toBe("The two passwords don't match.");
-    page.$("#confirmPassword").value = "goodpass1";
+    page.$("#confirmPassword").value = "goodpass-111";
     submit(page, "#setForm");
     // The privacy notice has to be accepted, with the error next to the checkbox.
     expect(page.$("#setConsentError").textContent).toBe("Please accept the Privacy Policy to finish setting up your account.");
@@ -311,7 +311,7 @@ describe("set-password page", () => {
     page.$("#setConsent").checked = true;
     submit(page, "#setForm");
     await page.until(() => !page.$("#setMessage").hidden);
-    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass1", privacy_consent: true } });
+    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass-111", privacy_consent: true } });
     expect(page.$("#setMessage").textContent).toContain("Your password is set and your email is confirmed.");
     expect(page.$("#setMessage a").getAttribute("href")).toBe("login.html");
     page.close();
@@ -331,8 +331,8 @@ describe("registration privacy notice and the Privacy Policy page", () => {
   const fill = (page) => {
     page.$("#regUsername").value = "ana";
     page.$("#regEmail").value = "ana@example.com";
-    page.$("#regPassword").value = "secret123";
-    page.$("#regConfirmPassword").value = "secret123";
+    page.$("#regPassword").value = "secret-pass-123";
+    page.$("#regConfirmPassword").value = "secret-pass-123";
   };
 
   test("the notice says what's collected and why, links the policy, and consent is required", async () => {
@@ -356,7 +356,7 @@ describe("registration privacy notice and the Privacy Policy page", () => {
     submit(page, "#registerForm");
     await page.until(() => page.calls.length);
     expect(page.calls[0]).toEqual({ url: "/auth/register", method: "POST",
-      body: { username: "ana", email: "ana@example.com", password: "secret123", privacy_consent: true } });
+      body: { username: "ana", email: "ana@example.com", password: "secret-pass-123", privacy_consent: true } });
     await page.settle();
     page.close();
   });

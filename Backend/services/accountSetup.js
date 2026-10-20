@@ -10,8 +10,9 @@ const pool = require('../db');
 const { mail } = require('./mailer');
 const { PRIVACY_POLICY_VERSION } = require('../lib/privacy');
 
+const { newPasswordProblem } = require('../lib/passwordRule');   // same rule as POST /api/auth/register
+
 const SETUP_HOURS = 72;
-const MIN_PASSWORD = 6;   // same rule as POST /api/auth/register
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 const setupLink = (token) =>
@@ -44,9 +45,8 @@ async function findSetup(token, conn = pool, lock = false) {
 
 // -> { username } or { error }
 async function completeSetup(token, password) {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD) {
-    return { error: `Password must be at least ${MIN_PASSWORD} characters.` };
-  }
+  const weak = newPasswordProblem(password);
+  if (weak) return weak;
   const passwordHash = await bcrypt.hash(password, 10);
   const conn = await pool.getConnection();
   try {
@@ -74,4 +74,4 @@ async function completeSetup(token, password) {
   }
 }
 
-module.exports = { sendSetupLink, findSetup, completeSetup, unusablePasswordHash, hashToken, SETUP_HOURS, MIN_PASSWORD };
+module.exports = { sendSetupLink, findSetup, completeSetup, unusablePasswordHash, hashToken, SETUP_HOURS };

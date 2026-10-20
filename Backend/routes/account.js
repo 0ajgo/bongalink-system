@@ -34,7 +34,7 @@ const { blindIndex } = require("../lib/dataProtection");
 
 router.use(requireAuth);
 
-const MIN_PASSWORD = 6;   // same rule as POST /api/auth/register
+const { newPasswordProblem } = require("../lib/passwordRule");   // same rule as POST /api/auth/register
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
 const PHONE_RE = /^(09\d{9}|639\d{9})$/;
@@ -106,9 +106,8 @@ router.patch("/me", ah(async (req, res) => {
 /* ---------------------------------------------------------------- password */
 router.post("/password", ah(async (req, res) => {
   const { current_password, new_password } = req.body || {};
-  if (!new_password || String(new_password).length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD} characters.` });
-  }
+  const weak = newPasswordProblem(new_password);
+  if (weak) return res.status(400).json(weak);
   const [[row]] = await pool.query("SELECT password_hash FROM users WHERE user_id = ?", [req.user.userId]);
   if (!row || !current_password || !(await bcrypt.compare(String(current_password), row.password_hash))) {
     return res.status(400).json({ error: "Your current password is incorrect." });

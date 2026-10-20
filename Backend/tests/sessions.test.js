@@ -108,7 +108,7 @@ describe("events that end every login, Remember me or not", () => {
     const here = (await login(juan.username, true)).body.token;
     const elsewhere = (await login(juan.username, false)).body.token;
     const res = await request(app).post("/api/v1/account/password").set("Authorization", `Bearer ${here}`)
-      .send({ current_password: "secret123", new_password: "brandnew9" });
+      .send({ current_password: "secret123", new_password: "brand-new-pass9" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ message: "Password changed. Every other device was logged out.", remember: true });
     expect(lifetimeDays(res.body.token)).toBe(30);
@@ -124,7 +124,7 @@ describe("events that end every login, Remember me or not", () => {
     await request(app).post("/api/auth/forgot-password").send({ email: "juan@example.com" });
     for (let i = 0; i < 100 && !mail.passwordReset.mock.calls.length; i++) await new Promise((r) => setTimeout(r, 10));
     const token = mail.passwordReset.mock.calls[0][2].split("token=")[1];
-    await request(app).post("/api/auth/reset-password").send({ token, password: "brandnew9" });
+    await request(app).post("/api/auth/reset-password").send({ token, password: "brand-new-pass9" });
     expect((await me(remembered)).body.code).toBe("SESSION_ENDED");
     expect(await raw("SELECT COUNT(*) AS n FROM user_sessions WHERE revoked_at IS NULL")).toEqual([{ n: 0 }]);
   });

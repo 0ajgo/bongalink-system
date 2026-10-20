@@ -39,6 +39,8 @@ document.getElementById("regConsent").addEventListener("change", (e) => {
   e.target.removeAttribute("aria-invalid");
 });
 
+document.getElementById("regPassword").addEventListener("input", () => { document.getElementById("regPasswordError").textContent = ""; });
+
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const username = document.getElementById("regUsername").value.trim();
@@ -46,9 +48,15 @@ registerForm.addEventListener("submit", async (event) => {
   const password = document.getElementById("regPassword").value;
   const confirmPassword = document.getElementById("regConfirmPassword").value;
 
+  const passwordError = document.getElementById("regPasswordError");
+  passwordError.textContent = "";
   if (!username || !email || !password || !confirmPassword) return showAlert("registerMessage", "Please fill in all fields.", "error");
+  const weak = newPasswordProblem(password);
+  if (weak) {
+    passwordError.textContent = weak;
+    return document.getElementById("regPassword").focus();
+  }
   if (password !== confirmPassword) return showAlert("registerMessage", "Passwords do not match.", "error");
-  if (password.length < 6) return showAlert("registerMessage", "Password must be at least 6 characters.", "error");
   const consent = document.getElementById("regConsent");
   if (!consent.checked) {
     document.getElementById("regConsentError").textContent = "Please accept the Privacy Policy to create an account.";
@@ -62,6 +70,11 @@ registerForm.addEventListener("submit", async (event) => {
     const result = await apiFetch("/auth/register", { method: "POST", timeout: API_TIMEOUT_LONG_MS, body: JSON.stringify({ username, email, password, privacy_consent: true }) });
     showVerifyStep(email, result);
   } catch (err) {
+    if (err.code === "WEAK_PASSWORD") {
+      passwordError.textContent = err.message;
+      document.getElementById("regPassword").focus();
+      return;
+    }
     showAlert("registerMessage", err.message || "Registration failed.", "error");
   } finally {
     busy(button, false);

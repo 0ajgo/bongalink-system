@@ -22,6 +22,7 @@ const { blindIndex } = require("../lib/dataProtection");
 const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
 const { MINUTE, HOUR, envLimit, limiter, resetAll } = require("../lib/rateLimit");
+const { newPasswordProblem } = require("../lib/passwordRule");
 
 const router = express.Router();
 
@@ -52,9 +53,8 @@ router.post("/register", registerPerHour, registerPerDay, ah(async (req, res) =>
     if (!username || !email || !password) {
       return res.status(400).json({ error: "Please fill in all fields." });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters." });
-    }
+    const weak = newPasswordProblem(password);
+    if (weak) return res.status(400).json(weak);
     if (req.body.privacy_consent !== true) {
       return res.status(400).json({ error: "Please read and accept the privacy notice to create an account.", code: "PRIVACY_CONSENT_REQUIRED" });
     }
@@ -230,7 +230,7 @@ router.post("/set-password", setupLimit, ah(async (req, res) => {
       return res.status(400).json({ error: "Please read and accept the privacy notice to finish setting up your account.", code: "PRIVACY_CONSENT_REQUIRED" });
     }
     const result = await completeSetup(req.body?.token, req.body?.password);
-    if (result.error) return res.status(400).json({ error: result.error });
+    if (result.error) return res.status(400).json({ error: result.error, ...(result.code && { code: result.code }) });
     res.json({ message: "Password set. You can log in now.", username: result.username });
   } catch (err) {
     logError("Set password failed", err);
@@ -285,7 +285,7 @@ router.post("/reset-password", resetLimit, ah(async (req, res) => {
   try {
     const result = await completeReset(req.body?.token, req.body?.password);
     if (result.code === "ACCOUNT_SUSPENDED") return res.status(403).json(SUSPENDED);
-    if (result.error) return res.status(400).json({ error: result.error });
+    if (result.error) return res.status(400).json({ error: result.error, ...(result.code && { code: result.code }) });
     res.json({ message: "Your password was changed. Log in with the new one.", username: result.username });
   } catch (err) {
     logError("Password reset failed", err);
