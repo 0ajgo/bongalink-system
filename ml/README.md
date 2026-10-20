@@ -18,7 +18,6 @@ colab/build_notebook.py          Source of the notebook (python build_notebook.p
 worker/                          Python ML runtime: change detection, inference, automatic retraining (see worker/README.md)
 backend/models/*.json            Colab export: the worker's starting model + fixed trend threshold + parity example
 backend/                         LEGACY Rust server and parity checker (see the notice above); not run
-db/schema.sql                    (superseded: the live schema is Backend/database/bongalink_schema.sql + migrations/)
 ```
 
 ## The two algorithms
