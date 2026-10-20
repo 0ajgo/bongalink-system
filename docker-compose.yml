@@ -153,8 +153,12 @@ services:
 
   frontend:
     image: nginx:1.27-alpine
+    environment:
+      # Where the pages' browser reaches the API (for the Content-Security-Policy in deploy/nginx).
+      API_ORIGIN: ${API_ORIGIN:-http://localhost:4000}
     volumes:
       - ./Frontend:/usr/share/nginx/html:ro
+      - ./deploy/nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
     ports:
       - "5500:80"
 

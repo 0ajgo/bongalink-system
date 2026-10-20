@@ -34,12 +34,16 @@ const { startOrderExpiryJob } = require("./jobs/expireOrders");
 const { statusLines } = require("./lib/integrationStatus");
 const { logError } = require("./lib/pii");
 const { trustProxySetting } = require("./lib/trustProxy");
+const { securityHeaders, allowCrossOriginImages } = require("./lib/securityHeaders");
 const { envLimit, limiter } = require("./lib/rateLimit");
 
 const app = express();
 
 // Behind a proxy, req.ip (and so every per-IP rate limit) must be the visitor's address.
 app.set("trust proxy", trustProxySetting());
+
+// Security headers on every answer (lib/securityHeaders.js); no X-Powered-By.
+app.use(securityHeaders());
 
 // PayMongo signs the RAW body, so this route must come BEFORE express.json().
 app.post("/api/v1/webhooks/paymongo", express.raw({ type: "application/json" }), ah(paymongoWebhook));
@@ -54,8 +58,8 @@ app.use(cors({ origin: allowedOrigins, maxAge: CORS_PREFLIGHT_MAX_AGE_S }));
 
 app.use(express.json({ limit: "100kb" }));
 
-// Serves uploaded product images at /uploads/<filename>
-app.use("/uploads", express.static(process.env.UPLOAD_DIR || path.join(__dirname, "uploads")));
+// Serves uploaded product images at /uploads/<filename>, to pages on the CORS_ORIGIN sites too.
+app.use("/uploads", allowCrossOriginImages, express.static(process.env.UPLOAD_DIR || path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
