@@ -7,6 +7,9 @@ const TIMEOUT_MS = 15000;   // per PayMongo request
 
 class PaymentError extends Error {}
 
+// sk_live_... is live mode; anything else (sk_test_...) is test mode.
+const isLiveKey = (key = process.env.PAYMONGO_SECRET_KEY) => String(key || '').startsWith('sk_live_');
+
 const authHeader = () => 'Basic ' + Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64');
 
 // fetch to PayMongo that gives up after TIMEOUT_MS -> parsed JSON body, or a PaymentError.
@@ -71,7 +74,10 @@ async function getCheckoutSession(id) {
 
 // Header format: "t=<timestamp>,te=<test signature>,li=<live signature>"
 // Signature = HMAC-SHA256(webhook secret, `${t}.${rawBody}`)
-function verifyWebhookSignature(rawBody, header, secret, livemode) {
+// livemode picks li or te: the CALLER decides it from the secret key (isLiveKey), never from
+// the event body, so a test-mode event can't pass on a live shop.
+// toleranceSeconds (optional): also refuse a timestamp further than that from now.
+function verifyWebhookSignature(rawBody, header, secret, livemode, { toleranceSeconds, now = Date.now() } = {}) {
   if (!header || !secret) return false;
   const parts = Object.fromEntries(
     header.split(',').map((kv) => {
@@ -81,10 +87,11 @@ function verifyWebhookSignature(rawBody, header, secret, livemode) {
   );
   const provided = livemode ? parts.li : parts.te;
   if (!parts.t || !provided) return false;
+  if (toleranceSeconds > 0 && !(Math.abs(now / 1000 - Number(parts.t)) <= toleranceSeconds)) return false;
   const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
   const a = Buffer.from(expected, 'hex');
   const b = Buffer.from(provided, 'hex');
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { createCheckoutSession, getCheckoutSession, verifyWebhookSignature, PaymentError };
+module.exports = { createCheckoutSession, getCheckoutSession, verifyWebhookSignature, isLiveKey, PaymentError };

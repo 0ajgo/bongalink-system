@@ -194,8 +194,12 @@ async function paymongoWebhook(req, res) {
   } catch {
     return res.status(400).end();
   }
-  const livemode = !!event?.data?.attributes?.livemode;
-  if (!paymongo.verifyWebhookSignature(raw, req.get('Paymongo-Signature'), process.env.PAYMONGO_WEBHOOK_SECRET, livemode)) {
+  // The secret key decides the mode: a live shop checks the live signature and accepts only
+  // live events; with a test key, only test events. The event's own livemode flag is not trusted.
+  const live = paymongo.isLiveKey();
+  const toleranceSeconds = Number(process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS) || 0;
+  if (!paymongo.verifyWebhookSignature(raw, req.get('Paymongo-Signature'), process.env.PAYMONGO_WEBHOOK_SECRET, live, { toleranceSeconds })
+      || event?.data?.attributes?.livemode !== live) {
     return res.status(401).end();
   }
 

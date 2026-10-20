@@ -176,6 +176,78 @@ describe("POST /api/v1/webhooks/paymongo", () => {
     expect((await request(app).post("/api/v1/webhooks/paymongo").set("Content-Type", "application/json").send(body)).status).toBe(401);
   });
 
+  describe("test or live mode comes from the secret key, never from the event", () => {
+    const crypto = require("crypto");
+    // An event in either mode, signed for that mode (te= or li=), t seconds ago.
+    const signed = ({ live, ageSeconds = 0 }) => {
+      const body = paymongoEvent({ amount: 109900 }).body.replace('"livemode":false', `"livemode":${live}`);
+      const t = Math.floor(Date.now() / 1000) - ageSeconds;
+      const sig = crypto.createHmac("sha256", process.env.PAYMONGO_WEBHOOK_SECRET).update(`${t}.${body}`).digest("hex");
+      return { body, signature: live ? `t=${t},te=,li=${sig}` : `t=${t},te=${sig},li=` };
+    };
+    const orderStatus = async () => (await pool.query("SELECT status FROM orders"))[0][0].status;
+    const withEnv = async (env, fn) => {
+      const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+      Object.assign(process.env, env);
+      try { await fn(); } finally {
+        for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      }
+    };
+
+    test("live key: a correctly signed TEST event is refused and the order stays unpaid", async () => {
+      await withEnv({ PAYMONGO_SECRET_KEY: "sk_live_fake" }, async () => {
+        const { body, signature } = signed({ live: false });
+        expect((await sendWebhook(body, signature)).status).toBe(401);
+        expect(await orderStatus()).toBe("pending_payment");
+      });
+    });
+
+    test("live key: a live event with the live signature is accepted", async () => {
+      await withEnv({ PAYMONGO_SECRET_KEY: "sk_live_fake" }, async () => {
+        const { body, signature } = signed({ live: true });
+        expect((await sendWebhook(body, signature)).status).toBe(200);
+        expect(await orderStatus()).toBe("paid");
+      });
+    });
+
+    test("test key: a live event is refused, whatever it is signed with", async () => {
+      const { body, signature } = signed({ live: true });
+      expect((await sendWebhook(body, signature)).status).toBe(401);
+      const relabelled = body.replace('"livemode":true', '"livemode":false');
+      expect((await sendWebhook(relabelled, signature)).status).toBe(401);
+      expect(await orderStatus()).toBe("pending_payment");
+    });
+
+    test("an event without livemode is refused", async () => {
+      const body = paymongoEvent({ amount: 109900 }).body.replace('"livemode":false,', "");
+      expect((await sendWebhook(body, require("./helpers").signPaymongo(body))).status).toBe(401);
+    });
+  });
+
+  describe("signature age (PAYMONGO_WEBHOOK_TOLERANCE_SECONDS)", () => {
+    const crypto = require("crypto");
+    const aged = (ageSeconds) => {
+      const { body } = paymongoEvent({ amount: 109900 });
+      const t = Math.floor(Date.now() / 1000) - ageSeconds;
+      return { body, signature: `t=${t},te=${crypto.createHmac("sha256", process.env.PAYMONGO_WEBHOOK_SECRET).update(`${t}.${body}`).digest("hex")},li=` };
+    };
+
+    test("off by default: an old signature (a retried delivery) is still accepted", async () => {
+      const { body, signature } = aged(6 * 60 * 60);
+      expect((await sendWebhook(body, signature)).status).toBe(200);
+    });
+
+    test("when set, a signature older than the limit is refused and a fresh one accepted", async () => {
+      process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS = "300";
+      try {
+        const old = aged(10 * 60);
+        expect((await sendWebhook(old.body, old.signature)).status).toBe(401);
+        const fresh = aged(5);
+        expect((await sendWebhook(fresh.body, fresh.signature)).status).toBe(200);
+      } finally { delete process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS; }
+    });
+  });
+
   test("duplicate event: processed once, stock deducted once", async () => {
     const { body, signature } = paymongoEvent({ amount: 109900 });
     expect((await sendWebhook(body, signature)).status).toBe(200);
