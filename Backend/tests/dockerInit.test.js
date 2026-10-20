@@ -97,3 +97,46 @@ test("Docker builds never receive database dumps, the inventory workbook or the 
   const ignored = fs.readFileSync(path.join(ROOT, ".dockerignore"), "utf8").split(/\r?\n/).map((l) => l.trim());
   expect(ignored).toEqual(expect.arrayContaining(["backups", "imports", "ml/worker/data", "**/.env"]));
 });
+
+/* ---- the ML worker image installs the audited versions (ml/worker/requirements.lock) ---- */
+describe("ML worker requirements.lock", () => {
+  const read = (f) => fs.readFileSync(path.join(WORKER, f), "utf8").replace(/\r\n/g, "\n");
+  const norm = (n) => n.toLowerCase().replace(/[-_.]+/g, "-");
+  const lines = read("requirements.lock").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+  const lock = Object.fromEntries(lines.map((l) => l.split("==")).map(([n, v]) => [norm(n), v]));
+  const cmp = (a, b) => {
+    const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+    return 0;
+  };
+
+  test("every line is an exact pin, and pip itself isn't pinned", () => {
+    expect(lines.filter((l) => !/^[A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*$/.test(l))).toEqual([]);
+    expect(lock.pip).toBeUndefined();
+  });
+
+  test("every requirement is pinned, inside its range", () => {
+    const reqs = read("requirements.txt").split("\n").map((l) => l.replace(/#.*/, "").trim()).filter(Boolean);
+    for (const req of reqs) {
+      const [, name, specs] = req.match(/^([A-Za-z0-9_.-]+)\s*(.*)$/);
+      const pinned = lock[norm(name)];
+      expect({ name, pinned: Boolean(pinned) }).toEqual({ name, pinned: true });
+      for (const [, op, v] of specs.matchAll(/(>=|<=|<|>|==)\s*([0-9][0-9.]*)/g)) {
+        const c = cmp(pinned, v);
+        expect({ req, pinned, ok: { ">=": c >= 0, "<=": c <= 0, "<": c < 0, ">": c > 0, "==": c === 0 }[op] }).toEqual({ req, pinned, ok: true });
+      }
+    }
+  });
+
+  test("the image's tensorflow-cpu is pinned to the same version as tensorflow", () => {
+    expect(lock["tensorflow-cpu"]).toBe(lock.tensorflow);
+  });
+
+  test("the Dockerfile copies the lock and installs with it as constraints", () => {
+    const docker = read("Dockerfile");
+    expect(docker).toMatch(/^COPY ml\/worker\/requirements\.txt ml\/worker\/requirements\.lock \.\/$/m);
+    expect(docker).toMatch(/pip install -r \/tmp\/requirements\.txt -c requirements\.lock/);
+    const ignored = fs.readFileSync(path.join(ROOT, ".dockerignore"), "utf8").split(/\r?\n/).map((l) => l.trim());
+    expect(ignored.filter((p) => /requirements|\.lock/.test(p))).toEqual([]);
+  });
+});

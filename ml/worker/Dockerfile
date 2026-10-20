@@ -11,9 +11,10 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /repo/ml/worker
 
 # tensorflow-cpu: same API, no CUDA libraries (much smaller image).
-COPY ml/worker/requirements.txt .
+# requirements.lock pins the audited versions (see the file), used as constraints.
+COPY ml/worker/requirements.txt ml/worker/requirements.lock ./
 RUN sed 's/^tensorflow\b/tensorflow-cpu/' requirements.txt > /tmp/requirements.txt \
- && pip install -r /tmp/requirements.txt
+ && pip install -r /tmp/requirements.txt -c requirements.lock
 
 COPY ml/backend/models /repo/ml/backend/models
 COPY Backend/database /repo/Backend/database
