@@ -99,8 +99,9 @@ Apply the migration to your database once (it adds `products.is_active`, the `ml
 and the triggers):
 
 ```powershell
-mysql -u root -p bongalink < ..\..\Backend\database\migrations\003_ml_sync.sql
+mysql -u root -p bongalink_real < ..\..\deploy\mysql\check_migrations.sql   # shows what's missing
 ```
+Apply any missing migration in number order (`Backend/README.md`, section 2).
 
 Run the worker (leave it running next to `npm run dev`):
 
@@ -134,9 +135,9 @@ From the repository root, with a `.env` containing `DB_PASSWORD` and `JWT_SECRET
 ```bash
 docker compose up --build                       # mysql + api + worker + frontend
 docker compose logs -f worker                   # see refreshes and training
-# import the sales sheet (kept on the host) into bongalink_real, then switch to it
+# import the sales sheet (kept on the host) into a NEW database, bongalink_import, to inspect it
 docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py
-DB_NAME=bongalink_real docker compose up -d api worker
+# the shop's own data comes from a backup of bongalink_real instead (DEPLOYMENT.md, section 6)
 ```
 
 The worker image is `python:3.12-slim` with `tensorflow-cpu`. Model versions persist in the
@@ -147,11 +148,12 @@ The worker image is `python:3.12-slim` with `tensorflow-cpu`. Model versions per
 ```powershell
 # put the sheet at ml/worker/data/2026 Bongalink Sheet SALES.xlsx (git-ignored)
 .venv\Scripts\python import_sales.py --dry-run     # cleaned products, mappings, skipped rows; writes nothing
-.venv\Scripts\python import_sales.py               # drops + rebuilds bongalink_real and imports paid sales
-$env:DB_NAME="bongalink_real"; .venv\Scripts\python -m bongalink_ml --once
+.venv\Scripts\python import_sales.py               # drops + rebuilds bongalink_import and imports paid sales
+$env:DB_NAME="bongalink_import"; .venv\Scripts\python -m bongalink_ml --once   # forecasts for that copy
 ```
 
-The script never writes to `bongalink`. The dry run lists every excluded service, every
+The script never writes to the shop's databases (`bongalink_real`, or `bongalink` in Docker): they
+hold real orders and stock changes made since the first import (2026-10), which a rebuild would erase. The dry run lists every excluded service, every
 unpaid row, the item/model mappings, and each row whose quantity or price came from free
 text. Review those before trusting the numbers. Stock counts are placeholders (5 per
 product), because the sheet records sales, not stock.

@@ -1,7 +1,7 @@
 -- seed_data.sql: optional starting data for a FRESH install, run after the schema and every
 -- migration (and after the first admin account exists: it is recorded as their creator).
 --
---   mysql -u root -p bongalink < Backend/database/seed_data.sql
+--   mysql -u root -p <database> < Backend/database/seed_data.sql
 --
 -- 1. The product categories. A fresh database has none, and a part can't be added without one.
 -- 2. Test products for the live PayMongo test after deployment (Backend/README.md, "Live payment

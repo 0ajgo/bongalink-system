@@ -16,16 +16,18 @@ From the repository root, the schema and then **every** migration, in number ord
 (002 is already in the schema; this is the same list as `tests/globalSetup.js` and
 `docker-compose.yml`):
 ```bash
-mysql -u root -p -e "CREATE DATABASE bongalink CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-mysql -u root -p bongalink < Backend/database/bongalink_schema.sql
+mysql -u root -p -e "CREATE DATABASE bongalink_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+mysql -u root -p bongalink_dev < Backend/database/bongalink_schema.sql
 for m in 003_ml_sync 004_api_integrations 005_product_history 006_chatbot 007_faq_no_repairs \
          008_admin_accounts 009_encrypt_personal_data 010_ml_training_runs 011_auth_recovery \
          012_admin_notifications; do
-  mysql -u root -p bongalink < Backend/database/migrations/$m.sql
+  mysql -u root -p bongalink_dev < Backend/database/migrations/$m.sql
 done
 ```
 (Windows PowerShell: run the same `mysql ... < file` line once per migration, e.g. with
-`cmd /c "mysql -u root -p bongalink < Backend\database\migrations\003_ml_sync.sql"`.)
+`cmd /c "mysql -u root -p bongalink_dev < Backend\database\migrations\003_ml_sync.sql"`.)
+A development database of your own (`bongalink_dev` here) keeps experiments away from the shop's
+data in `bongalink_real`; set `DB_NAME` in `Backend/.env` and `ml/worker/.env` to the one you use.
 To see what an existing database is missing: `mysql -u root -p <db> < deploy/mysql/check_migrations.sql`.
 
 The schema has no categories: after the first admin account (step 4), load

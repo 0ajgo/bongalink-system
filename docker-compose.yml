@@ -7,10 +7,10 @@
 #   2. docker compose up --build
 #   3. Frontend: http://localhost:5500/Pages/Homepage/homepage.html   API: http://localhost:4000/api/health
 #
-# Import the sales sheet into bongalink_real (see ml/worker/README.md); the sheet stays on the host:
+# The shop's data: load a backup of bongalink_real and set DB_NAME=bongalink_real (DEPLOYMENT.md, section 6).
+# The sales-sheet import builds a NEW database to inspect, never the shop's (ml/worker/README.md):
 #   docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py --dry-run
 #   docker compose run --rm -v ./ml/worker/data:/repo/ml/worker/data worker python import_sales.py
-#   DB_NAME=bongalink_real docker compose up -d api worker
 #
 # A fresh volume (the first `docker compose up`, or after `docker compose down -v`) is initialised from
 # the schema dump + migrations 003-012, in that order (002 is already in the dump). This is the same

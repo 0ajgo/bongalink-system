@@ -79,7 +79,7 @@ def simulate_series(rng, dates, base, n_shifts):
 
 ("code", "", r'''DATA_SOURCE = "synthetic"   # "synthetic" | "csv" | "mysql"
 CSV_PATH = "sales_daily.csv"
-MYSQL_URL = "mysql+pymysql://USER:PASSWORD@HOST:3306/bongalink"   # needs: !pip install pymysql sqlalchemy
+MYSQL_URL = "mysql+pymysql://USER:PASSWORD@HOST:3306/bongalink_real"   # needs: !pip install pymysql sqlalchemy
 
 # Same definition of "demand" the ML worker uses (worker/bongalink_ml/db.py)
 # and Backend/routes/ml.js: paid orders count as sales; unpaid, expired and
