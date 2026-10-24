@@ -1,6 +1,6 @@
 /* =====================================================================
    inventory.js — admin Inventory & forecasts (Pages/Admin/inventory.html)
-   Requires api.js, icons.js, cart.js, ui.js and chart.js.
+   Requires api.js, icons.js, cart.js, ui.js, chart.js and forecast-ui.js.
    Reads what the Python ML worker writes (via /api/admin/ml/*) and lets
    the admin edit stock/price or remove products (via /api/products).
    ===================================================================== */
@@ -16,8 +16,7 @@ const chartEl = document.getElementById("historyChart");
 let predictions = [];
 let lastSeenUpdate;   // undefined until the first status; null = reload on the next one
 let editing = false;   // don't redraw the table under the admin's cursor
-
-const num = (value, digits = 1) => value === null || value === undefined ? null : Number(value).toFixed(digits);
+let forecastFilter = null;   // a FORECAST_GROUPS key (forecast-ui.js): only that group's rows are shown
 
 function timeAgo(value) {
   if (!value) return "never";
@@ -94,7 +93,7 @@ const showStatus = section(loadStatus, (err, retry) => {
     "retryStatus", retry);
 });
 const showPredictions = section(loadPredictions, (err, retry) =>
-  retryable(predRows, errorRow(9, `Couldn't load the stock forecast: ${err.message}`, "retryForecast"), "retryForecast", retry));
+  retryable(predRows, errorRow(8, `Couldn't load the stock forecast: ${err.message}`, "retryForecast"), "retryForecast", retry));
 const showEvents = section(loadEvents, (err, retry) =>
   retryable(document.getElementById("eventRows"), errorRow(7, `Couldn't load the change log: ${err.message}`, "retryEvents"),
     "retryEvents", retry));
@@ -107,56 +106,43 @@ const showHistory = section(() => loadHistory(), historyFailed);
 const showProductsAndHistory = section(async () => { await loadProducts(); await loadHistory(); }, historyFailed);
 
 /* ---------------------------------------------------------------------
-   FORECAST TABLE
+   FORECAST TABLE — the Stock vs next 7 days, Stock lasts, Action and
+   Trend cells come from js/forecast-ui.js (shared with the Dashboard).
    --------------------------------------------------------------------- */
-function forecastCell(p) {
-  if (!p.computed_at) return `<span class="muted">Pending…</span>`;
-  if (p.data_status === "insufficient_data") {
-    const estimate = p.predicted_demand_7d === null ? "—" : `~${num(p.predicted_demand_7d)}`;
-    const source = { category_average: "category avg", store_average: "store avg" }[p.forecast_source] || "no estimate";
-    return `${estimate} <span class="badge" title="Listed ${p.history_days} day(s) ago; showing the ${source}">Insufficient data</span>`;
-  }
-  return num(p.predicted_demand_7d);
-}
-
-function daysCell(p) {
-  if (!p.computed_at || p.days_until_stockout === null) return `<span class="muted">—</span>`;
-  const d = Number(p.days_until_stockout);
-  const cls = p.data_status === "ok" && d < 7 ? "warn-text" : "";
-  return `<span class="${cls}">${num(d)}${p.data_status === "ok" ? "" : "*"}</span>`;
-}
-
-function reorderCell(p) {
-  // available = on hand minus units held by unpaid orders
-  if (Number(p.available) <= 0) {
-    const held = Number(p.reserved) > 0 ? ` title="${p.reserved} held by unpaid orders"` : "";
-    return `<span class="badge badge--error"${held}>Out of stock</span>`;
-  }
-  if (!p.computed_at) return "";
-  if (p.reorder_recommended) return `<span class="badge badge--warning">Reorder ${p.suggested_reorder_qty}</span>`;
-  return `<span class="muted">—</span>`;
-}
-
-function trendCell(p) {
-  if (!p.computed_at) return "";
-  if (p.trend_status !== "ok") {
-    return `<span class="badge" title="A trend needs 84 days of history and sales on at least 8 different days in that period">Insufficient data</span>`;
-  }
-  const since = `${p.trend_days_since_breakpoint} days ago`;
-  if (p.trend_direction === "upward") return `<span class="trend trend--up" title="Demand started rising ${since}">↑ Rising since ${since}</span>`;
-  if (p.trend_direction === "downward") return `<span class="trend trend--down" title="Demand started falling ${since}">↓ Falling since ${since}</span>`;
-  return `<span class="muted">→ No shift</span>`;
-}
-
 // Parts still on the 0.5 kg default weight: J&T / LBC fees use this weight.
 const DEFAULT_WEIGHT = 0.5;
 const isDefaultWeight = (p) => Number(p.weight_kg) === DEFAULT_WEIGHT;
 
+// Status tiles above the table: a tile shows only its group; clicking it again shows every part.
+const forecastTiles = document.getElementById("forecastTiles");
+function renderForecastTiles() {
+  const focused = forecastTiles.contains(document.activeElement) ? document.activeElement.dataset.group : null;
+  forecastTiles.innerHTML = statusTiles(predictions, { selected: forecastFilter, buttons: true });
+  if (focused) forecastTiles.querySelector(`[data-group="${focused}"]`)?.focus();
+}
+forecastTiles.addEventListener("click", (event) => {
+  const tile = event.target.closest("[data-group]");
+  if (!tile) return;
+  forecastFilter = forecastFilter === tile.dataset.group ? null : tile.dataset.group;
+  // A price or weight still saving keeps its row until the save is done.
+  const redraw = () => {
+    if (pendingSaves > 0) return setTimeout(redraw, 100);
+    editing = false;
+    renderPredictions();
+  };
+  redraw();
+});
+
 function renderPredictions() {
   if (editing) return;
-  document.getElementById("productCount").textContent = `${predictions.length} active parts`;
+  document.getElementById("productCount").textContent = `Next 7 days · ${predictions.length} active parts`;
   renderWeightNotice();
-  predRows.innerHTML = predictions.map(p => {
+  renderForecastTiles();
+  // One scale for every row's bullet bar: the most stock or demand of any part.
+  const scaleMax = Math.max(0, ...predictions.map(p =>
+    Math.max(Number(p.stock_quantity) || 0, p.computed_at ? Number(p.predicted_demand_7d) || 0 : 0)));
+  const shown = forecastFilter ? predictions.filter(p => forecastGroup(p) === forecastFilter) : predictions;
+  predRows.innerHTML = shown.map(p => {
     const stale = p.computed_at && Number(p.predicted_for_stock) !== Number(p.stock_quantity);
     const label = escapeHTML(p.name);
     return `
@@ -165,20 +151,21 @@ function renderPredictions() {
             ${stale ? `<span class="badge badge--info" title="Stock changed; new forecast on the way">updating</span>` : ""}
             <br><span class="muted">${escapeHTML(p.category)}</span></td>
         <td class="num">${quickInput(p, "price", Number(p.price), { min: 0.01, step: 0.01, label: `Price of ${label}` })}</td>
-        <td class="num"><strong>${p.stock_quantity}</strong>${Number(p.reserved) > 0 ? `<br><span class="muted" title="Held by unpaid orders">${p.reserved} held</span>` : ""}</td>
         <td class="num">${quickInput(p, "weight", Number(p.weight_kg), { min: 0.01, step: 0.01, label: `Weight in kg of ${label}` })}
             ${isDefaultWeight(p) ? `<span class="badge badge--warning" data-default-badge title="Still the default weight; enter the real parcel weight">Default</span>` : ""}</td>
-        <td class="num">${forecastCell(p)}</td>
-        <td class="num">${daysCell(p)}</td>
-        <td>${reorderCell(p)}</td>
-        <td>${trendCell(p)}</td>
+        <td>${stockVsDemand(p, scaleMax)}</td>
+        <td>${runwayBar(p)}</td>
+        <td>${actionPill(p)}</td>
+        <td>${trendPill(p)}</td>
         <td class="actions">
           <button class="btn btn--secondary btn--sm" type="button" data-edit="${p.product_id}" aria-label="Edit ${label}" title="Edit">${icon("pencil", { size: 14 })}<span class="btn-label">Edit</span></button>
           <button class="btn btn--ghost btn--sm btn--icon" type="button" data-more="${p.product_id}"
                   aria-haspopup="menu" aria-expanded="false" title="More actions">${icon("ellipsis-vertical", { size: 16, label: `More actions for ${p.name}` })}</button>
         </td>
       </tr>`;
-  }).join("") || `<tr><td colspan="9">${UIState.empty({ icon: "boxes", title: "No active parts", text: "List a product from the Shop page." })}</td></tr>`;
+  }).join("") || `<tr><td colspan="8">${predictions.length
+    ? UIState.empty({ icon: "filter", title: "No parts in this group", text: "Click the selected tile again to show every part." })
+    : UIState.empty({ icon: "boxes", title: "No active parts", text: "List a product from the Shop page." })}</td></tr>`;
   updateScrollShadow();
 }
 
@@ -474,7 +461,7 @@ async function loadEvents() {
    INIT
    --------------------------------------------------------------------- */
 async function init() {
-  predRows.innerHTML = UIState.rowSkeletons(9, 5);
+  predRows.innerHTML = UIState.rowSkeletons(8, 5);
   document.getElementById("eventRows").innerHTML = UIState.rowSkeletons(7, 3);
   chartEl.innerHTML = `<span class="skeleton skeleton--media"></span>`;
   // All sections in parallel; the chart is drawn again once the forecasts are in (its forecast line).

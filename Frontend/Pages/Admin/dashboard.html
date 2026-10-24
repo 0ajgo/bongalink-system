@@ -16,6 +16,7 @@
                                      sales trend per day, week or month, top products
        GET /api/v1/admin/orders/to-ship
        GET /api/admin/ml/status      forecast model status
+       GET /api/admin/ml/predictions 7-day forecast per part (Forecast card)
        GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer
        GET /api/v1/admin/accounts/summary  accounts: total, new this week, suspended -->
 <main id="main" class="container page">
@@ -95,7 +96,7 @@
   <div class="dash-grid">
     <section class="card" aria-labelledby="trendTitle">
       <div class="card__header">
-        <h2 id="trendTitle">Sales trend</h2>
+        <h2 id="trendTitle">Sales</h2>
         <div class="row">
           <div class="segmented" role="group" aria-label="Measure">
             <button type="button" data-metric="revenue" aria-pressed="true">Revenue</button>
@@ -115,13 +116,22 @@
         </div>
       </div>
       <div class="card__body">
+        <!-- Total, average and best period: worked out in the browser from the chart's own bars -->
+        <div class="kpi-row" id="trendKpis" hidden></div>
         <div class="chart" id="trendChart"></div>
+        <ul class="chart-legend" id="trendLegend" hidden></ul>
         <p class="chart-note" id="trendNote"></p>
         <div id="trendTable"></div>
       </div>
     </section>
 
-    <section class="card" aria-labelledby="topTitle">
+    <!-- Forecast: GET /api/admin/ml/predictions (the same list as Inventory > Forecast by part) -->
+    <section class="card" id="forecastCard" aria-labelledby="forecastCardTitle">
+      <div class="card__header"><h2 id="forecastCardTitle">Forecast</h2><span class="muted">Next 7 days</span></div>
+      <div class="card__body" id="forecastBody" aria-live="polite"></div>
+    </section>
+
+    <section class="card dash-wide" aria-labelledby="topTitle">
       <div class="card__header"><h2 id="topTitle">Top-selling parts</h2><span class="muted" id="topPeriod"></span></div>
       <div id="topProducts"></div>
     </section>
@@ -141,6 +151,7 @@
 <script src="../../JS/cart.js"></script>
 <script src="../../JS/ui.js"></script>
 <script src="../../JS/chart.js"></script>
+<script src="../../JS/forecast-ui.js"></script>
 <script src="../../JS/ml-training.js"></script>
 <script src="../../JS/dashboard.js"></script>
 </body>
