@@ -261,6 +261,30 @@ describe("POST /api/v1/webhooks/paymongo", () => {
     expect(mail.paymentReceived).toHaveBeenCalledTimes(1);
   });
 
+  test("unknown checkout session (e.g. a replay with the order id): 200, nothing changes, a warning is logged", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { body, signature } = paymongoEvent({ sessionId: `BL-${orderId}`, amount: 109900 });
+    expect((await sendWebhook(body, signature)).status).toBe(200);
+
+    const [[order]] = await pool.query("SELECT status FROM orders");
+    expect(order.status).toBe("pending_payment");
+    expect(await product(productId)).toEqual({ stock_quantity: 5, reserved: 2 });
+    const [moves] = await pool.query("SELECT * FROM inventory_movements WHERE reason = 'sale'");
+    expect(moves).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(`PayMongo webhook: no payment for checkout session BL-${orderId}; no order changed`);
+  });
+
+  test("refused webhooks say why in the log (no secrets)", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { body } = paymongoEvent({ amount: 109900 });
+    await sendWebhook(body, require("./helpers").signPaymongo(body, "whsk_attacker"));
+    expect(warn).toHaveBeenLastCalledWith("PayMongo webhook refused (401): bad or missing signature");
+    const live = body.replace('"livemode":false', '"livemode":true');
+    await sendWebhook(live, require("./helpers").signPaymongo(live));
+    expect(warn).toHaveBeenLastCalledWith("PayMongo webhook refused (401): livemode is true, but the secret key is test");
+    expect(warn.mock.calls.flat().join(" ")).not.toContain(process.env.PAYMONGO_WEBHOOK_SECRET);
+  });
+
   test("amount mismatch: payment flagged for review, order stays unpaid", async () => {
     const { body, signature } = paymongoEvent({ amount: 100 });
     expect((await sendWebhook(body, signature)).status).toBe(200);

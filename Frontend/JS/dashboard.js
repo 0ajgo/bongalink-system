@@ -240,6 +240,20 @@ async function loadDashboard() {
   }
 }
 
+// Every 30 s, while the tab is visible: the revenue and stock tiles and Orders to ship, so a paid
+// order shows without reloading. The chart and tables are left alone; a failed poll keeps the
+// last numbers (the next one tries again).
+const TILE_POLL_MS = 30000;
+async function refreshTiles() {
+  if (document.hidden) return;
+  loadToShip();
+  try {
+    const d = await apiFetch(`/admin/ml/dashboard?group=${state.group}&range=${state.range}`);
+    renderSummary(d);
+    renderRevenue(d.sales);
+  } catch (err) { /* keep the last numbers */ }
+}
+
 document.querySelectorAll("[data-metric]").forEach(b => b.addEventListener("click", () => {
   state.metric = b.dataset.metric;
   document.querySelectorAll("[data-metric]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
@@ -272,6 +286,7 @@ if (requireAdminPage()) {
   loadModel();
   loadChat();
   loadAccountsTile();
+  setInterval(refreshTiles, TILE_POLL_MS);
   // After a retrain: the model tile, the sales chart and the forecast.
   MLTraining.mount(document.getElementById("dashTraining"), { compact: true, onFinished: () => { loadModel(); loadDashboard(); loadForecast(); } });
 }

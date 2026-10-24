@@ -131,7 +131,12 @@ async function handleCheckoutPaid(conn, session) {
     'SELECT payment_id, order_id, amount_centavos, status FROM payments WHERE checkout_session_id = ? FOR UPDATE',
     [session.id]
   );
-  if (!p || p.status === 'paid') return null;
+  if (!p) {
+    // Signed and accepted, but no payment has this checkout session: nothing to mark paid.
+    console.warn(`PayMongo webhook: no payment for checkout session ${session.id}; no order changed`);
+    return null;
+  }
+  if (p.status === 'paid') return null;
 
   const flag = (reason) =>
     conn.query(
@@ -141,6 +146,7 @@ async function handleCheckoutPaid(conn, session) {
     );
 
   if (paid?.attributes?.amount !== p.amount_centavos) {
+    console.warn(`PayMongo webhook: order ${p.order_id} amount mismatch (expected ${p.amount_centavos}, got ${paid?.attributes?.amount}); flagged for review`);
     await flag(`Amount mismatch: expected ${p.amount_centavos}, got ${paid?.attributes?.amount}`);
     await notifications.paymentNeedsReview(conn, {
       orderId: p.order_id, kind: 'amount', expectedCentavos: p.amount_centavos, paidCentavos: paid?.attributes?.amount,
@@ -153,6 +159,7 @@ async function handleCheckoutPaid(conn, session) {
     [p.order_id]
   );
   if (!upd.affectedRows) {
+    console.warn(`PayMongo webhook: order ${p.order_id} is no longer pending_payment; payment flagged for review`);
     // e.g. order expired and its stock was released before the customer finished paying
     await flag('Paid after order left pending_payment (expired/cancelled) - refund or restore manually');
     await notifications.paymentNeedsReview(conn, { orderId: p.order_id, kind: 'late' });
@@ -198,8 +205,9 @@ async function paymongoWebhook(req, res) {
   // live events; with a test key, only test events. The event's own livemode flag is not trusted.
   const live = paymongo.isLiveKey();
   const toleranceSeconds = Number(process.env.PAYMONGO_WEBHOOK_TOLERANCE_SECONDS) || 0;
-  if (!paymongo.verifyWebhookSignature(raw, req.get('Paymongo-Signature'), process.env.PAYMONGO_WEBHOOK_SECRET, live, { toleranceSeconds })
-      || event?.data?.attributes?.livemode !== live) {
+  const signed = paymongo.verifyWebhookSignature(raw, req.get('Paymongo-Signature'), process.env.PAYMONGO_WEBHOOK_SECRET, live, { toleranceSeconds });
+  if (!signed || event?.data?.attributes?.livemode !== live) {
+    console.warn(`PayMongo webhook refused (401): ${signed ? `livemode is ${event?.data?.attributes?.livemode}, but the secret key is ${live ? 'live' : 'test'}` : 'bad or missing signature'}`);
     return res.status(401).end();
   }
 

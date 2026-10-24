@@ -330,6 +330,36 @@ describe("Dashboard: Sales and Forecast cards", () => {
     page.close();
   });
 
+  test("the tiles refresh every 30 s (a newly paid order shows), the chart is not redrawn", async () => {
+    let paid = false;
+    let visible = true;   // jsdom reports pages as hidden; the poll skips hidden tabs
+    const page = await openPage("Pages/Admin/dashboard.html", { role: "admin",
+      setup: (w) => Object.defineProperty(w.document, "hidden", { get: () => !visible }),
+      api: async (call) => {
+        if (call.url.startsWith("/admin/ml/dashboard")) return { body: paid ? { ...data, sales: { ...data.sales, today: { ...tile(1300), orders: 1 } } } : data };
+        if (call.url === "/v1/admin/orders/to-ship") return { body: { count: paid ? 1 : 0 } };
+        return api()(call);
+      } });
+    await page.until(() => page.$("#trendChart svg") && page.$("#revToday .stat__value").textContent === "₱0");
+    expect(page.$("#statToShip .stat__value").textContent).toBe("0");
+    const chart = page.$("#trendChart svg");
+
+    visible = false;   // a background tab doesn't poll
+    const before = page.calls.length;
+    await page.window.refreshTiles();
+    expect(page.calls.length).toBe(before);
+
+    visible = true;
+    paid = true;
+    await page.window.refreshTiles();
+    await page.settle();
+    expect(page.$("#statToShip .stat__value").textContent).toBe("1");
+    expect(page.$("#revToday .stat__value").textContent).toBe("₱1,300");
+    expect(page.$("#revToday .stat__sub").textContent).toContain("1 order");
+    expect(page.$("#trendChart svg")).toBe(chart);   // same element: no redraw, no skeleton
+    page.close();
+  });
+
   test("Forecast: no scored parts yet", async () => {
     const page = await open({ predictions: { body: [PREDICTIONS[6]] } });
     await page.until(() => page.$("#forecastBody .state"));
