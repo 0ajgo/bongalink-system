@@ -13,6 +13,7 @@
     { "key": "orderId", "value": "" },
     { "key": "deliveryId", "value": "" },
     { "key": "checkoutSessionId", "value": "cs_test_replace_me" },
+    { "key": "amountCentavos", "value": "" },
     { "key": "webhookSecret", "value": "" }
   ],
   "item": [
@@ -161,7 +162,7 @@
             ],
             "url": "{{baseUrl}}/api/v1/payments/checkout",
             "body": { "mode": "raw", "raw": "{\n  \"order_id\": {{orderId}}\n}" },
-            "description": "Returns checkout_url (PayMongo hosted page). Copy the session id (cs_...) from PayMongo into checkoutSessionId to replay the webhook below."
+            "description": "Returns checkout_url (PayMongo hosted page). To replay the webhook below, copy this order's payments.checkout_session_id (cs_...) into checkoutSessionId and its payments.amount_centavos into amountCentavos: SELECT checkout_session_id, amount_centavos FROM payments WHERE order_id = <order> ORDER BY payment_id DESC LIMIT 1."
           }
         },
         {
@@ -196,8 +197,8 @@
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/v1/webhooks/paymongo",
-            "body": { "mode": "raw", "raw": "{\"data\":{\"id\":\"evt_postman_{{$timestamp}}\",\"type\":\"event\",\"attributes\":{\"type\":\"checkout_session.payment.paid\",\"livemode\":false,\"data\":{\"id\":\"{{checkoutSessionId}}\",\"attributes\":{\"payment_method_used\":\"gcash\",\"payments\":[{\"id\":\"pay_postman\",\"attributes\":{\"amount\":109900}}]}}}}}" },
-            "description": "Set amount to the order's amount_centavos (payments table) or it is flagged 'Amount mismatch' for review. Sending the same event id twice is processed once."
+            "body": { "mode": "raw", "raw": "{\"data\":{\"id\":\"evt_postman_{{$timestamp}}\",\"type\":\"event\",\"attributes\":{\"type\":\"checkout_session.payment.paid\",\"livemode\":false,\"data\":{\"id\":\"{{checkoutSessionId}}\",\"attributes\":{\"payment_method_used\":\"gcash\",\"payments\":[{\"id\":\"pay_postman\",\"attributes\":{\"amount\":{{amountCentavos}}}}]}}}}}" },
+            "description": "Set checkoutSessionId and amountCentavos from the order's payments row (see 'Create checkout session'). A different amount is flagged 'Amount mismatch' for review and the order stays unpaid; an unknown session id changes nothing (the API logs a warning). Sending the same event id twice is processed once."
           }
         }
       ]

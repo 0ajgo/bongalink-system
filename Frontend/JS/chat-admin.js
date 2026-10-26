@@ -1,15 +1,6 @@
-/* =====================================================================
-   BONGALINK — ADMIN CHAT & FAQs (Pages/Admin/chat.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET   /api/v1/admin/chat/summary
-     GET   /api/v1/admin/chat/logs?view=&q=&days=&customer=&before=
-     GET   /api/v1/admin/chat/sessions/:sessionId
-     PATCH /api/v1/admin/chat/logs/:id        { resolved }
-     GET / POST / PATCH / DELETE /api/v1/admin/faqs
-   The loop for the paper's "progressively improve": the bot marks what it
-   couldn't answer -> it shows up here -> "Turn into FAQ" -> the bot uses
-   the new FAQ from the next message on.
-   ===================================================================== */
+/* Admin › Chat & FAQs: questions the assistant couldn't answer, the FAQ
+   list, and past conversations. "Turn into FAQ" adds an answer the
+   assistant uses from then on. Requires api.js, icons.js, cart.js and ui.js. */
 
 renderHeader({ active: "chat" });
 

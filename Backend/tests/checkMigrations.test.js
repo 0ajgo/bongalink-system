@@ -17,7 +17,7 @@ test("every migration file after 002 (except data-only 007) has a check", () => 
 
 test("a fully migrated database: all applied, and the triggers' definer exists", async () => {
   const [migrations] = await pool.query(statements[0]);
-  expect(migrations.length).toBe(9);
+  expect(migrations.length).toBe(10);
   expect(migrations.filter((m) => m.state !== "applied")).toEqual([]);
   const [definers] = await pool.query(statements[1]);
   expect(definers.length).toBeGreaterThan(0);

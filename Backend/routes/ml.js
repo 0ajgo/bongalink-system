@@ -162,14 +162,16 @@ const PERIOD_OF = {
   month: "DATE_FORMAT(o.created_at, '%Y-%m-01')"
 };
 
-// Orders, units and item revenue of the sales in [from, to).
+// Orders, units and item revenue of the sales paid in [from, to), for the revenue tiles: an
+// order counts on the day it was paid. Sales without paid_at (imported from the sales sheet,
+// paid at the counter) count on their order date. The trend chart and ML data keep created_at.
 async function salesBetween(conn, from, to) {
   const [[r]] = await conn.query(
     `SELECT COUNT(DISTINCT o.order_id) AS orders,
             COALESCE(SUM(oi.quantity), 0) AS units,
             COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
      FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
-     WHERE o.status IN (?) AND o.created_at >= ? AND o.created_at < ?`,
+     WHERE o.status IN (?) AND COALESCE(o.paid_at, o.created_at) >= ? AND COALESCE(o.paid_at, o.created_at) < ?`,
     [SOLD_STATUSES, from, to]
   );
   return { orders: Number(r.orders), units: Number(r.units), revenue: Number(r.revenue) };

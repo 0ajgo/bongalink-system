@@ -134,6 +134,18 @@ describe("GET /api/admin/ml/dashboard", () => {
     expect(res.body.month).toEqual({ orders: res.body.sales.month.orders, units: res.body.sales.month.units, revenue: res.body.sales.month.revenue });
   });
 
+  test("revenue tiles count an order on the day it was paid; the trend keeps the order date", async () => {
+    const part = await createProduct({ price: 1, createdBy: admin.id });
+    const today = await phToday();
+    await sale(part, { price: 40, at: `${addDays(today, -1)} 21:00:00` });   // placed yesterday...
+    await inZone("UPDATE orders SET paid_at = ? WHERE total_amount = 40", [`${today} 09:00:00`]);   // ...paid this morning
+    await sale(part, { price: 7, at: `${addDays(today, -1)} 10:00:00` });    // counter sale: no paid_at, counts on its order date
+
+    const { sales, trend } = (await dashboard()).body;
+    expect(sales.today).toMatchObject({ revenue: 40, orders: 1, previous_revenue: 7 });
+    expect(trend.at(-1)).toEqual({ day: addDays(today, -1), units: 2, revenue: 47 });
+  });
+
   test("no sales in the previous period: the change is null, not a division by zero", async () => {
     const part = await createProduct({ price: 250, createdBy: admin.id });
     await sale(part, { price: 250, at: `${await phToday()} 00:00:00` });

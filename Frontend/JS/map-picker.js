@@ -13,8 +13,7 @@
      picker.getPin() / picker.clear() / picker.refresh()  (call refresh() after showing a hidden map)
 
    Click the map or drag the marker to place the pin; "Use my location"
-   asks the browser. Lookups go to OUR backend (POST /api/v1/geo/reverse),
-   which talks to Nominatim within its usage policy — never the browser.
+   asks the browser. Address lookups go through the shop's server.
    ===================================================================== */
 
 const PH_CENTER = [12.3, 122.6];          // whole country in view until a pin is set

@@ -1,29 +1,21 @@
-/* =====================================================================
-   BONGALINK — CHECKOUT (Pages/COpage/checkout.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-
-   1. Loads the SERVER cart (what POST /api/orders will order) and, if the
-      customer has one, their default saved address.
-   2. Map pin (js/map-picker.js) fills region/province/city; the server
-      takes the shipping zone from where the pin is. Shipping quote:
-      POST /api/v1/shipping/quote for J&T / LBC (rate table) and Lalamove
-      (live quote, only when the pin is in its service area). Each option
-      says how its fee was calculated, and the order sends the fee shown
-      so the server can refuse it if the fee changed.
-   3. POST /api/orders reserves stock for 24 hours (pending_payment), then
-      POST /api/v1/payments/checkout sends the customer to PayMongo.
-   4. Coming back from PayMongo (?order=&payment=success|cancelled) the
-      page polls GET /api/v1/payments/orders/:id. The redirect alone is
-      NOT proof of payment, so a still-pending order never offers to pay
-      again after "success" (that could charge twice).
-   ===================================================================== */
+/* Checkout. Requires api.js, icons.js, cart.js and ui.js.
+   1. Shows the cart and, if the customer has one, their default address.
+   2. The map pin (js/map-picker.js) fills region/province/city. Each
+      courier option says how its fee was worked out; the order sends the
+      fee shown, so a changed fee is caught before paying.
+   3. Placing the order holds the items for 24 hours, then the customer
+      goes to PayMongo to pay.
+   4. Back from PayMongo (?order=&payment=success|cancelled) the page
+      checks the order's payment status. The redirect alone is not proof of
+      payment, so a still-pending order never offers to pay again after
+      "success" (that could charge twice). */
 
 renderHeader();
 
 let cart = [];
 let options = [];
 let selectedCourier = null;
-let quote = null;   // last answer from /v1/shipping/quote
+let quote = null;   // last shipping quote
 let savedAddresses = [];
 
 const els = {
@@ -114,7 +106,7 @@ async function refreshQuote() {
       body: JSON.stringify({
         items: cart.map(i => ({ product_id: Number(i.productId), quantity: i.quantity })),
         address: {
-          region: region || "NCR",   // ignored by the server when the pin is found
+          region: region || "NCR",  
           province: els.form.elements.province.value.trim() || null,
           city: els.form.elements.city.value.trim() || null,
           line: addressLine() || region,
@@ -192,7 +184,7 @@ const picker = createMapPicker(document.getElementById("mapPicker"), {
 });
 
 /* ---------------------------------------------------------------------
-   SAVED ADDRESSES (GET /api/v1/account/addresses) — prefill the form
+   SAVED ADDRESSES — prefill the form
    --------------------------------------------------------------------- */
 function fillAddress(a) {
   const f = els.form.elements;
@@ -233,7 +225,7 @@ els.saved.addEventListener("change", () => {
 });
 
 /* ---------------------------------------------------------------------
-   VALIDATION — mirrors what Backend/routes/orders.js enforces
+   VALIDATION — the same rules the server checks
    --------------------------------------------------------------------- */
 function showError(name, message) {
   const slot = document.querySelector(`[data-error-for="${name}"]`);
@@ -274,8 +266,8 @@ function validate() {
 }
 
 /* ---------------------------------------------------------------------
-   EMAIL VERIFICATION — checkout is blocked until the email is verified
-   (server answers code EMAIL_NOT_VERIFIED); verifying retries the order.
+   EMAIL VERIFICATION — checkout is blocked until the email is verified;
+   verifying retries the order.
    --------------------------------------------------------------------- */
 const verify = {
   box: document.getElementById("verify-box"),
@@ -327,8 +319,7 @@ document.getElementById("verify-confirm").addEventListener("click", async (event
 });
 
 /* ---------------------------------------------------------------------
-   PLACE ORDER — payload must match what POST /api/orders destructures:
-   { contact, recipient, address, courier, payment, consent }
+   PLACE ORDER
    --------------------------------------------------------------------- */
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -382,7 +373,7 @@ async function placeOrder() {
 }
 
 /* ---------------------------------------------------------------------
-   PAYMENT — PayMongo hosted checkout; amounts come from the database.
+   PAYMENT — PayMongo's checkout page
    --------------------------------------------------------------------- */
 async function startPayment(orderId) {
   try {

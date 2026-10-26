@@ -191,7 +191,7 @@ router.get("/", ah(async (req, res) => {
     SELECT p.product_id AS id, p.name, c.name AS category, p.brand,
            p.price, p.stock_quantity - LEAST(p.reserved, p.stock_quantity) AS stock,
            p.image_path AS image,
-           p.description, p.created_by, p.created_at
+           p.description, p.created_at
     FROM products p
     JOIN categories c ON c.category_id = p.category_id
     WHERE p.is_active = 1

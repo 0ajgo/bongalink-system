@@ -60,9 +60,9 @@ async function attachItems(rows) {
 }
 
 // Customer + delivery address columns shared by the admin lists (needs o, u, a aliases);
-// shapeOrderDetail() turns them into ship_name, ship_phone, ship_address, ship_landmark.
+// shapeOrderDetail() turns them into ship_name, ship_phone, ship_address, ship_city, ship_landmark.
 const ORDER_DETAIL_COLUMNS = `
-  o.order_id, o.status AS order_status, o.created_at, o.paid_at, o.total_amount, o.shipping_fee,
+  o.order_id, o.status AS order_status, o.created_at, o.paid_at, o.packed_at, o.total_amount, o.shipping_fee,
   o.courier AS courier_chosen,
   u.username AS customer_username, o.contact_email, u.email AS account_email,
   a.recipient_name, a.recipient_phone, a.street, a.barangay, a.city, a.province, a.postal_code, a.landmark,
@@ -76,7 +76,7 @@ function shapeOrderDetail(row) {
   const { contact_email, account_email, recipient_name, recipient_phone, street, barangay, city, province, postal_code, landmark, ...rest } = row;
   return {
     ...rest, customer_email: maskEmail(orderEmail(row)),
-    ship_name: a.recipient_name, ship_phone: a.recipient_phone, ship_address: addressLine(a), ship_landmark: a.landmark,
+    ship_name: a.recipient_name, ship_phone: a.recipient_phone, ship_address: addressLine(a), ship_city: a.city, ship_landmark: a.landmark,
   };
 }
 
@@ -153,21 +153,31 @@ router.post('/shipping/quote', requireAuth, ah(async (req, res) => {
   }
 }));
 
-// GET /orders/:id/tracking  - customer's tracking timeline
+// GET /orders/:id/tracking  - customer's order progress, before and after shipping.
+// 404 only when the order isn't this customer's. Before a courier is booked, the shipment
+// fields are null and `events` is empty; `status` stays the shipment's status, as before.
 router.get('/orders/:id/tracking', requireAuth, ah(async (req, res) => {
-  const [[d]] = await pool.query(
-    `SELECT d.* FROM deliveries d JOIN orders o ON o.order_id = d.order_id
-      WHERE o.order_id = ? AND o.user_id = ? AND d.status <> 'PENDING'`,
+  const [[o]] = await pool.query(
+    `SELECT o.order_id, o.status, o.created_at, o.paid_at, o.packed_at, o.courier,
+            d.delivery_id, d.courier AS shipment_courier, d.status AS shipment_status,
+            d.tracking_number, d.tracking_url, d.delivered_at
+       FROM orders o
+       LEFT JOIN deliveries d ON d.order_id = o.order_id AND d.status <> 'PENDING'
+      WHERE o.order_id = ? AND o.user_id = ?`,
     [req.params.id, req.user.userId]
   );
-  if (!d) return res.status(404).json({ error: 'No shipment yet for this order' });
-  const [events] = await pool.query(
-    'SELECT status, note, created_at FROM shipment_events WHERE delivery_id = ? ORDER BY created_at ASC, event_id ASC',
-    [d.delivery_id]
-  );
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  const [events] = o.delivery_id ? await pool.query(
+    'SELECT status, note, source, created_at FROM shipment_events WHERE delivery_id = ? ORDER BY created_at ASC, event_id ASC',
+    [o.delivery_id]
+  ) : [[]];
   res.json({
-    courier: d.courier, courier_label: COURIER_LABEL[d.courier], status: d.status,
-    tracking_number: d.tracking_number, tracking_url: d.tracking_url, events,
+    order_id: o.order_id, order_status: o.status, created_at: o.created_at, paid_at: o.paid_at, packed_at: o.packed_at,
+    courier_chosen: o.courier, courier_chosen_label: COURIER_LABEL[o.courier] || null,
+    shipped: Boolean(o.delivery_id),
+    courier: o.shipment_courier || null, courier_label: COURIER_LABEL[o.shipment_courier] || null, status: o.shipment_status || null,
+    tracking_number: o.tracking_number || null, tracking_url: o.tracking_url || null, delivered_at: o.delivered_at || null,
+    events,
   });
 }));
 
@@ -204,6 +214,21 @@ router.get('/admin/orders/awaiting-shipment', requireAdmin, ah(async (req, res) 
     r.can_book_lalamove = lalamoveOn && r.has_map_pin;
   }
   res.json(await attachItems(rows));
+}));
+
+// POST /admin/orders/:orderId/packed  - the parcel is boxed: a paid order moves to "Ready to ship".
+// Only from 'paid', in one conditional UPDATE, so two clicks can't both succeed. No customer email.
+router.post('/admin/orders/:orderId/packed', requireAdmin, ah(async (req, res) => {
+  const [r] = await pool.query(
+    `UPDATE orders SET status = 'packed', packed_at = NOW() WHERE order_id = ? AND status = 'paid'`,
+    [req.params.orderId]
+  );
+  const [[o]] = await pool.query('SELECT order_id, status, packed_at FROM orders WHERE order_id = ?', [req.params.orderId]);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  if (!r.affectedRows) {
+    return res.status(409).json({ error: `Order #${o.order_id} is ${o.status.replace('_', ' ')}; only paid orders can be marked as packed` });
+  }
+  res.json(o);
 }));
 
 // GET /admin/shipments?status=IN_TRANSIT  (REQ012, REQ016) - booked deliveries only

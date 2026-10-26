@@ -70,6 +70,7 @@ changing anything.
 |---|---|---|---|
 | `NODE_ENV` | yes | `development` | `production` on the server: turns on HSTS and the startup checks (section 9). |
 | `PORT` | | `4000` | Port the API listens on (only nginx reaches it). |
+| `HOST` | | `127.0.0.1` | Address the API listens on: this machine only, so the internet can't reach port 4000 around nginx. Docker sets `0.0.0.0` inside its container (its port is published on `127.0.0.1` only). |
 | `CORS_ORIGIN` | in production | — | Comma-separated browser origins allowed to call the API. Production: the shop's address, e.g. `https://shop.example.com`. |
 | `APP_URL` | in production | — | The shop's address as customers see it; PayMongo sends them back to `APP_URL/Pages/COpage/checkout.html`. Production: `https://shop.example.com`. |
 | `TRUST_PROXY` | behind nginx | blank (no proxy) | Number of proxies in front of the API (usually `1`) or their addresses. Without it, every visitor shares the proxy's IP in the rate limits. Never `true`. |
@@ -158,6 +159,7 @@ and none can be skipped. The same list is in `Backend/tests/globalSetup.js` and 
 | 9 | `migrations/010_ml_training_runs.sql` | retraining runs |
 | 10 | `migrations/011_auth_recovery.sql` | password reset, "Remember me" sessions |
 | 11 | `migrations/012_admin_notifications.sql` | the admin bell |
+| 12 | `migrations/013_order_packed_at.sql` | when an order was packed (Admin > Deliveries) |
 
 Then `Backend/database/seed_data.sql` on a **fresh** database: the six categories and the hidden test
 products for the live payment test. A fresh schema has **no categories** without it. It is safe to run twice.
@@ -370,8 +372,27 @@ can't be reached. Docker or systemd then starts it again.
 ## 10. Go-live
 
 ### Settings
+
+Every key and secret to enter on the server, and where each one comes from. Never put them in the
+repository, a chat or a document; keep a copy in a password manager.
+
+| Setting | Where to get it |
+|---|---|
+| `DATA_ENCRYPTION_KEY`, `DATA_INDEX_KEY` | **The ones the database was encrypted with** (your password manager). Only for a brand-new, empty database: generate with the command in section 1. |
+| `JWT_SECRET`, `VERIFICATION_SECRET` | Generate new ones on the server: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` (once each). |
+| `DB_PASSWORD` (API: `bongalink_app`), worker `DB_PASSWORD` (`bongalink_ml`); Docker: `DB_PASSWORD` (root), `API_DB_PASSWORD`, `ML_DB_PASSWORD` | You choose them (20+ characters) when running `deploy/mysql/create_app_users.sql` (section 5). |
+| `PAYMONGO_SECRET_KEY` | PayMongo Dashboard, **Live mode** > Developers > API keys: the `sk_live_…` secret key. |
+| `PAYMONGO_WEBHOOK_SECRET` | PayMongo Dashboard, **Live mode** > Developers > Webhooks: create the webhook (URL `https://<domain>/api/v1/webhooks/paymongo`, event `checkout_session.payment.paid`) and copy its `whsk_…`. |
+| `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET` (if Lalamove is used) | Lalamove Partner Portal, **production** account > Developers. There, also set the webhook URL `https://<domain>/api/v1/webhooks/lalamove`. With `LALAMOVE_ENV=production`. |
+| `SMTP_USER`, `SMTP_PASS` | The shop's Gmail address, and an **App Password** for it: Google Account > Security > 2-Step Verification > App passwords. |
+| `GEMINI_API_KEY` | Google AI Studio > Get API key. |
+
+The other settings (`APP_URL`, `CORS_ORIGIN`, `MAIL_FROM`, `ADMIN_ALERT_EMAIL`, `STORE_*`, `GEOCODER_CONTACT`,
+`TRACKING_URL_*`) are not secret: they're the shop's own addresses and details (section 3).
+
 - [ ] **Encryption keys:** the same `DATA_ENCRYPTION_KEY` / `DATA_INDEX_KEY` as the database, saved in a password manager (section 1).
 - [ ] `NODE_ENV=production`; `APP_URL` and `CORS_ORIGIN` = `https://shop.example.com`; `TRUST_PROXY=1` (section 8).
+  With Docker, set `APP_URL`, `CORS_ORIGIN` (and `API_ORIGIN`, if the `frontend` container is used) in the root `.env`: missing, they fall back to `localhost` addresses.
 - [ ] A new random `JWT_SECRET` (32+ characters) and `VERIFICATION_SECRET`, not the development ones.
 - [ ] Database: `bongalink_real`, with every migration (`deploy/mysql/check_migrations.sql`), the least-privilege users (section 5), and the triggers' definer present.
 - [ ] Product photos in place (section 6, the copy step).
@@ -558,12 +579,6 @@ on another machine, and run steps 3 and 6 against it.
 
 Decisions and checks still to do. Tick them off here as they're done.
 
-- [ ] **Delete the legacy Rust ML code** (`ml/backend/src/`, `Cargo.toml`, `Cargo.lock`,
-  `ml/backend/.env.example`, `ml/backend/.gitignore`) **after the adviser confirms** the Python worker
-  (`ml/worker`) as the ML runtime. Keep `ml/backend/models/`: it is the worker's starting model. Then
-  remove the LEGACY notices in `ml/README.md` and `ml/backend/README.md`, the `ml/backend/target` line in
-  `.dockerignore`, and the mentions of the Rust code in `ml/colab/build_notebook.py` and the worker's
-  comments. Until then, don't run it (`ml/backend/README.md` explains why).
 - [ ] **Lalamove webhook signature**: add the check once Lalamove documents it (section 10).
 - [ ] **PayMongo webhook age limit**: `PAYMONGO_WEBHOOK_TOLERANCE_SECONDS` stays off until the retry check
   in section 10 shows retries carry a new timestamp.

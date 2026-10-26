@@ -26,7 +26,8 @@ async function call(path, options = {}) {
       : "PayMongo can't be reached right now. Please try again.");
   }
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new PaymentError(json.errors?.[0]?.detail || `PayMongo error ${res.status}`);
+  // PayMongo's own wording: only shown outside production (server.js), since it can name keys or accounts.
+  if (!res.ok) throw Object.assign(new PaymentError(json.errors?.[0]?.detail || `PayMongo error ${res.status}`), { fromProvider: true });
   return json;
 }
 

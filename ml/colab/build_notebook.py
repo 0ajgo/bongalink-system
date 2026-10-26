@@ -18,7 +18,7 @@ Trains the two analytics algorithms for the **Database System** objective (REQ07
 | 2 | **Segmented regression via optimization** (trend shift) | "Did demand for this part change direction recently, when, and which way?" | TensorFlow curve fit (SciPy `curve_fit`-style), threshold calibrated on labeled series |
 
 **Output:** three JSON files (`stock_lr.json`, `trend_config.json`, `parity.json`) that go into `backend/models/`.
-The Rust backend loads them and serves predictions — no Python at runtime.
+The Python ML worker (`ml/worker`) starts from them, keeps the shop's predictions up to date and retrains on real orders.
 
 Run all cells top to bottom (`Runtime → Run all`).'''),
 
@@ -30,7 +30,7 @@ import pandas as pd
 SEED = 42
 rng = np.random.default_rng(SEED)
 
-# ---- Shared contract with the Rust backend (backend/src/features.rs) ----
+# ---- Shared contract with the ML worker (worker/bongalink_ml/core.py) ----
 WINDOW = 28          # days of sales history the stock model reads
 HORIZON = 7          # days ahead the stock model predicts
 TREND_DAYS = 84      # days of history the trend-shift detector reads (12 weeks)
@@ -132,7 +132,7 @@ print(f"{matrix.shape[1]} products x {matrix.shape[0]} days ({first} to {last})"
 ("md", "", r'''## 2. Features for the stock-prediction model
 
 For each product and each day *t*, the model sees the previous 28 days and predicts **total units sold over the next 7 days**.
-These six features are re-implemented line-for-line in `backend/src/features.rs`; `parity.json` proves both sides match.
+The ML worker computes these six features the same way (`worker/bongalink_ml/core.py`); `parity.json` proves both sides match.
 
 | Feature | Meaning |
 |---|---|
@@ -228,7 +228,7 @@ Fit a **continuous two-segment line** to the last 84 days of sales:
 The optimizer finds the breakpoint day `k` and slopes that minimize squared error (the same problem `scipy.optimize.curve_fit` solves).
 `b` is the slope before the breakpoint, `b + c` the slope after. A **trend shift** is flagged when the slope change, relative to the product's average demand, exceeds a threshold calibrated below.
 
-- `fit_breakpoint` — exact search over every allowed `k` (what the Rust backend runs: deterministic, always the global optimum).
+- `fit_breakpoint` — exact search over every allowed `k` (what the ML worker runs: deterministic, always the global optimum).
 - `tf_curve_fit` — TensorFlow gradient-based curve fit of the same model, used here to show both approaches agree.'''),
 
 ("code", "", r'''def fit_breakpoint(y, min_segment=MIN_SEGMENT):
@@ -331,11 +331,11 @@ plt.axvline(k, ls="--", color="k", label=f"breakpoint ({r['days_since_breakpoint
 plt.title(f"Product {pid}: shift={r['shift_detected']} ({r['direction']}), relative change {r['relative_change']:+.3f}")
 plt.legend(); plt.show()'''),
 
-("md", "", r'''## 5. Export for the Rust backend
+("md", "", r'''## 5. Export for the ML worker
 
 - `stock_lr.json` — linear regression weights + feature scaling
 - `trend_config.json` — trend window and calibrated threshold
-- `parity.json` — one fixed example with the exact numbers this notebook computes; `cargo test` checks the backend reproduces them'''),
+- `parity.json` — one fixed example with the exact numbers this notebook computes; the worker's `tests/test_core.py` checks it reproduces them'''),
 
 ("code", "", r'''trained_at = dt.datetime.now().isoformat(timespec="seconds")
 stock_lr = {

@@ -86,13 +86,29 @@ app.use("/api/v1", logisticsRoutes); // /shipping/quote, /orders/:id/tracking, /
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
+// Anything else: a short JSON 404, never Express's own error page.
+app.use((req, res) => res.status(404).json({ error: "Not found." }));
+
 // Validation errors (bad upload, malformed JSON) keep their message so the
 // frontend can show it; PayMongo/Lalamove failures are 502; anything else is
-// an unexpected 500 and gets a generic message.
+// an unexpected 500 and gets a generic message. In production a 502 never
+// repeats the provider's own error text (it stays in the log).
+const PROVIDER_FAILED = {
+  PaymentError: "The payment service couldn't complete this. Please try again in a moment.",
+  LogisticsError: "The courier service couldn't complete this. Please try again in a moment.",
+};
+// A body the API couldn't read (bad JSON, too large): a fixed message. The parser's own
+// text repeats what was sent and names the library.
+const BODY_ERRORS = { "entity.too.large": [413, "The request is too large."] };
 app.use((err, req, res, next) => {
+  if (typeof err.type === "string" && err.type.includes(".")) {
+    const [status, error] = BODY_ERRORS[err.type] || [400, "The request couldn't be read."];
+    return res.status(status).json({ error });
+  }
   if (err instanceof PaymentError || err instanceof LogisticsError) {
     logError(err.constructor.name, err);
-    return res.status(502).json({ error: err.message });
+    const hide = err.fromProvider && process.env.NODE_ENV === "production";
+    return res.status(502).json({ error: hide ? PROVIDER_FAILED[err.constructor.name] : err.message });
   }
   const status = err instanceof multer.MulterError ? 400 : err.status || err.statusCode || 500;
   if (status < 500) {
@@ -138,8 +154,11 @@ if (require.main === module) {
     .then((line) => {
       console.log(`  ${line}`);
       const PORT = process.env.PORT || 4000;
-      app.listen(PORT, () => {
-        console.log(`Bongalink API running on http://localhost:${PORT}`);
+      // This machine only by default: browsers reach the API through nginx. Docker sets HOST=0.0.0.0
+      // inside its container, whose port is published on 127.0.0.1 only (docker-compose.yml).
+      const HOST = process.env.HOST || "127.0.0.1";
+      app.listen(PORT, HOST, () => {
+        console.log(`Bongalink API running on http://${HOST}:${PORT}`);
       });
       startOrderExpiryJob();
     });

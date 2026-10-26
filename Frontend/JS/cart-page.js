@@ -1,11 +1,7 @@
-/* =====================================================================
-   BONGALINK — CART PAGE (Pages/COpage/cart.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-   Renders the SERVER cart (GET /api/cart) and changes it through cartApi,
-   so the order placed at checkout is exactly what is shown here.
-   Quantities are capped at available stock; the server re-checks stock
-   when the order is placed.
-   ===================================================================== */
+/* Cart page. Requires api.js, icons.js, cart.js and ui.js.
+   Shows the cart saved on the server and changes it there (cartApi), so
+   checkout orders exactly what is shown. Quantities are capped at
+   available stock. */
 
 renderHeader();
 const body = document.getElementById("cart-body");

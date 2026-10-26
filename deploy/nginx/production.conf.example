@@ -32,12 +32,17 @@ server {
     # The pages and their files. (Headers are set here, not for the whole server: nginx would add them
     # to the API's answers too, which carry their own from helmet, HSTS included in production.)
     location / {
-        try_files $uri $uri/ =404;
+        try_files $uri =404;   # files only: a folder is 404, never a listing
+        autoindex off;
         add_header Strict-Transport-Security "max-age=15552000" always;
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
         add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        # Page assets only: never dotfiles (.env, .git), notes, backups or package files that end up here.
+        location ~ /\.(?!well-known/) { return 404; }
+        location ~* \.(md|map|bak|orig|old|sql|log|zip|tgz)$ { return 404; }
+        location ~* /(node_modules|backups)/|/package(-lock)?\.json$ { return 404; }
     }
 
     # The Node API (and the PayMongo / Lalamove webhooks under /api/v1/webhooks/).

@@ -1,16 +1,9 @@
-/* =====================================================================
-   BONGALINK — "UPDATE FORECASTS & TRENDS" (REQ028)
-   Used on the Forecasts page (Admin/inventory.html, full panel with the
-   history of training runs) and the Dashboard (compact). Requires
-   api.js, icons.js and ui.js.
-     GET  /api/admin/ml/training   current run, history, accuracy, triggers
-     POST /api/admin/ml/training   queue a retrain (409 if one is running)
-   The ML worker does the training; this polls for progress (every 3 s
-   while a run is queued or training, every 30 s otherwise) and calls
-   onFinished(run) when a run ends, so the page can reload its forecasts.
+/* "Update forecasts & trends" panel: full on Inventory (with the run
+   history), compact on the Dashboard. Requires api.js, icons.js and ui.js.
+   Polls for progress (every 3 s while a run is queued or training, every
+   30 s otherwise) and calls onFinished(run) when a run ends.
 
-   MLTraining.mount(element, { compact, onFinished })
-   ===================================================================== */
+   MLTraining.mount(element, { compact, onFinished }) */
 
 const MLTraining = (() => {
   const FAST_MS = 3000;

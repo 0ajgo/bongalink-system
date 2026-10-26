@@ -11,13 +11,11 @@
 <body class="app">
 <header id="site-header"></header>
 
-<!-- js/orders.js fills #orders from GET /api/orders, and the tracking
-     timeline of every shipped order from GET /api/v1/orders/:id/tracking (REQ014). -->
-<main id="main" class="container page">
+<main id="main" class="container container--narrow page">
   <div class="page-head">
     <div>
       <h1>My orders</h1>
-      <p>Payment status and delivery tracking for every order you've placed.</p>
+      <p>Press “Track” on an order to see where it is.</p>
     </div>
   </div>
   <div class="alert alert--error" id="orders-error" role="alert" hidden></div>

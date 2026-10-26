@@ -1,14 +1,6 @@
-/* =====================================================================
-   BONGALINK — ADMIN ACCOUNTS (Pages/Admin/accounts.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET    /api/v1/admin/accounts?q&role&status&verified&sort&dir&page
-     GET    /api/v1/admin/accounts/summary | /:id | /audit-log
-     POST   /api/v1/admin/accounts                         create
-     POST   /api/v1/admin/accounts/:id/suspend | unsuspend | role | resend-invite
-     DELETE /api/v1/admin/accounts/:id                     delete or anonymize
-   Buttons the server would refuse are disabled with the reason shown, but
-   the server checks every rule itself (own account, last admin, ...).
-   ===================================================================== */
+/* Admin › Accounts: summary, list, activity log, details and account actions.
+   Requires api.js, icons.js, cart.js and ui.js. Buttons that would be
+   refused are disabled with the reason shown; the server checks every rule. */
 
 renderHeader({ active: "accounts" });
 

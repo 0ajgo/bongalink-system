@@ -1,12 +1,6 @@
-/* =====================================================================
-   BONGALINK — MY PROFILE (Pages/Account/profile.html)
-   Requires api.js, icons.js, cart.js, ui.js and orders.js.
-     GET/PATCH /api/v1/account/me          header card + personal info
-     POST      /api/v1/account/password    change password
-     /api/v1/account/addresses[...]        saved delivery addresses
-     /api/v1/auth/verify-email/send|confirm  email verification
-     GET       /api/orders                 recent orders (customers only)
-   ===================================================================== */
+/* My profile: header card, email verification, personal info, password,
+   saved addresses and recent orders (customers only).
+   Requires api.js, icons.js, cart.js, ui.js and orders.js. */
 
 renderHeader({ active: "profile" });
 

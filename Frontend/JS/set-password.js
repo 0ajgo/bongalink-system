@@ -1,10 +1,5 @@
-/* =====================================================================
-   BONGALINK — SET PASSWORD (set-password.html?token=...)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET  /api/auth/set-password?token=   is the link still good? -> { username }
-     POST /api/auth/set-password { token, password }
-   For accounts the shop created on Admin > Accounts.
-   ===================================================================== */
+/* Set password (set-password.html?token=...), for accounts the shop
+   created on Admin › Accounts. Requires api.js, icons.js, cart.js and ui.js. */
 
 renderHeader({ search: false });
 

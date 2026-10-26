@@ -1,10 +1,9 @@
 """The two Bongalink algorithms, without any database code.
 
 Feature engineering and trend detection are copied from the Colab notebook
-(ml/colab/build_notebook.py: make_features, fit_breakpoint, detect_shift) and the
-forecast post-processing from ml/backend/src/stock.rs. tests/test_core.py checks
-all of it against ml/backend/models/parity.json, the numbers the notebook exported,
-so the worker, the notebook and the Rust parity checker can't silently drift apart.
+(ml/colab/build_notebook.py: make_features, fit_breakpoint, detect_shift).
+tests/test_core.py checks them against ml/backend/models/parity.json, the numbers
+the notebook exported, so the worker and the notebook can't silently drift apart.
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-# ---- Shared contract with the notebook and ml/backend/src/features.rs ----
+# ---- Shared contract with the Colab notebook ----
 WINDOW = 28          # days of sales history the stock model reads
 HORIZON = 7          # days ahead the stock model predicts
 TREND_DAYS = 84      # days of history the trend-shift detector reads
@@ -82,13 +81,13 @@ class StockModel:
 
 
 def _round_half_up(v: float, digits: int) -> float:
-    """Rust's f64::round (half away from zero), not Python's banker's rounding."""
+    """Rounds half away from zero (2.25 -> 2.3), not Python's banker's rounding."""
     f = 10.0 ** digits
     return math.copysign(math.floor(abs(v) * f + 0.5), v) / f
 
 
 def stock_outlook(demand_7d: float, current_stock: int, allow_reorder: bool = True) -> dict:
-    """Same rules as StockModel::forecast in ml/backend/src/stock.rs.
+    """Daily rate, days until stockout and reorder suggestion from a 7-day forecast.
 
     allow_reorder=False is used for cold-start estimates: an out-of-stock product
     is still flagged, but a guessed demand never triggers a reorder by itself.

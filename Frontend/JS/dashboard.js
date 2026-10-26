@@ -1,6 +1,6 @@
 /* =====================================================================
    BONGALINK — ADMIN DASHBOARD (Pages/Admin/dashboard.html)
-   Requires api.js, icons.js, cart.js, ui.js and chart.js. Read-only.
+   Requires api.js, icons.js, cart.js, ui.js, chart.js and forecast-ui.js. Read-only.
    ===================================================================== */
 
 renderHeader({ active: "dashboard" });
@@ -21,14 +21,19 @@ function isoWeek(day) {
   return 1 + Math.floor((thursday - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / (7 * 86400000));
 }
 const monthName = (day, month) => new Date(`${day}T00:00:00`).toLocaleDateString("en-PH", { month, year: "numeric" });
+const weekdayDate = (day) => new Date(`${day}T00:00:00`).toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric" });
+// per / best / short: the Sales card's tiles ("Daily average", "Best day" + "Oct 19"); tip: the chart tooltip.
 const GROUP = {
   day: { ranges: [30, 90, 180], unit: "day", header: "Day", current: "today", axis: chartDate, label: chartDate,
+         per: "Daily", best: "Best day", short: chartDate, tip: weekdayDate, ticks: 7,
          empty: "Paid orders appear here the day after they're placed." },
   week: { ranges: [12, 26, 52], unit: "week", header: "Week", current: "this week", axis: chartDate,
           label: (d) => `Week ${isoWeek(d)} · ${chartDate(d)}–${chartDate(addDays(d, 6))}`,
+          per: "Weekly", best: "Best week", short: (d) => `Week ${isoWeek(d)}`, ticks: 1,
           empty: "Paid orders appear here once their week (Monday to Sunday) is over." },
   month: { ranges: [6, 12, 24], unit: "month", header: "Month", current: "this month", axis: (d) => monthName(d, "short"),
-           label: (d) => monthName(d, "long"), empty: "Paid orders appear here once their month is over." }
+           label: (d) => monthName(d, "long"), per: "Monthly", best: "Best month", short: (d) => monthName(d, "short"), ticks: 1,
+           empty: "Paid orders appear here once their month is over." }
 };
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -112,25 +117,95 @@ function renderRevenue(sales) {
 }
 
 /* ---------------------------------------------------------------------
-   SALES TREND + TOP PRODUCTS
+   SALES + TOP PRODUCTS
    --------------------------------------------------------------------- */
+// Revenue to the centavo, units to one decimal (averages).
+const roundValue = (v) => (state.metric === "revenue" ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10);
+
+// Total / average / best period, from the same bars the chart draws. Revenue in whole pesos,
+// like the revenue tiles at the top of the page.
+function renderKpis(points, total, period, m, g) {
+  const best = points.reduce((b, p) => (p.value > b.value ? p : b), points[0]);
+  const show = (v) => (state.metric === "revenue" ? wholePesos(Math.round(v)) : m.format(roundValue(v)));
+  const tile = (label, value, sub = "") => `
+    <div class="kpi"><span class="kpi__label">${escapeHTML(label)}</span>
+      <span class="kpi__value">${escapeHTML(value)}${sub ? ` <span class="kpi__sub">${escapeHTML(sub)}</span>` : ""}</span></div>`;
+  $("trendKpis").innerHTML = tile(`Total, ${period}`, show(total))
+    + tile(`${g.per} average`, show(total / points.length))
+    + tile(g.best, show(best.value), g.short(best.day));
+  $("trendKpis").hidden = false;
+}
+
+function renderLegend(g) {
+  $("trendLegend").innerHTML = [["above", "Above average"], ["below", "Below average"], ["best", g.best], ["avg", "Average"]]
+    .map(([key, text]) => `<li><span class="chart-legend__key chart-legend__key--${key}" aria-hidden="true"></span>${escapeHTML(text)}</li>`).join("");
+  $("trendLegend").hidden = false;
+}
+
 function renderTrend() {
   const d = state.data;
   const m = METRIC[state.metric];
   const g = GROUP[d.group] || GROUP.day;
   const period = `last ${plural(d.range, g.unit)}`;
-  const points = d.trend.map(t => ({ day: t.day, value: t[state.metric] }));
+  const points = d.trend.map(t => ({ day: t.day, value: t[state.metric], units: t.units }));
   const total = points.reduce((s, p) => s + p.value, 0);
   if (total === 0) {
     $("trendChart").innerHTML = UIState.empty({ icon: "clipboard-list", title: "No sales in this period", text: g.empty });
+    $("trendKpis").hidden = true;
+    $("trendKpis").innerHTML = "";
+    $("trendLegend").hidden = true;
     $("trendNote").textContent = "";
     $("trendTable").innerHTML = "";
     return;
   }
+  renderKpis(points, total, period, m, g);
   barChart($("trendChart"), points, { label: `${m.label} per ${g.unit}, ${period}`, format: m.format, axis: m.axis,
-                                      dayLabel: g.axis, tipLabel: g.label });
+                                      dayLabel: g.axis, tipLabel: g.tip || g.label, unit: g.unit, height: 250, xTicks: g.ticks,
+                                      average: true, highlightMax: true, dimBelowAverage: true,
+                                      detail: state.metric === "revenue" ? (p) => ` · ${plural(p.units, "unit")}` : null });
+  renderLegend(g);
   $("trendNote").textContent = `${m.header} in the ${period}: ${m.format(state.metric === "revenue" ? Math.round(total * 100) / 100 : total)}. Excludes ${g.current} and unpaid or expired orders.`;
   $("trendTable").innerHTML = chartTable(points, { valueHeader: m.header, format: m.format, periodHeader: g.header, dayLabel: g.label });
+}
+
+/* ---------------------------------------------------------------------
+   FORECAST — status counts and the 5 parts that run out first
+   --------------------------------------------------------------------- */
+const RISK_ROWS = 5;
+
+function renderForecast(rows) {
+  const body = $("forecastBody");
+  if (!rows.some(p => p.computed_at)) {
+    body.innerHTML = UIState.empty({ icon: "boxes", title: "No forecasts yet", text: "The ML worker fills this in after its first run." });
+    return;
+  }
+  // Parts still on sale, fewest days of stock first (on a tie, more expected demand first).
+  // Out-of-stock parts are already counted in the Reorder now tile.
+  const risk = rows.filter(p => p.computed_at && Number(p.available) > 0 && p.days_until_stockout !== null && p.days_until_stockout !== undefined)
+    .sort((a, b) => Number(a.days_until_stockout) - Number(b.days_until_stockout)
+                    || Number(b.predicted_demand_7d) - Number(a.predicted_demand_7d))
+    .slice(0, RISK_ROWS);
+  body.innerHTML = `
+    <div class="fc-tiles fc-tiles--2">${statusTiles(rows)}</div>
+    <h3 class="fc-subhead">Most at risk</h3>
+    ${risk.length ? `<ul class="risk-list">${risk.map(p => `
+      <li class="risk-item">
+        <div class="risk-item__head"><strong>${escapeHTML(p.name)}</strong>${actionPill(p)}</div>
+        ${runwayBar(p)}
+      </li>`).join("")}</ul>` : `<p class="muted">No parts running low</p>`}`;
+}
+
+async function loadForecast() {
+  const body = $("forecastBody");
+  body.innerHTML = `<div class="fc-tiles fc-tiles--2" aria-hidden="true">${`<span class="skeleton fc-tile-skeleton"></span>`.repeat(4)}</div>
+    ${`<span class="skeleton skeleton--text"></span>`.repeat(RISK_ROWS)}`;
+  try {
+    const rows = await apiFetch("/admin/ml/predictions");
+    renderForecast(Array.isArray(rows) ? rows : []);
+  } catch (err) {
+    body.innerHTML = UIState.error(`Couldn't load the forecast: ${err.message}`, "retryForecast");
+    $("retryForecast").addEventListener("click", loadForecast);
+  }
 }
 
 function renderTop() {
@@ -157,10 +232,26 @@ async function loadDashboard() {
     renderTop();
   } catch (err) {
     $("trendChart").innerHTML = UIState.error(err.message, "retryDashboard");
+    $("trendKpis").hidden = true;
+    $("trendLegend").hidden = true;
     $("topProducts").innerHTML = "";
     REVENUE_TILES.forEach(([id]) => { if ($(id).querySelector(".skeleton")) setStat(id, "—", `Couldn't load: ${err.message}`); });
     $("retryDashboard").addEventListener("click", loadDashboard);
   }
+}
+
+// Every 30 s, while the tab is visible: the revenue and stock tiles and Orders to ship, so a paid
+// order shows without reloading. The chart and tables are left alone; a failed poll keeps the
+// last numbers (the next one tries again).
+const TILE_POLL_MS = 30000;
+async function refreshTiles() {
+  if (document.hidden) return;
+  loadToShip();
+  try {
+    const d = await apiFetch(`/admin/ml/dashboard?group=${state.group}&range=${state.range}`);
+    renderSummary(d);
+    renderRevenue(d.sales);
+  } catch (err) { /* keep the last numbers */ }
 }
 
 document.querySelectorAll("[data-metric]").forEach(b => b.addEventListener("click", () => {
@@ -190,10 +281,12 @@ window.addEventListener("resize", () => {
 
 if (requireAdminPage()) {
   loadDashboard();
+  loadForecast();
   loadToShip();
   loadModel();
   loadChat();
   loadAccountsTile();
-  // After a retrain: the model tile and the sales trend chart.
-  MLTraining.mount(document.getElementById("dashTraining"), { compact: true, onFinished: () => { loadModel(); loadDashboard(); } });
+  setInterval(refreshTiles, TILE_POLL_MS);
+  // After a retrain: the model tile, the sales chart and the forecast.
+  MLTraining.mount(document.getElementById("dashTraining"), { compact: true, onFinished: () => { loadModel(); loadDashboard(); loadForecast(); } });
 }

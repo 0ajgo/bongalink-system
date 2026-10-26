@@ -1,11 +1,7 @@
-/* =====================================================================
-   BONGALINK — REGISTER + VERIFY EMAIL (register.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-   1. POST /api/auth/register creates a "user" account and emails a code.
-   2. POST /api/v1/auth/verify-email/confirm { email, code } verifies it;
-      /send issues a new code (60-second cooldown, enforced server-side).
-   Checkout is blocked until the email is verified.
-   ===================================================================== */
+/* Register + verify email. Requires api.js, icons.js, cart.js and ui.js.
+   1. Create the account; a 6-digit code is emailed.
+   2. Enter the code (a new one can be sent after 60 seconds).
+   Checkout is blocked until the email is verified. */
 
 renderHeader({ search: false });
 

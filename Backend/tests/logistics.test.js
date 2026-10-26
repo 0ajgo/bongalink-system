@@ -97,8 +97,10 @@ describe("manual J&T shipment + tracking timeline", () => {
       .send({ courier: "JNT", tracking_number: "JT0001234567" });
     expect(notAdmin.status).toBe(403);
 
+    // Not shipped yet: the order's progress, with no shipment.
     const noShipment = await request(app).get(`/api/v1/orders/${orderId}/tracking`).set("Authorization", customer.auth);
-    expect(noShipment.status).toBe(404);
+    expect(noShipment.status).toBe(200);
+    expect(noShipment.body).toMatchObject({ shipped: false, status: null, tracking_number: null, events: [] });
   });
 
   test("customers can't see another customer's tracking", async () => {
@@ -120,6 +122,101 @@ describe("manual J&T shipment + tracking timeline", () => {
 
     const none = await request(app).get("/api/v1/admin/shipments?status=DELIVERED").set("Authorization", admin.auth);
     expect(none.body).toEqual([]);
+  });
+});
+
+describe("POST /api/v1/admin/orders/:orderId/packed", () => {
+  const pack = (id = orderId, auth = admin.auth) =>
+    request(app).post(`/api/v1/admin/orders/${id}/packed`).set("Authorization", auth);
+
+  test("a paid order becomes packed, with packed_at set, and moves to Ready to ship", async () => {
+    const res = await pack();
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ order_id: orderId, status: "packed" });
+    const [[row]] = await pool.query("SELECT status, packed_at, TIMESTAMPDIFF(SECOND, packed_at, NOW()) AS age FROM orders WHERE order_id = ?", [orderId]);
+    expect(row.status).toBe("packed");
+    expect(row.packed_at).not.toBeNull();
+    expect(Number(row.age)).toBeLessThan(60);
+
+    const list = await request(app).get("/api/v1/admin/orders/awaiting-shipment").set("Authorization", admin.auth);
+    expect(list.body).toEqual([expect.objectContaining({ order_id: orderId, order_status: "packed", packed_at: expect.any(String) })]);
+    // No email to the customer for packing.
+    expect(mail.shipmentBooked).not.toHaveBeenCalled();
+  });
+
+  test("an order already packed, shipped or unpaid can't be packed (409); the first packed_at is kept", async () => {
+    expect((await pack()).status).toBe(200);
+    const [[first]] = await pool.query("SELECT packed_at FROM orders WHERE order_id = ?", [orderId]);
+    const again = await pack();
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe(`Order #${orderId} is packed; only paid orders can be marked as packed`);
+    const [[still]] = await pool.query("SELECT packed_at FROM orders WHERE order_id = ?", [orderId]);
+    expect(still.packed_at).toEqual(first.packed_at);
+
+    await request(app).post(`/api/v1/admin/shipments/${orderId}/manual`).set("Authorization", admin.auth)
+      .send({ courier: "JNT", tracking_number: "JT0001234567" });
+    expect((await pack()).status).toBe(409);
+
+    await pool.query("UPDATE orders SET status = 'pending_payment' WHERE order_id = ?", [orderId]);
+    const unpaid = await pack();
+    expect(unpaid.status).toBe(409);
+    expect(unpaid.body.error).toMatch(/is pending payment/);
+  });
+
+  test("unknown order is 404; visitors 401; customers 403", async () => {
+    expect((await pack(999999)).status).toBe(404);
+    expect((await request(app).post(`/api/v1/admin/orders/${orderId}/packed`)).status).toBe(401);
+    expect((await pack(orderId, customer.auth)).status).toBe(403);
+    const [[row]] = await pool.query("SELECT status, packed_at FROM orders WHERE order_id = ?", [orderId]);
+    expect(row).toEqual({ status: "paid", packed_at: null });
+  });
+
+  test("a packed order can still be shipped with J&T/LBC", async () => {
+    await pack();
+    const res = await request(app).post(`/api/v1/admin/shipments/${orderId}/manual`).set("Authorization", admin.auth)
+      .send({ courier: "LBC", tracking_number: "LBC-123456" });
+    expect(res.status).toBe(201);
+    const [[row]] = await pool.query("SELECT status FROM orders WHERE order_id = ?", [orderId]);
+    expect(row.status).toBe("shipped");
+  });
+});
+
+describe("GET /api/v1/orders/:id/tracking before shipping", () => {
+  test("a paid order: 200 with its dates and the courier chosen, no shipment yet", async () => {
+    const res = await request(app).get(`/api/v1/orders/${orderId}/tracking`).set("Authorization", customer.auth);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      order_id: orderId, order_status: "paid", created_at: expect.any(String), packed_at: null,
+      courier_chosen: "JNT", courier_chosen_label: "J&T Express",
+      shipped: false, courier: null, courier_label: null, status: null,
+      tracking_number: null, tracking_url: null, delivered_at: null, events: []
+    });
+  });
+
+  test("a packed order shows packed_at; once shipped, the shipment fields and events", async () => {
+    await request(app).post(`/api/v1/admin/orders/${orderId}/packed`).set("Authorization", admin.auth);
+    const packed = await request(app).get(`/api/v1/orders/${orderId}/tracking`).set("Authorization", customer.auth);
+    expect(packed.body).toMatchObject({ order_status: "packed", packed_at: expect.any(String), shipped: false });
+
+    await request(app).post(`/api/v1/admin/shipments/${orderId}/manual`).set("Authorization", admin.auth)
+      .send({ courier: "LBC", tracking_number: "LBC-123456" });
+    const shipped = await request(app).get(`/api/v1/orders/${orderId}/tracking`).set("Authorization", customer.auth);
+    expect(shipped.body).toMatchObject({
+      order_status: "shipped", shipped: true, courier_chosen: "JNT", courier: "LBC", courier_label: "LBC Express",
+      status: "PICKED_UP", tracking_number: "LBC-123456", packed_at: expect.any(String)
+    });
+    expect(shipped.body.events).toEqual([
+      { status: "PICKED_UP", note: "Dropped off at LBC Express", source: "admin", created_at: expect.any(String) }
+    ]);
+  });
+
+  test("another customer's order, or an order that doesn't exist, is 404", async () => {
+    const stranger = await createUser();
+    const other = await request(app).get(`/api/v1/orders/${orderId}/tracking`).set("Authorization", stranger.auth);
+    expect(other.status).toBe(404);
+    expect(other.body).toEqual({ error: "Order not found" });
+    expect((await request(app).get("/api/v1/orders/999999/tracking").set("Authorization", customer.auth)).status).toBe(404);
+    expect((await request(app).get(`/api/v1/orders/${orderId}/tracking`)).status).toBe(401);
   });
 });
 

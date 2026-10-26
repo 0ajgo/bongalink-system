@@ -18,7 +18,7 @@
     </div>
   </div>
 
-  <!-- MODEL STATUS (REQ028) — GET /api/admin/ml/status, polled every 5 s -->
+  <!-- MODEL STATUS -->
   <section class="card status-banner" aria-live="polite">
     <div>
       <div class="status-banner__main">
@@ -30,31 +30,42 @@
     <div class="status-banner__model" id="statusModel"></div>
   </section>
 
-  <!-- RETRAINING (REQ028) — "Update forecasts & trends", progress, accuracy, history (js/ml-training.js) -->
+  <!-- "Update forecasts & trends" (js/ml-training.js) -->
   <section class="card section-card" id="modelTraining" aria-labelledby="modelTraining-title"></section>
 
   <!-- FORECAST TABLE — active products -->
   <section class="card section-card" id="forecasts" aria-labelledby="forecastTitle">
     <div class="card__header">
-      <h2 id="forecastTitle">Stock forecast — next 7 days</h2>
+      <h2 id="forecastTitle">Forecast by part</h2>
       <span class="muted" id="productCount"></span>
     </div>
     <div class="card__body" id="weightNotice" hidden></div>
+    <!-- Status tiles (js/forecast-ui.js): click one to show only those parts, again to show all -->
+    <div class="card__body fc-tiles" id="forecastTiles" role="group" aria-label="Show parts by forecast status"></div>
     <div class="table-wrap">
       <table class="table table--compact table--sticky-first">
         <thead>
           <tr>
-            <th>Part</th><th class="num">Price (₱)</th><th class="num">On hand</th><th class="num">Weight (kg)</th>
-            <th class="num">Forecast 7d</th><th class="num">Days of stock</th><th>Reorder</th><th>Trend</th><th></th>
+            <th>Part</th><th class="num">Price (₱)</th><th class="num">Weight (kg)</th>
+            <th>Stock vs next 7 days</th><th>Stock lasts</th><th>Action</th><th>Trend</th><th></th>
           </tr>
         </thead>
         <tbody id="predRows"></tbody>
       </table>
     </div>
+    <ul class="chart-legend fc-legend" aria-label="Legend">
+      <li><span class="chart-legend__key fc-legend__have" aria-hidden="true"></span>On hand</li>
+      <li><span class="chart-legend__key fc-legend__need" aria-hidden="true"></span>Forecast demand, 7 days</li>
+      <li><span class="chart-legend__key fc-legend__short" aria-hidden="true"></span>Under 7 days</li>
+      <li><span class="chart-legend__key fc-legend__mid" aria-hidden="true"></span>7–14 days</li>
+      <li><span class="chart-legend__key fc-legend__long" aria-hidden="true"></span>14+ days</li>
+    </ul>
     <div class="card__footer muted">
-      Forecasts come from the TensorFlow stock model. <span class="badge">Insufficient data</span> means the part was listed
-      fewer than 28 days ago or has never sold, so the number is its category's average. Edits reach the ML worker within
-      about 10 seconds. "Out of stock" uses available stock (on hand minus units held by unpaid orders).
+      Forecasts come from the TensorFlow stock model. The grey bar is stock on hand and the black tick the demand forecast
+      for the next 7 days (a tick past the bar means not enough stock), and "Stock lasts" fills up to 30 days, with a mark
+      at 7. "Category estimate" means the part was listed fewer than 28 days ago or has never sold, so its numbers are its
+      category's average (marked *). Edits reach the ML worker within about 10 seconds. "Out" uses available stock (on hand
+      minus units held by unpaid orders).
     </div>
   </section>
 
@@ -94,7 +105,7 @@
     </div>
   </section>
 
-  <!-- CHANGE LOG — ml_events audit trail -->
+  <!-- CHANGE LOG -->
   <section class="card section-card" aria-labelledby="logTitle">
     <div class="card__header"><h2 id="logTitle">Product change log</h2><span class="muted">Every add, removal, stock and price change</span></div>
     <div class="table-wrap">
@@ -226,6 +237,7 @@
 <script src="../../JS/cart.js"></script>
 <script src="../../JS/ui.js"></script>
 <script src="../../JS/chart.js"></script>
+<script src="../../JS/forecast-ui.js"></script>
 <script src="../../JS/product-editor.js"></script>
 <script src="../../JS/ml-training.js"></script>
 <script src="../../JS/inventory.js"></script>

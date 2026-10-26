@@ -1,11 +1,5 @@
-/* =====================================================================
-   BONGALINK — LOGIN (login.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-   POST /api/auth/login { username, password }. The server takes the role
-   from the account, so customers and the admin share one form. On
-   success the JWT, role and username go to sessionStorage (api.js sends
-   the token with every request).
-   ===================================================================== */
+/* Login. Requires api.js, icons.js, cart.js and ui.js.
+   Customers and the admin share one form; the account decides the role. */
 
 renderHeader({ search: false });
 
@@ -70,9 +64,8 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 /* ---------------------------------------------------------------------
-   FORGOT PASSWORD — login.html#forgot
-   POST /api/auth/forgot-password { email }. The answer is the same whether
-   or not the email has an account.
+   FORGOT PASSWORD — login.html#forgot. The answer is the same whether or
+   not the email has an account.
    --------------------------------------------------------------------- */
 const forgotForm = document.getElementById("forgotForm");
 const forgotEmail = document.getElementById("forgotEmail");

@@ -1,12 +1,6 @@
-/* =====================================================================
-   BONGALINK — HOMEPAGE + CATALOG (homepage.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-     products   -> GET /api/products (stock = AVAILABLE stock), and for the
-                   admin POST /api/products (multipart) / DELETE /api/products/:id
-     categories -> GET /api/categories
-     cart       -> cartApi in cart.js (server cart, mirrored locally)
-   Search comes from the hero box or the header (?q=).
-   ===================================================================== */
+/* Homepage + catalog. Requires api.js, icons.js, cart.js and ui.js.
+   Product stock is the AVAILABLE stock. Search comes from the hero box or
+   the header (?q=). Admins also get "List a product" and remove buttons. */
 
 renderHeader({ active: "shop", search: false });
 
@@ -209,8 +203,7 @@ document.getElementById("heroSearch").addEventListener("submit", (event) => {
 });
 
 /* ---------------------------------------------------------------------
-   ADMIN: LIST A PRODUCT (POST /api/products, multipart for the photo;
-   the server's requireAdmin is the real gate)
+   ADMIN: LIST A PRODUCT (the server checks the admin role)
    --------------------------------------------------------------------- */
 const dialog = document.getElementById("productDialog");
 const productForm = document.getElementById("productForm");

@@ -37,7 +37,7 @@ async function request(method, path, payload) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json.errors?.[0]?.message || json.errors?.[0]?.id || `Lalamove error ${res.status}`;
-    throw new LogisticsError(msg);
+    throw Object.assign(new LogisticsError(msg), { fromProvider: true });   // shown only outside production (server.js)
   }
   return json.data;
 }

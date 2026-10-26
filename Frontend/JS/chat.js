@@ -1,20 +1,13 @@
-/* =====================================================================
-   BONGALINK — AI CHAT WIDGET (every customer page)
-   Requires api.js, icons.js and ui.js. Load after ui.js.
-     POST /api/v1/chat/messages { session_id, message, product_id? } -> { reply, products }
-   Answers come from Gemini on the server, using our live stock, shipping
-   rates, FAQs and (when logged in) the customer's own orders.
-
+/* Chat widget (every customer page). Requires api.js, icons.js and ui.js;
+   load after ui.js.
    - Floating button bottom-right; a panel with the conversation, typing
      indicator and suggested questions. Full screen on phones.
-   - The conversation stays when moving between pages: it's kept in
-     sessionStorage for this tab (same session id the server logs).
+   - The conversation stays when moving between pages (sessionStorage,
+     this tab only).
    - ChatWidget.askAbout({ id, name }) opens the chat about one product
      (the product page's "Ask about this part").
-   - Bot replies are plain text. The only links allowed are product links,
-     written [Name](product:ID) by the bot and checked by the server.
-   Admins don't get the widget; they read the chats on Admin > Chat & FAQs.
-   ===================================================================== */
+   - Replies are plain text; the only links are product links.
+   Admins don't get the widget. */
 
 const ChatWidget = (() => {
   const STORE_KEY = "bongalink_chat";
