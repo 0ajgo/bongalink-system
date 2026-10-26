@@ -259,9 +259,6 @@ button.fc-tile[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 2px 
 /* ---------- Chat & FAQs (js/chat-admin.js) ---------- */
 .stat-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 640px) { .stat-grid--3 { grid-template-columns: minmax(0, 1fr); } }
-.stat-grid--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-@media (max-width: 1240px) { .stat-grid--6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 640px)  { .stat-grid--6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .chat-item { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-line); }
 .card__header + * .chat-item:first-child, .card__header + .chat-item { border-top: 0; }
 .chat-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--color-ink-3); }

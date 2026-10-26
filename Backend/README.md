@@ -123,14 +123,17 @@ How an order flows:
    `stock_quantity` deduction.
 4. Orders unpaid after 24 hours are set to `expired` and their stock is released
    (`jobs/expireOrders.js`, runs every 5 minutes).
-5. On the admin **Deliveries** page (`Pages/Admin/deliveries.html`) the admin ships
-   each paid order: enters the J&T/LBC waybill number, or books a Lalamove rider
-   (offered only when Lalamove is configured and the address has a map pin), then
-   updates the status as the parcel moves. The customer sees the courier, tracking
-   number/link and timeline on **My Orders** (`Pages/COpage/orders.html`).
+5. On the admin **Deliveries** page (`Pages/Admin/deliveries.html`) the admin works
+   through three tabs: **To pack** (paid orders; "Mark as packed" sets `packed`),
+   **Ready to ship** (enter the J&T/LBC waybill number, or book a Lalamove rider —
+   offered only when Lalamove is configured and the address has a map pin) and
+   **Outgoing** (J&T/LBC statuses updated by hand; Lalamove's arrive by webhook).
+   On **My Orders** (`Pages/COpage/orders.html`) each order shows a Paid → Packed →
+   Shipped → Delivered tracker, and "Track" opens the courier, tracking number/link
+   and every update inside the order card.
 
 The shop is alerted to each paid order by email (`ADMIN_ALERT_EMAIL`) and by a
-"paid orders to ship" badge on the admin Inventory page (polls
+"orders to ship" badge in the admin header, on every admin page (polls
 `GET /api/v1/admin/orders/to-ship` every 30 seconds). The bell in the admin header
 (migration 012, `routes/notifications.js`) lists sales, payments to review, expired
 orders, shipments booked/delivered/failed, low and out of stock parts, new customers
@@ -181,7 +184,7 @@ It uses a hidden test product, so customers never see it: on `bongalink_real` th
 3. **Confirm PayMongo marked it paid.** Within a minute:
    - the checkout page confirms the payment, and My Orders shows the order with a
      "Paid" date;
-   - Admin > Deliveries lists it under "Paid orders to ship", the bell shows
+   - Admin > Deliveries lists it under **To pack**, the bell shows
      "New sale" and the shop inbox (`ADMIN_ALERT_EMAIL`) gets the order alert;
    - the PayMongo dashboard (Live mode) shows the payment.
    If the order stays unpaid although PayMongo shows the payment, the webhook isn't reaching the server:

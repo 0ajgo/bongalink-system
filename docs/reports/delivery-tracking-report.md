@@ -330,3 +330,83 @@ stub (jsdom doesn't have one; real browsers do).
 8. In **Outgoing**, set **In transit** with a note, then **Delivered**. My orders shows the update, then
    "Delivered <date>", all four steps green, and the button reads **Details**.
 9. From **My profile**, click **Track** on a recent order: My orders opens with that order expanded.
+
+## Deployment readiness
+
+Checked on 2026-10-26 against `DEPLOYMENT.md` §10 (Go-live), §13 (Security notes) and §14 (Open items), plus the
+extra checks from Part 6. **✅ ready** = checked and fine · **⚠️ needs you** = something only you can do or check
+(usually on the live server) · **❌ blocked** = waiting on something outside the project.
+
+What this machine is: a development computer with the demo database `bongalink_real` (`NODE_ENV=development`,
+PayMongo **test** key, Lalamove **sandbox**, database user `root`). There is no live server yet, so most
+"settings" items below can only be done by you on the server.
+
+### Database (done today)
+
+- Backup before the change: `backups/bongalink_real_20261026-2127_before-013.sql` (31 tables, 7 triggers,
+  ends with "Dump completed"). `backups/` is git-ignored.
+- Migration 013 applied to `bongalink_real`. `deploy/mysql/check_migrations.sql` afterwards: **003–013 all
+  `applied`**; triggers' definer `root@localhost`, 7 triggers, `account_exists = 1`. The 168 existing orders are
+  unchanged (`packed_at` empty).
+
+### §10 Go-live — settings
+
+| Item | State | What to do |
+|---|---|---|
+| Encryption keys = the database's, saved in a password manager | ⚠️ needs you | The API starts with the local keys, so they match `bongalink_real`. Copy the **same two keys** into the server's `.env` and into a password manager (never with the backups). |
+| `NODE_ENV=production`, `APP_URL`, `CORS_ORIGIN`, `TRUST_PROXY=1` | ⚠️ needs you | Set on the server. The startup check itself works: with sample go-live values it gives **no errors and no warnings**; with a short secret or missing addresses it refuses to start. |
+| New random `JWT_SECRET` and `VERIFICATION_SECRET` | ⚠️ needs you | Generate new ones for the server (command in §3); don't reuse the development ones. |
+| Database: every migration, least-privilege users, triggers' definer | ⚠️ needs you | Migrations ✅ and definer ✅ (above). The app still uses `root` locally — on the server run `deploy/mysql/create_app_users.sql` and use `bongalink_app` / `bongalink_ml` (§5). |
+| Product photos copied | ⚠️ needs you | On the server or Docker volume (§6, the copy step). |
+| PayMongo live key + live webhook + its `whsk_` secret | ⚠️ needs you | Local key is `sk_test_`. At go-live: live key, a **Live-mode** webhook to `https://<shop>/api/v1/webhooks/paymongo`, and its secret. |
+| Lalamove (if used): production keys, webhook URL, store pin/address/phone | ⚠️ needs you | Local is sandbox. |
+| Email: SMTP App Password, `MAIL_FROM`, `ADMIN_ALERT_EMAIL`, test it | ⚠️ needs you | Test "Forgot password" and a new sign-up on the server. |
+| Chat: `GEMINI_API_KEY`, `STORE_EMAIL`, `STORE_PHONE`; `GEOCODER_CONTACT` | ⚠️ needs you | Server `.env`. |
+| Every `RATE_LIMIT_*` blank | ✅ ready | None is set in `Backend/.env`. Keep them blank on the server outside a test session (§11). |
+| Privacy policy contact details | ⚠️ needs you | `Frontend/Pages/Homepage/privacy.html` still shows the placeholder "[name, email and phone of the data protection officer]". Fill it in before go-live. |
+| Startup log shows no `WARNING:` lines; ML worker running | ⚠️ needs you | Check after the server is configured. |
+| Backups scheduled and one restore tested | ⚠️ needs you | One manual backup was made today; nothing is scheduled and no restore was tested. Schedule the daily `mysqldump` (§12) and test one restore into a scratch database. |
+
+### §10 Go-live — tests
+
+| Item | State | What to do |
+|---|---|---|
+| Live payment test (buy the hidden test product, refund, remove the order) | ⚠️ needs you | Needs the live keys on the server. Steps: `Backend/README.md` §8. |
+| PayMongo "paid session" check (test keys, before go-live) | ⚠️ needs you | Needs one completed test payment on your computer (§10 has the 4 steps). |
+| PayMongo retry check before `PAYMONGO_WEBHOOK_TOLERANCE_SECONDS` | ⚠️ needs you | Until it's done, leave that setting blank (it is). |
+| Lalamove webhook signature | ❌ blocked | Lalamove hasn't documented how it signs webhooks. Meanwhile each update must carry our API key and the status is re-read from Lalamove, so a fake message can't change anything. |
+| Header checks (`curl -I` ×3) | ⚠️ needs you | After nginx is set up. Also run `nginx -t`: the two configs gained a rule refusing dotfiles and notes (nginx wasn't available here to test it). |
+
+### §13 Security notes
+
+| Item | State | What to do |
+|---|---|---|
+| HTTPS only (nginx redirect + HSTS) | ⚠️ needs you | The config does it; confirm with the `curl -I` checks on the server. |
+| Database not on the network | ✅ ready (Docker) / ⚠️ (no Docker) | Docker publishes MySQL on `127.0.0.1` only. On a server without Docker, keep MySQL bound to localhost and use the limited accounts (§5). |
+| No demo data in production | ✅ ready | The demo-password query on `bongalink_real` returned **no rows** (no `demo_admin`, no old demo passwords). Accounts: 6 customers, 3 admins, all active. |
+| Secrets not in git | ✅ ready | Only the three `.env.example` templates are tracked, with empty secret values; no `.env`, dumps, backups or keys are tracked (`backups/` and `.env` are git-ignored), and no key-like strings appear in any tracked file. The tracked `.sql` files are schema, migrations and scripts; `real_inventory.sql` holds products and stock movements only, no customer data. (The old demo seed is still in git *history*, as §13 says, which is why the demo check above matters.) |
+| Rate limits at defaults | ✅ ready | All blank. |
+
+### §14 Open items
+
+| Item | State | What to do |
+|---|---|---|
+| Delete the legacy Rust ML code | ⚠️ needs you | Waiting for your adviser's confirmation. Your earlier work for it (the staged deletion of `ml/backend/src`, `Cargo.*`, and the matching README, `.dockerignore` and `DEPLOYMENT.md` edits) is still **uncommitted** in the working tree and was not touched. Commit it only after the adviser agrees. |
+| Lalamove webhook signature | ❌ blocked | See above. |
+| PayMongo webhook age limit | ⚠️ needs you | Stays off until the retry check. |
+| PayMongo "paid session" check | ⚠️ needs you | See above. |
+| First Docker build | ❌ blocked here | No Docker on this machine. On the first machine with Docker: `docker compose config`, then `docker compose up -d --build`, and confirm the API and the worker start. |
+
+### Extra checks (Part 6)
+
+| Check | State | Details / what to do |
+|---|---|---|
+| Migrations up to 013 listed everywhere | ✅ ready | `globalSetup.js`, `docker-compose.yml`, `check_migrations.sql`, `DEPLOYMENT.md` §4, `Backend/README.md`; the tests that compare these lists pass. Applied to `bongalink_real`. |
+| `.env.example` files contain every variable the code reads | ✅ ready | API: every `process.env.X` in `Backend/` (including `TRACKING_URL_JNT`/`LBC`) is in `Backend/.env.example`. Worker: all 19 `DB_*`/`ML_*` settings are in `ml/worker/.env.example`. Docker: every `${VAR}` in `docker-compose.yml` is in the root `.env.example`. |
+| `NODE_ENV=production` startup checks pass with sample values | ✅ ready | No errors and no warnings with go-live-style values (see the settings table). |
+| No secrets, `.env`, backups or dumps tracked | ✅ ready | See §13. |
+| **Shipping rates are still the placeholders** | ⚠️ **needs you** | All **30 of 30** J&T/LBC rows in `bongalink_real` are exactly the testing placeholders from migration 004, and the largest bracket is **5 kg**. For a parcel heavier than 5 kg the shop offers **no J&T/LBC option at all**. Enter Bongalink's real J&T and LBC rates in **Admin › Rates**, and add **10 kg and 20 kg brackets** for every zone. |
+| **Products still on the 0.5 kg default weight** | ⚠️ **needs you** | **All 69** active products are at 0.5 kg, so every J&T/LBC fee is worked out as if each item weighed 0.5 kg. Enter real weights (Admin › Inventory: the weight column, or Edit part); Inventory already shows a notice for these. |
+| Demo-account check (§13) | ✅ ready | No rows. |
+| `docker compose config` is valid | ❌ blocked here | Docker isn't installed on this computer. The automated tests read `docker-compose.yml` and check its mounts and migration order (they pass), but only Docker itself can fully validate it. |
+| Full test suite passes | ✅ ready | After the clean-up: **55 suites, 650 tests, all passed** (`cd Backend && npm test`). The ML worker's own tests (`ml/worker`, 30 tests) also pass. |
