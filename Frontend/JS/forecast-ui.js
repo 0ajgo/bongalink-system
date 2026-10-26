@@ -2,7 +2,7 @@
    forecast-ui.js — how the 7-day forecasts look on the Dashboard
    ("Forecast" card) and Inventory ("Forecast by part" table).
    Requires icons.js and ui.js (escapeHTML). Display only: every number
-   comes as-is from GET /api/admin/ml/predictions.
+   is shown as the forecast list gives it.
 
      forecastGroup(p)        the row's status group ("reorder", "soon", "nodata", "healthy"), null if not scored yet
      statusTiles(rows, { selected, buttons })   the 4 count tiles
@@ -17,7 +17,7 @@ const RUNWAY_DAYS = 30;   // the runway bar's full width
 const RUNWAY_SOON = 7;    // its tick, and the "runs out within 7 days" line
 
 // Tile order. Each scored part is in exactly one group, so the four counts add up to the
-// number of forecast parts; rows the worker hasn't scored yet (no computed_at) are in none.
+// number of forecast parts; parts not scored yet are in none.
 const FORECAST_GROUPS = [
   { key: "reorder", label: "Reorder now", tone: "error", mark: () => icon("triangle-alert", { size: 14 }) },
   { key: "soon", label: "Runs out within 7 days", tone: "warning", mark: () => icon("clock", { size: 14 }) },
@@ -51,7 +51,7 @@ function groupCounts(rows) {
   return counts;
 }
 
-// In stock, but the forecast expects no sales: the worker leaves days_until_stockout empty (or 0).
+// In stock, but the forecast expects no sales: there is no stock-out date.
 const noDemand = (p) => p.computed_at && !isOut(p) && !(Number(p.predicted_demand_7d) > 0)
   && (!hasDays(p) || Number(p.days_until_stockout) === 0);
 

@@ -1,27 +1,21 @@
-/* =====================================================================
-   BONGALINK — ADMIN DELIVERIES (Pages/Admin/deliveries.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-
-   - Paid orders to ship:  GET  /api/v1/admin/orders/awaiting-shipment
-       ship with J&T / LBC: POST /api/v1/admin/shipments/:orderId/manual
-       book Lalamove:       POST /api/v1/admin/shipments/:orderId/lalamove
-   - Outgoing deliveries:  GET   /api/v1/admin/shipments?status=
-       update status:       PATCH /api/v1/admin/shipments/:deliveryId/status
-   The server re-checks everything (admin role, order paid, not shipped
-   twice); the checks here are only for instant feedback.
-   ===================================================================== */
+/* Admin › Deliveries: three tabs — To pack, Ready to ship, Outgoing.
+   Requires api.js, icons.js, cart.js and ui.js. The checks here only give
+   instant feedback; the server checks everything again. */
 
 renderHeader({ active: "deliveries" });
 
 const DELIVERY_STATUSES = ["BOOKED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "RETURNED"];
 // Statuses the admin can set by hand (the first two come from booking).
 const SETTABLE = ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "RETURNED"];
+const COURIER_NAME = { JNT: "J&T Express", LBC: "LBC Express", LALAMOVE: "Lalamove" };
 
 const els = {
-  awaiting: document.getElementById("awaitingList"),
-  awaitingCount: document.getElementById("awaitingCount"),
+  tabs: [...document.querySelectorAll(".pipe__tab")],
+  packRows: document.getElementById("packRows"),
+  shipList: document.getElementById("shipList"),
   rows: document.getElementById("shipmentRows"),
-  filter: document.getElementById("statusFilter")
+  filter: document.getElementById("statusFilter"),
+  count: { pack: document.getElementById("countPack"), ship: document.getElementById("countShip"), out: document.getElementById("countOut") }
 };
 
 const itemsList = (items) =>
@@ -33,7 +27,35 @@ function shipTo(o) {
     ${o.ship_landmark ? `<br><span class="muted">${escapeHTML(o.ship_landmark)}</span>` : ""}`;
 }
 
-// Runs an action with its button busy, then reloads both lists and the badge.
+function setCount(key, n, noun) {
+  els.count[key].textContent = n;
+  els.count[key].setAttribute("aria-label", `${n} ${noun}${n === 1 ? "" : "s"}`);
+}
+
+/* ---------------------------------------------------------------------
+   Tabs
+   --------------------------------------------------------------------- */
+function showTab(name, { focus = false } = {}) {
+  for (const tab of els.tabs) {
+    const on = tab.dataset.tab === name;
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+    document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
+    if (on && focus) tab.focus();
+  }
+}
+
+els.tabs.forEach((tab, i) => {
+  tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  tab.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    showTab(els.tabs[(i + step + els.tabs.length) % els.tabs.length].dataset.tab, { focus: true });
+  });
+});
+
+// Runs an action with its button busy, then reloads every list and the badge.
 // successMessage is a string, or a function of the action's result.
 async function act(button, work, successMessage) {
   button.disabled = true;
@@ -50,68 +72,95 @@ async function act(button, work, successMessage) {
 }
 
 /* ---------------------------------------------------------------------
-   PAID ORDERS TO SHIP
+   1. TO PACK
    --------------------------------------------------------------------- */
-function lalamoveBlock(o) {
-  if (o.can_book_lalamove) {
-    return `<button class="btn ${o.courier_chosen === "LALAMOVE" ? "btn--primary" : "btn--secondary"}" type="button" data-lalamove="${o.order_id}">
-      ${icon("truck", { size: 18 })} Book Lalamove rider</button>`;
-  }
-  // Customer picked Lalamove but it can't be booked now: say why instead of hiding silently.
-  if (o.courier_chosen === "LALAMOVE") {
-    const why = o.has_map_pin ? "Lalamove isn't configured on the server" : "the address has no map pin";
-    return `<p class="muted">Customer chose Lalamove, but ${why}. Ship with J&amp;T or LBC instead.</p>`;
-  }
-  return "";
+function packRow(o) {
+  return `
+    <tr data-order="${o.order_id}">
+      <td><strong>#${o.order_id}</strong><br><span class="muted">Paid ${formatDateTime(o.paid_at)}</span></td>
+      <td>${itemsList(o.items)}</td>
+      <td>${escapeHTML(o.ship_name)}${o.ship_city ? `<br><span class="muted">${escapeHTML(o.ship_city)}</span>` : ""}</td>
+      <td>${escapeHTML(o.courier_chosen_label || "—")}</td>
+      <td class="num"><button class="btn btn--accent btn--sm" type="button" data-pack="${o.order_id}">
+        ${icon("package", { size: 16 })} Mark as packed</button></td>
+    </tr>`;
 }
 
-function awaitingCard(o) {
-  const preset = ["JNT", "LBC"].includes(o.courier_chosen) ? o.courier_chosen : "JNT";
+els.packRows.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-pack]");
+  if (!button) return;
+  const orderId = button.dataset.pack;
+  act(button,
+    () => apiFetch(`/v1/admin/orders/${orderId}/packed`, { method: "POST" }),
+    `Order #${orderId} packed — moved to Ready to ship.`);
+});
+
+/* ---------------------------------------------------------------------
+   2. READY TO SHIP — one action box, for the courier the customer chose
+   --------------------------------------------------------------------- */
+function manualForm(o, { hidden = false } = {}) {
+  const preset = o.courier_chosen === "LBC" ? "LBC" : "JNT";
   return `
-    <article class="card ship-card" data-order="${o.order_id}">
-      <div class="card__header">
-        <h3>Order #${o.order_id} ${statusBadge(o.order_status)}</h3>
-        <span class="muted">Paid ${formatDateTime(o.paid_at)} · Total <span class="price">${formatMoney(o.total_amount)}</span></span>
+    <form class="ship-actions" data-manual="${o.order_id}" novalidate ${hidden ? "hidden" : ""}>
+      <div class="field">
+        <label class="label" for="courier-${o.order_id}">Courier</label>
+        <select class="select" id="courier-${o.order_id}" name="courier">
+          <option value="JNT" ${preset === "JNT" ? "selected" : ""}>J&amp;T Express</option>
+          <option value="LBC" ${preset === "LBC" ? "selected" : ""}>LBC Express</option>
+        </select>
       </div>
-      <div class="card__body ship-grid">
-        <div><h4>Customer</h4>${escapeHTML(o.customer_username)}<br><span class="muted">${escapeHTML(o.customer_email)}</span></div>
-        <div><h4>Ship to</h4>${shipTo(o)}</div>
-        <div><h4>Items</h4>${itemsList(o.items)}</div>
-        <div><h4>Courier chosen</h4>${escapeHTML(o.courier_chosen_label || "—")}<br>
-          <span class="muted">Shipping fee paid: ${formatMoney(o.shipping_fee)}</span></div>
+      <div class="field">
+        <label class="label" for="tracking-${o.order_id}">Tracking / waybill no.</label>
+        <input class="input tn" id="tracking-${o.order_id}" name="tracking" autocomplete="off">
       </div>
-      <form class="card__footer ship-actions" data-manual="${o.order_id}" novalidate>
-        <div class="field">
-          <label class="label" for="courier-${o.order_id}">Courier</label>
-          <select class="select" id="courier-${o.order_id}" name="courier">
-            <option value="JNT" ${preset === "JNT" ? "selected" : ""}>J&amp;T Express</option>
-            <option value="LBC" ${preset === "LBC" ? "selected" : ""}>LBC Express</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="label" for="tracking-${o.order_id}">Tracking / waybill no.</label>
-          <input class="input tn" id="tracking-${o.order_id}" name="tracking" autocomplete="off">
-        </div>
-        <div class="field">
-          <label class="label" for="fee-${o.order_id}">Actual fee <span class="optional">(optional)</span></label>
-          <input class="input fee" id="fee-${o.order_id}" name="fee" type="number" min="0" step="0.01">
-        </div>
-        <button class="btn btn--primary" type="submit">Mark as shipped</button>
-        ${lalamoveBlock(o)}
-      </form>
+      <div class="field">
+        <label class="label" for="fee-${o.order_id}">Fee paid to courier <span class="optional">(optional)</span></label>
+        <input class="input fee" id="fee-${o.order_id}" name="fee" type="number" min="0" step="0.01">
+      </div>
+      <button class="btn btn--primary" type="submit">Mark as shipped</button>
+    </form>`;
+}
+
+function actionBox(o) {
+  if (o.courier_chosen === "LALAMOVE" && o.can_book_lalamove) {
+    return `
+      <p class="act-box__title">${icon("truck", { size: 16 })} Lalamove — the system books the rider for you</p>
+      <button class="btn btn--primary" type="button" data-lalamove="${o.order_id}">${icon("truck", { size: 18 })} Book Lalamove rider</button>
+      <p class="act-box__note">Status updates arrive from Lalamove automatically.
+        <button class="link-button" type="button" data-show-manual="${o.order_id}">Ship with J&amp;T/LBC instead</button></p>
+      ${manualForm(o, { hidden: true })}`;
+  }
+  if (o.courier_chosen === "LALAMOVE") {
+    // Lalamove can't be booked now: say why, and offer J&T/LBC instead.
+    const why = o.has_map_pin ? "Lalamove isn't configured on the server" : "the address has no map pin";
+    return `
+      <p class="act-box__note act-box__note--warn">Customer chose Lalamove, but ${why}. Ship with J&amp;T or LBC instead.</p>
+      ${manualForm(o)}`;
+  }
+  const name = COURIER_NAME[o.courier_chosen] || "J&T Express or LBC Express";
+  return `
+    <p class="act-box__title">${icon("truck", { size: 16 })} ${escapeHTML(name)} — book at the branch, then enter the waybill</p>
+    ${manualForm(o)}`;
+}
+
+function shipRow(o) {
+  return `
+    <article class="ship-row" data-order="${o.order_id}">
+      <div>
+        <h3 class="ship-row__title">#${o.order_id} ${statusBadge(o.order_status)}</h3>
+        <span class="muted">Packed ${formatDateTime(o.packed_at)}</span>
+        ${itemsList(o.items)}
+      </div>
+      <div>
+        <h4 class="ship-row__label">Ship to</h4>
+        ${shipTo(o)}
+        <p class="muted">Shipping fee paid: ${formatMoney(o.shipping_fee)}</p>
+      </div>
+      <div class="act-box">${actionBox(o)}</div>
     </article>`;
 }
 
-async function loadAwaiting() {
-  const orders = await apiFetch("/v1/admin/orders/awaiting-shipment");
-  els.awaitingCount.textContent = orders.length === 1 ? "1 order" : `${orders.length} orders`;
-  els.awaiting.innerHTML = orders.length
-    ? orders.map(awaitingCard).join("")
-    : `<div class="card">${UIState.empty({ icon: "package-open", title: "No paid orders waiting",
-        text: "New ones appear here as soon as PayMongo confirms the payment." })}</div>`;
-}
-
-els.awaiting.addEventListener("submit", (event) => {
+els.shipList.addEventListener("submit", (event) => {
   const form = event.target.closest("form[data-manual]");
   if (!form) return;
   event.preventDefault();
@@ -131,7 +180,15 @@ els.awaiting.addEventListener("submit", (event) => {
     `Order #${orderId} marked as shipped. The customer was emailed the tracking details.`);
 });
 
-els.awaiting.addEventListener("click", (event) => {
+els.shipList.addEventListener("click", (event) => {
+  const reveal = event.target.closest("button[data-show-manual]");
+  if (reveal) {
+    const form = els.shipList.querySelector(`form[data-manual="${reveal.dataset.showManual}"]`);
+    form.hidden = false;
+    reveal.hidden = true;
+    form.elements.tracking.focus();
+    return;
+  }
   const button = event.target.closest("button[data-lalamove]");
   if (!button) return;
   const orderId = button.dataset.lalamove;
@@ -143,8 +200,23 @@ els.awaiting.addEventListener("click", (event) => {
       : `Lalamove rider booked for order #${orderId}.`);
 });
 
+async function loadAwaiting() {
+  const orders = await apiFetch("/v1/admin/orders/awaiting-shipment");
+  const toPack = orders.filter(o => o.order_status === "paid");
+  const toShip = orders.filter(o => o.order_status === "packed");
+  setCount("pack", toPack.length, "order");
+  setCount("ship", toShip.length, "order");
+  els.packRows.innerHTML = toPack.length
+    ? toPack.map(packRow).join("")
+    : `<tr><td colspan="5">${UIState.empty({ icon: "package-open", title: "Nothing to pack",
+        text: "New paid orders appear here as soon as PayMongo confirms the payment." })}</td></tr>`;
+  els.shipList.innerHTML = toShip.length
+    ? toShip.map(shipRow).join("")
+    : UIState.empty({ icon: "truck", title: "Nothing ready to ship", text: "Orders appear here once they are marked as packed." });
+}
+
 /* ---------------------------------------------------------------------
-   OUTGOING DELIVERIES
+   3. OUTGOING
    --------------------------------------------------------------------- */
 els.filter.innerHTML += DELIVERY_STATUSES.map(s => `<option value="${s}">${STATUS[s]}</option>`).join("");
 
@@ -157,6 +229,7 @@ function trackingCell(d) {
 
 function statusForm(d) {
   if (d.status === "DELIVERED") return `<span class="muted">Done ${formatDateTime(d.delivered_at)}</span>`;
+  if (d.courier === "LALAMOVE") return `<span class="muted">Updates automatically from Lalamove</span>`;
   return `
     <form class="status-form" data-delivery="${d.delivery_id}" novalidate>
       <label class="sr-only" for="status-${d.delivery_id}">New status</label>
@@ -188,6 +261,7 @@ function shipmentRow(d) {
 async function loadShipments() {
   const status = els.filter.value;
   const rows = await apiFetch(`/v1/admin/shipments${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+  setCount("out", rows.length, "delivery");
   els.rows.innerHTML = rows.length
     ? rows.map(shipmentRow).join("")
     : `<tr><td colspan="7">${UIState.empty({ icon: "truck", title: status ? `No deliveries "${STATUS[status]}"` : "No deliveries yet",
@@ -216,12 +290,14 @@ async function reloadAll() {
 }
 
 async function init() {
-  els.awaiting.innerHTML = `<div class="card"><table class="table"><tbody>${UIState.rowSkeletons(4, 2)}</tbody></table></div>`;
+  els.packRows.innerHTML = UIState.rowSkeletons(5, 2);
+  els.shipList.innerHTML = `<table class="table"><tbody>${UIState.rowSkeletons(3, 2)}</tbody></table>`;
   els.rows.innerHTML = UIState.rowSkeletons(7, 3);
   try {
     await reloadAll();
   } catch (err) {
-    els.awaiting.innerHTML = `<div class="card">${UIState.error(err.message, "retryDeliveries")}</div>`;
+    els.packRows.innerHTML = `<tr><td colspan="5">${UIState.error(err.message, "retryDeliveries")}</td></tr>`;
+    els.shipList.innerHTML = "";
     els.rows.innerHTML = "";
     document.getElementById("retryDeliveries").addEventListener("click", init);
   }

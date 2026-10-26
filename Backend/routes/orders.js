@@ -266,14 +266,20 @@ router.post("/", requireAuth, requireVerifiedEmail, ah(async (req, res) => {
 
 /* ---------------------------------------------------------------------
    GET /api/orders — this user's order history, newest first, each with
-   its items. Powers Pages/COpage/orders.html; the tracking timeline of a
-   shipped order comes from GET /api/v1/orders/:id/tracking.
+   its items and the dates of its Paid → Packed → Shipped → Delivered
+   steps (shipped_at = the shipment's first event; shipment_courier = the
+   courier actually used, once booked). Powers Pages/COpage/orders.html;
+   the full timeline comes from GET /api/v1/orders/:id/tracking.
    --------------------------------------------------------------------- */
 router.get("/", requireAuth, ah(async (req, res) => {
   try {
     const [orders] = await pool.query(
-      `SELECT order_id, status, total_amount, shipping_fee, courier, paid_at, created_at
-       FROM orders WHERE user_id = ? ORDER BY created_at DESC, order_id DESC LIMIT 100`,
+      `SELECT o.order_id, o.status, o.total_amount, o.shipping_fee, o.courier, o.paid_at, o.packed_at, o.created_at,
+              IF(d.status = 'PENDING', NULL, d.courier) AS shipment_courier,
+              (SELECT MIN(se.created_at) FROM shipment_events se WHERE se.delivery_id = d.delivery_id) AS shipped_at,
+              d.delivered_at
+       FROM orders o LEFT JOIN deliveries d ON d.order_id = o.order_id
+       WHERE o.user_id = ? ORDER BY o.created_at DESC, o.order_id DESC LIMIT 100`,
       [req.user.userId]
     );
     if (orders.length) {

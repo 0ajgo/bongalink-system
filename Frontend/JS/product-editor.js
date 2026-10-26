@@ -4,14 +4,9 @@
 
      openProductEditor(productId, { onChange })   onChange() runs after every save
 
-   Sections and endpoints:
-     Details  PATCH  /api/products/:id          name, brand, category, price, weight,
-                                                description, shown/hidden
-     Photos   POST   /api/products/:id/image    replace the cover
-              POST   /api/products/:id/images   add a gallery photo
-              DELETE /api/products/:id/images/:imageId
-     Stock    POST   /api/products/:id/stock    { change, reason, note } — never below reserved
-     History  GET    /api/products/:id/history  who changed what, when, old -> new
+   Sections: Details (name, brand, category, price, weight, description,
+   shown/hidden), Photos (cover + gallery), Stock (change with a reason,
+   never below reserved) and History (who changed what, when).
    The server validates everything; checks here are for quick feedback.
    ===================================================================== */
 

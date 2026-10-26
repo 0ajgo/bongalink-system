@@ -140,14 +140,52 @@ button.fc-tile[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 2px 
 .table .input--sm { width: 76px; min-height: 36px; padding: 4px 8px; font-size: var(--text-sm); text-align: right; }
 .table .actions { white-space: nowrap; }
 .table .actions .btn + .btn { margin-left: var(--space-1); }
-.link-button { background: none; border: 0; padding: 0; font: inherit; font-weight: var(--weight-semibold); color: var(--color-primary); cursor: pointer; text-align: left; }
-.link-button:hover { text-decoration: underline; text-underline-offset: 3px; }
 .section-card + .section-card { margin-top: var(--space-5); }
 
 /* ---------- Deliveries ---------- */
-.ship-card + .ship-card { margin-top: var(--space-4); }
-.ship-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4) var(--space-5); font-size: var(--text-sm); }
-.ship-grid h4 { margin-bottom: var(--space-1); }
+/* Step tabs: To pack → Ready to ship → Outgoing */
+.pipe { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: var(--space-4); overflow: hidden;
+  background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.pipe__tab { position: relative; display: flex; align-items: center; gap: var(--space-3); min-height: var(--tap); padding: var(--space-3) var(--space-4);
+  border: 0; border-right: 1px solid var(--color-line); background: none; color: var(--color-ink); text-align: left; cursor: pointer; }
+.pipe__tab:last-child { border-right: 0; }
+.pipe__tab:hover { background: var(--color-surface-2); }
+.pipe__tab:focus-visible { border-radius: 0; box-shadow: inset var(--focus-ring); }
+.pipe__num { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--radius-full);
+  border: 2px solid var(--color-line-strong); background: var(--color-surface-2); color: var(--color-ink-3); font-size: var(--text-sm); font-weight: var(--weight-bold); }
+.pipe__text { display: grid; min-width: 0; }
+.pipe__title { font-weight: var(--weight-semibold); }
+.pipe__desc { font-size: var(--text-xs); color: var(--color-ink-3); }
+.pipe__count { margin-left: auto; padding: 2px 10px; border-radius: var(--radius-full); border: 1px solid var(--color-line);
+  background: var(--color-surface-2); color: var(--color-ink-2); font-size: var(--text-xs); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+.pipe__tab[aria-selected="true"] { background: var(--color-primary-tint); }
+.pipe__tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--color-primary); }
+.pipe__tab[aria-selected="true"] .pipe__num,
+.pipe__tab[aria-selected="true"] .pipe__count { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+@media (max-width: 860px) { .pipe__desc { display: none; } }
+@media (max-width: 640px) {
+  .pipe { grid-template-columns: minmax(0, 1fr); }
+  .pipe__tab { border-right: 0; border-bottom: 1px solid var(--color-line); }
+  .pipe__tab:last-child { border-bottom: 0; }
+}
+
+/* Ready to ship: order | ship to | the one action box */
+.ship-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.6fr); gap: var(--space-4);
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-line); font-size: var(--text-sm); align-items: start; }
+.ship-row:last-child { border-bottom: 0; }
+.ship-row__title { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-base); }
+.ship-row__label { font-size: var(--text-xs); font-weight: var(--weight-semibold); letter-spacing: .04em; text-transform: uppercase; color: var(--color-ink-3); }
+.ship-row .ship-items { margin-top: var(--space-2); }
+.ship-row .muted { display: block; }
+.ship-row p.muted { margin-top: var(--space-1); }
+.act-box { display: grid; gap: var(--space-2); justify-items: start; padding: var(--space-3); background: var(--color-surface-2);
+  border: 1px solid var(--color-line); border-radius: var(--radius); }
+.act-box > .ship-actions { justify-self: stretch; gap: var(--space-2); }
+.act-box__title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }
+.act-box__note { font-size: var(--text-xs); color: var(--color-ink-3); }
+.act-box__note--warn { font-size: var(--text-sm); color: var(--color-warning); }
+@media (min-width: 641px) { .act-box .ship-actions .tn { width: 180px; } .act-box .ship-actions .fee { width: 130px; } }
+@media (max-width: 860px) { .ship-row { grid-template-columns: minmax(0, 1fr); padding: var(--space-4); } }
 .ship-items { margin: 0; padding-left: var(--space-5); }
 .ship-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
 .ship-actions .field { min-width: 0; }

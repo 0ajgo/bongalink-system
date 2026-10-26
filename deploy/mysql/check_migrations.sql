@@ -15,6 +15,7 @@ SELECT m.migration,
     UNION ALL SELECT '010_ml_training_runs',     EXISTS (SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ml_training_runs')
     UNION ALL SELECT '011_auth_recovery',        EXISTS (SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_sessions')
     UNION ALL SELECT '012_admin_notifications',  EXISTS (SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'admin_notifications')
+    UNION ALL SELECT '013_order_packed_at',      EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'packed_at')
   ) m;
 
 -- The database triggers (ML sync, product history) run as the account that created them.

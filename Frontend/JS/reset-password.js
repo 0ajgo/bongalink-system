@@ -1,10 +1,6 @@
-/* =====================================================================
-   BONGALINK — RESET PASSWORD (reset-password.html?token=...)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET  /api/auth/reset-password?token=   is the link still good? -> { username }
-     POST /api/auth/reset-password { token, password }
-   Reached from the "Forgot password?" email. Same password rules as sign-up.
-   ===================================================================== */
+/* Reset password (reset-password.html?token=...), reached from the
+   "Forgot password?" email. Same password rules as sign-up.
+   Requires api.js, icons.js, cart.js and ui.js. */
 
 renderHeader({ search: false });
 

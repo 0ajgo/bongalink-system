@@ -38,6 +38,9 @@ server {
         add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        # Page assets only: never dotfiles (.env, .git) or notes/backups that end up in this folder.
+        location ~ /\.(?!well-known/) { return 404; }
+        location ~* \.(md|map|bak|orig|old|sql|log|zip|tgz)$ { return 404; }
     }
 
     # The Node API (and the PayMongo / Lalamove webhooks under /api/v1/webhooks/).

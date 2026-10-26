@@ -20,8 +20,7 @@
 
       <div class="alert" id="loginMessage" role="alert" hidden></div>
 
-      <!-- POST /api/auth/login (js/login.js). The server reads the role
-           from the account itself, so there is no User/Admin switch. -->
+      <!-- One form for customers and the admin (js/login.js) -->
       <form id="loginForm" novalidate>
         <div class="field">
           <label class="label" for="username">Username</label>
@@ -47,8 +46,7 @@
       <p class="auth__alt"><a href="homepage.html">Browse the shop as a guest</a></p>
       </section>
 
-      <!-- Forgot password: POST /api/auth/forgot-password (js/login.js). The answer is
-           always the same, so it can't be used to find out which emails have accounts. -->
+      <!-- Forgot password (js/login.js) -->
       <section id="forgotStep" hidden>
         <h1>Reset your password</h1>
         <p class="auth__lead">Enter the email of your account and we'll send you a link to choose a new password.</p>

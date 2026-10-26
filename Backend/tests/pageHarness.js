@@ -39,6 +39,7 @@ async function openPage(page, { api, role = "user", query = "", hash = "", fastT
       window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
       window.HTMLDialogElement.prototype.close = function () { this.open = false; };
       window.scrollTo = () => {};
+      window.Element.prototype.scrollIntoView = () => {};
       window.confirm = () => true;
       window.console.error = () => {};
       // Polling timers are tracked so close() can stop them.

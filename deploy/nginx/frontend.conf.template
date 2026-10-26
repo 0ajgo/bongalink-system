@@ -22,5 +22,8 @@ server {
 
     location / {
         try_files $uri $uri/ =404;
+        # Page assets only: never dotfiles (.env, .git) or notes/backups that end up in this folder.
+        location ~ /\.(?!well-known/) { return 404; }
+        location ~* \.(md|map|bak|orig|old|sql|log|zip|tgz)$ { return 404; }
     }
 }

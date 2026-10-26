@@ -3,14 +3,15 @@
 const { openPage } = require("./pageHarness");
 
 const awaitingOrder = (overrides = {}) => ({
-  order_id: 41, order_status: "paid", paid_at: "2026-10-14T08:00:00Z", created_at: "2026-10-14T07:55:00Z",
+  order_id: 41, order_status: "paid", paid_at: "2026-10-14T08:00:00Z", packed_at: null, created_at: "2026-10-14T07:55:00Z",
   total_amount: "600.00", shipping_fee: "100.00", courier_chosen: "LBC", courier_chosen_label: "LBC Express",
-  customer_username: "juan", customer_email: "juan@example.com",
+  customer_username: "juan", customer_email: "j***@example.com",
   ship_name: "Juan <b>Dela Cruz</b>", ship_phone: "09171234567", ship_address: "123 Street, Pembo, Makati, 1218",
-  ship_region: "NCR", ship_landmark: null, has_map_pin: false, can_book_lalamove: false,
+  ship_city: "Makati", ship_region: "NCR", ship_landmark: null, has_map_pin: false, can_book_lalamove: false,
   items: [{ product_id: 1, name: "Fuser unit", quantity: 2, unit_price: "250.00" }],
   ...overrides
 });
+const packedOrder = (overrides = {}) => awaitingOrder({ order_status: "packed", packed_at: "2026-10-14T09:00:00Z", ...overrides });
 
 const delivery = (overrides = {}) => ({
   delivery_id: 7, order_id: 40, courier: "JNT", courier_label: "J&T Express", tracking_number: "JT0001234567",
@@ -27,115 +28,176 @@ function deliveriesApi(state) {
     if (url === "/v1/admin/orders/to-ship") return { body: { count: state.awaiting.length } };
     if (url === "/v1/admin/orders/awaiting-shipment") return { body: state.awaiting };
     if (url.startsWith("/v1/admin/shipments?") || url === "/v1/admin/shipments") return { body: state.shipments };
+    if (url.endsWith("/packed")) return { body: { order_id: 41, status: "packed" } };
     if (url.endsWith("/manual") || url.endsWith("/lalamove")) return { status: 201, body: { delivery_id: 9 } };
     if (url.endsWith("/status")) return { body: { ok: true } };
     return { status: 404, body: { error: "unexpected " + url } };
   };
 }
+const openDeliveries = (state) => openPage("Pages/Admin/deliveries.html", { role: "admin", api: deliveriesApi(state) });
+const submit = (page, form) => form.dispatchEvent(new page.window.Event("submit", { bubbles: true, cancelable: true }));
 
 describe("admin Deliveries page", () => {
   test("non-admins see the locked message and no data is requested", async () => {
     const page = await openPage("Pages/Admin/deliveries.html", { role: "user", api: async () => ({}) });
     expect(page.$("main").textContent).toContain("Admin account required");
-    expect(page.$(".ship-card")).toBeNull();
+    expect(page.$(".pipe")).toBeNull();
     expect(page.calls).toEqual([]);
     page.close();
   });
 
-  test("shows each paid order with customer, address, items, chosen courier and fee", async () => {
-    const page = await openPage("Pages/Admin/deliveries.html",
-      { role: "admin", api: deliveriesApi({ awaiting: [awaitingOrder()], shipments: [] }) });
-    const card = page.$(".ship-card");
-    const text = card.textContent.replace(/\s+/g, " ");
-    expect(text).toContain("Order #41");
-    expect(text).toContain("juan@example.com");
-    expect(text).toContain("123 Street, Pembo, Makati, 1218");
-    expect(text).toContain("2 × Fuser unit");
-    expect(text).toContain("LBC Express");
-    expect(text).toContain("Shipping fee paid: ₱100.00");
-    // customer text is escaped, not rendered as HTML
-    expect(card.querySelector("b")).toBeNull();
-    expect(text).toContain("Juan <b>Dela Cruz</b>");
-    // the courier chosen at checkout is preselected
-    expect(card.querySelector("select[name=courier]").value).toBe("LBC");
-    // badge next to the nav link
+  test("three tabs with counts; paid orders are To pack, packed ones Ready to ship", async () => {
+    const page = await openDeliveries({
+      awaiting: [awaitingOrder(), awaitingOrder({ order_id: 42 }), packedOrder({ order_id: 39 })],
+      shipments: [delivery()]
+    });
+    expect(page.$$(".pipe__tab").map(t => t.querySelector(".pipe__title").textContent)).toEqual(["To pack", "Ready to ship", "Outgoing"]);
+    expect([page.$("#countPack"), page.$("#countShip"), page.$("#countOut")].map(c => c.textContent)).toEqual(["2", "1", "1"]);
+    expect(page.$("#countPack").getAttribute("aria-label")).toBe("2 orders");
+    // To pack is open first; the others are hidden.
+    expect(page.$("#tab-pack").getAttribute("aria-selected")).toBe("true");
+    expect([page.$("#panel-pack").hidden, page.$("#panel-ship").hidden, page.$("#panel-out").hidden]).toEqual([false, true, true]);
+    expect(page.$$("#packRows tr[data-order]").map(r => r.dataset.order)).toEqual(["41", "42"]);
+    expect(page.$$("#shipList .ship-row").map(r => r.dataset.order)).toEqual(["39"]);
+
+    page.$("#tab-ship").click();
+    expect([page.$("#panel-pack").hidden, page.$("#panel-ship").hidden]).toEqual([true, false]);
+    expect(page.$("#tab-ship").getAttribute("aria-selected")).toBe("true");
+    // Arrow keys move between tabs.
+    page.$("#tab-ship").dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(page.$("#panel-out").hidden).toBe(false);
+
     const badge = page.$("[data-to-ship]");
-    expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe("1 order to ship");
-    expect(badge.getAttribute("href")).toBe("../Admin/deliveries.html");
+    expect(badge.textContent).toBe("3 orders to ship");
     page.close();
   });
 
-  test("Lalamove button only when the server says it can be booked", async () => {
-    const page = await openPage("Pages/Admin/deliveries.html", { role: "admin", api: deliveriesApi({
-      awaiting: [
-        awaitingOrder({ order_id: 1, courier_chosen: "LALAMOVE", has_map_pin: true, can_book_lalamove: true }),
-        awaitingOrder({ order_id: 2, courier_chosen: "LALAMOVE", has_map_pin: false, can_book_lalamove: false }),
-        awaitingOrder({ order_id: 3, courier_chosen: "JNT", has_map_pin: true, can_book_lalamove: false })
-      ],
-      shipments: []
-    }) });
-    const card = (id) => page.$(`.ship-card[data-order="${id}"]`);
-    expect(card(1).querySelector("[data-lalamove]")).not.toBeNull();
-    expect(card(2).querySelector("[data-lalamove]")).toBeNull();
-    expect(card(2).textContent).toMatch(/no map pin/);
-    expect(card(3).querySelector("[data-lalamove]")).toBeNull();
-
-    card(1).querySelector("[data-lalamove]").click();
-    await page.settle();
-    expect(page.calls).toContainEqual(expect.objectContaining({ url: "/v1/admin/shipments/1/lalamove", method: "POST" }));
+  test("To pack row: order, paid time, items, ship-to name and city, courier; text is escaped", async () => {
+    const page = await openDeliveries({ awaiting: [awaitingOrder()], shipments: [] });
+    const row = page.$('#packRows tr[data-order="41"]');
+    const text = row.textContent.replace(/\s+/g, " ");
+    expect(text).toContain("#41");
+    expect(text).toMatch(/Paid Oct 14, 2026/);
+    expect(text).toContain("2 × Fuser unit");
+    expect(text).toContain("Juan <b>Dela Cruz</b>");
+    expect(row.querySelector("b")).toBeNull();
+    expect(text).toContain("Makati");
+    expect(text).toContain("LBC Express");
+    // No shipping form here: packing comes first.
+    expect(row.querySelector("form")).toBeNull();
+    expect(row.querySelector("[data-pack]").textContent.trim()).toBe("Mark as packed");
     page.close();
   });
 
-  test("ship with J&T/LBC posts the tracking number and optional actual fee, then reloads", async () => {
+  test("Mark as packed posts to the packed endpoint, toasts, and the order moves to Ready to ship", async () => {
     const state = { awaiting: [awaitingOrder()], shipments: [] };
-    const page = await openPage("Pages/Admin/deliveries.html", { role: "admin", api: deliveriesApi(state) });
-    const form = page.$("form[data-manual='41']");
+    const page = await openDeliveries(state);
+    state.awaiting = [packedOrder()];
+    page.$('[data-pack="41"]').click();
+    await page.settle();
+    expect(page.calls).toContainEqual({ url: "/v1/admin/orders/41/packed", method: "POST", body: undefined });
+    expect(page.$(".toast-region").textContent).toContain("Order #41 packed — moved to Ready to ship.");
+    expect(page.$("#countPack").textContent).toBe("0");
+    expect(page.$("#countShip").textContent).toBe("1");
+    expect(page.$("#packRows").textContent).toContain("Nothing to pack");
+    page.close();
+  });
+
+  test("Ready to ship, J&T/LBC: branch note, courier preset, waybill, optional courier fee, Mark as shipped", async () => {
+    const state = { awaiting: [packedOrder()], shipments: [] };
+    const page = await openDeliveries(state);
+    const row = page.$('.ship-row[data-order="41"]');
+    const text = row.textContent.replace(/\s+/g, " ");
+    expect(text).toContain("LBC Express — book at the branch, then enter the waybill");
+    expect(text).toMatch(/Packed Oct 14, 2026/);
+    expect(text).toContain("Shipping fee paid: ₱100.00");
+    expect(text).toContain("123 Street, Pembo, Makati, 1218");
+    expect(text).toContain("Fee paid to courier (optional)");
+    expect(text).not.toContain("Actual fee");
+    expect(row.querySelector("[data-lalamove]")).toBeNull();
+
+    const form = row.querySelector("form[data-manual='41']");
+    expect(form.hidden).toBe(false);
+    expect(form.elements.courier.value).toBe("LBC");
     form.elements.courier.value = "JNT";
     form.elements.tracking.value = " JT0009988776 ";
     form.elements.fee.value = "95.5";
     state.awaiting = [];
     state.shipments = [delivery({ order_id: 41 })];
-    form.dispatchEvent(new page.window.Event("submit", { bubbles: true, cancelable: true }));
+    submit(page, form);
     await page.settle();
-
     expect(page.calls).toContainEqual({ url: "/v1/admin/shipments/41/manual", method: "POST",
       body: { courier: "JNT", tracking_number: "JT0009988776", fee_actual: 95.5 } });
-    expect(page.$("#awaitingList").textContent).toMatch(/No paid orders waiting/);
+    expect(page.$("#shipList").textContent).toMatch(/Nothing ready to ship/);
     expect(page.$("#shipmentRows").textContent).toContain("#41");
     expect(page.$(".toast-region").textContent).toMatch(/marked as shipped/);
     page.close();
   });
 
   test("an invalid tracking number is not sent", async () => {
-    const page = await openPage("Pages/Admin/deliveries.html",
-      { role: "admin", api: deliveriesApi({ awaiting: [awaitingOrder()], shipments: [] }) });
+    const page = await openDeliveries({ awaiting: [packedOrder()], shipments: [] });
     const form = page.$("form[data-manual='41']");
     form.elements.tracking.value = "x";
-    form.dispatchEvent(new page.window.Event("submit", { bubbles: true, cancelable: true }));
+    submit(page, form);
     await page.settle();
     expect(page.calls.some(c => c.url.endsWith("/manual"))).toBe(false);
+    expect(form.elements.tracking.getAttribute("aria-invalid")).toBe("true");
     page.close();
   });
 
-  test("outgoing deliveries: tracking link, status filter, and status update with a note", async () => {
-    const page = await openPage("Pages/Admin/deliveries.html", { role: "admin", api: deliveriesApi({
-      awaiting: [], shipments: [delivery(), delivery({ delivery_id: 8, order_id: 39, status: "DELIVERED", delivered_at: "2026-10-13T09:00:00Z" })]
-    }) });
+  test("Ready to ship, Lalamove: Book Lalamove rider, or reveal the J&T/LBC form instead", async () => {
+    const page = await openDeliveries({ awaiting: [
+      packedOrder({ order_id: 1, courier_chosen: "LALAMOVE", courier_chosen_label: "Lalamove", has_map_pin: true, can_book_lalamove: true }),
+      packedOrder({ order_id: 2, courier_chosen: "LALAMOVE", courier_chosen_label: "Lalamove", has_map_pin: false }),
+      packedOrder({ order_id: 3, courier_chosen: "LALAMOVE", courier_chosen_label: "Lalamove", has_map_pin: true }),
+      packedOrder({ order_id: 4, courier_chosen: "JNT", courier_chosen_label: "J&T Express", has_map_pin: true, can_book_lalamove: true })
+    ], shipments: [] });
+    const row = (id) => page.$(`.ship-row[data-order="${id}"]`);
+
+    // Bookable: the button and the automatic-updates note; the J&T/LBC form starts hidden.
+    expect(row(1).textContent).toContain("Status updates arrive from Lalamove automatically");
+    const hiddenForm = row(1).querySelector("form[data-manual]");
+    expect(hiddenForm.hidden).toBe(true);
+    row(1).querySelector("[data-show-manual]").click();
+    expect(hiddenForm.hidden).toBe(false);
+    expect(hiddenForm.elements.courier.value).toBe("JNT");
+
+    // Can't be booked: the reason, and the J&T/LBC form right away.
+    expect(row(2).querySelector("[data-lalamove]")).toBeNull();
+    expect(row(2).textContent).toMatch(/no map pin/);
+    expect(row(2).querySelector("form[data-manual]").hidden).toBe(false);
+    expect(row(3).textContent).toMatch(/Lalamove isn't configured on the server/);
+
+    // A J&T order never gets the Lalamove button, even when Lalamove could be booked.
+    expect(row(4).querySelector("[data-lalamove]")).toBeNull();
+
+    row(1).querySelector("[data-lalamove]").click();
+    await page.settle();
+    expect(page.calls).toContainEqual(expect.objectContaining({ url: "/v1/admin/shipments/1/lalamove", method: "POST" }));
+    page.close();
+  });
+
+  test("Outgoing: tracking link, status filter, status update with a note; Lalamove rows update themselves", async () => {
+    const page = await openDeliveries({ awaiting: [], shipments: [
+      delivery(),
+      delivery({ delivery_id: 8, order_id: 39, status: "DELIVERED", delivered_at: "2026-10-13T09:00:00Z" }),
+      delivery({ delivery_id: 9, order_id: 38, courier: "LALAMOVE", courier_label: "Lalamove", status: "IN_TRANSIT", tracking_number: null })
+    ] });
     const rows = page.$$("#shipmentRows tr");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
+    expect(page.$("#countOut").textContent).toBe("3");
     expect(rows[0].querySelector("a").href).toBe("https://www.jtexpress.ph/track?waybill=JT0001234567");
     expect(rows[0].textContent).toContain("Handed to courier");
-    // delivered rows can't be changed
-    expect(rows[1].querySelector("form")).toBeNull();
-    // the five statuses the admin can set
+    expect(rows[1].querySelector("form")).toBeNull();   // delivered rows can't be changed
+    expect(rows[2].querySelector("form")).toBeNull();
+    expect(rows[2].textContent).toContain("Updates automatically from Lalamove");
     expect([...rows[0].querySelectorAll("select option")].map(o => o.value))
       .toEqual(["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "RETURNED"]);
 
     const form = rows[0].querySelector("form");
     form.elements.status.value = "OUT_FOR_DELIVERY";
     form.elements.note.value = "Rider left the hub";
-    form.dispatchEvent(new page.window.Event("submit", { bubbles: true, cancelable: true }));
+    submit(page, form);
     await page.settle();
     expect(page.calls).toContainEqual({ url: "/v1/admin/shipments/7/status", method: "PATCH",
       body: { status: "OUT_FOR_DELIVERY", note: "Rider left the hub" } });
@@ -147,66 +209,196 @@ describe("admin Deliveries page", () => {
     expect(page.calls.at(-1)).toMatchObject({ url: "/v1/admin/shipments?status=IN_TRANSIT", method: "GET" });
     page.close();
   });
+
+  test("the J&T/LBC vs Lalamove note stays on the page", async () => {
+    const page = await openDeliveries({ awaiting: [], shipments: [] });
+    expect(page.$(".section-note").textContent).toMatch(/J&T and LBC: book the parcel at the branch/);
+    page.close();
+  });
 });
 
 describe("customer My Orders page", () => {
+  const order = (overrides) => ({
+    total_amount: "600.00", shipping_fee: "100.00", courier: "JNT", paid_at: null, packed_at: null, shipped_at: null,
+    delivered_at: null, shipment_courier: null, created_at: "2026-10-12T09:00:00Z",
+    items: [{ name: "Fuser unit", quantity: 2 }], ...overrides
+  });
   const orders = [
-    { order_id: 45, status: "pending_payment", total_amount: "230.00", shipping_fee: "130.00", courier: "LBC",
-      paid_at: null, created_at: "2026-10-14T10:00:00Z", items: [{ name: "Waste ink pad", quantity: 1 }] },
-    { order_id: 44, status: "shipped", total_amount: "600.00", shipping_fee: "100.00", courier: "JNT",
-      paid_at: "2026-10-13T10:00:00Z", created_at: "2026-10-13T09:00:00Z", items: [{ name: "Fuser unit", quantity: 2 }] },
-    { order_id: 43, status: "paid", total_amount: "300.00", shipping_fee: "100.00", courier: "JNT",
-      paid_at: "2026-10-12T10:00:00Z", created_at: "2026-10-12T09:00:00Z", items: [{ name: "Printhead", quantity: 1 }] }
+    order({ order_id: 46, status: "pending_payment", courier: "LBC", created_at: "2026-10-14T10:00:00Z", items: [{ name: "Waste ink pad", quantity: 1 }] }),
+    order({ order_id: 45, status: "paid", paid_at: "2026-10-14T09:00:00Z" }),
+    order({ order_id: 44, status: "packed", paid_at: "2026-10-13T09:00:00Z", packed_at: "2026-10-13T12:00:00Z" }),
+    order({ order_id: 43, status: "shipped", courier: "LALAMOVE", shipment_courier: "LALAMOVE", paid_at: "2026-10-12T09:00:00Z",
+      packed_at: "2026-10-12T10:00:00Z", shipped_at: "2026-10-12T11:00:00Z" }),
+    order({ order_id: 42, status: "shipped", shipment_courier: "JNT", paid_at: "2026-10-11T09:00:00Z",
+      packed_at: "2026-10-11T10:00:00Z", shipped_at: "2026-10-11T11:00:00Z" }),
+    order({ order_id: 41, status: "delivered", courier: "LBC", shipment_courier: "LBC", paid_at: "2026-10-01T09:00:00Z",
+      packed_at: "2026-10-02T10:00:00Z", shipped_at: "2026-10-02T11:00:00Z", delivered_at: "2026-10-04T15:00:00Z" }),
+    order({ order_id: 40, status: "expired" })
   ];
   const tracking = {
-    courier: "JNT", courier_label: "J&T Express", status: "IN_TRANSIT", tracking_number: "JT0001234567",
-    tracking_url: "https://www.jtexpress.ph/track?waybill=JT0001234567",
-    events: [
-      { status: "PICKED_UP", note: "Dropped off at J&T Express", created_at: "2026-10-13T11:00:00Z" },
-      { status: "IN_TRANSIT", note: null, created_at: "2026-10-14T08:00:00Z" }
-    ]
+    42: { order_id: 42, order_status: "shipped", created_at: "2026-10-11T08:00:00Z", paid_at: "2026-10-11T09:00:00Z",
+      packed_at: "2026-10-11T10:00:00Z", courier_chosen: "JNT", courier_chosen_label: "J&T Express", shipped: true,
+      courier: "JNT", courier_label: "J&T Express", status: "IN_TRANSIT", tracking_number: "JT0001234567",
+      tracking_url: "https://www.jtexpress.ph/track?waybill=JT0001234567", delivered_at: null,
+      events: [
+        { status: "PICKED_UP", note: "Dropped off at J&T Express", source: "admin", created_at: "2026-10-11T11:00:00Z" },
+        { status: "IN_TRANSIT", note: null, source: "admin", created_at: "2026-10-12T08:00:00Z" }
+      ] },
+    43: { order_id: 43, order_status: "shipped", created_at: "2026-10-12T08:00:00Z", paid_at: "2026-10-12T09:00:00Z",
+      packed_at: "2026-10-12T10:00:00Z", courier_chosen: "LALAMOVE", courier_chosen_label: "Lalamove", shipped: true,
+      courier: "LALAMOVE", courier_label: "Lalamove", status: "IN_TRANSIT", tracking_number: null,
+      tracking_url: "https://share.lalamove.com/LLM1", delivered_at: null,
+      events: [{ status: "IN_TRANSIT", note: "Lalamove: ON_GOING", source: "courier_webhook", created_at: "2026-10-12T11:00:00Z" }] },
+    44: { order_id: 44, order_status: "packed", created_at: "2026-10-13T08:00:00Z", paid_at: "2026-10-13T09:00:00Z",
+      packed_at: "2026-10-13T12:00:00Z", courier_chosen: "JNT", courier_chosen_label: "J&T Express", shipped: false,
+      courier: null, courier_label: null, status: null, tracking_number: null, tracking_url: null, delivered_at: null, events: [] }
   };
   const api = async ({ url, method }) => {
     if (url === "/orders") return { body: orders };
-    if (url === "/v1/orders/44/tracking") return { body: tracking };
+    const t = /^\/v1\/orders\/(\d+)\/tracking$/.exec(url);
+    if (t && tracking[t[1]]) return { body: tracking[t[1]] };
     if (url === "/v1/payments/checkout" && method === "POST") return { body: { checkout_url: "about:blank#paymongo" } };
-    return { status: 404, body: { error: "No shipment yet for this order" } };
+    return { status: 404, body: { error: "Order not found" } };
   };
+  const cardOf = (page, id) => page.$(`.order-card[data-order="${id}"]`);
+  const headlineOf = (page, id) => cardOf(page, id).querySelector(".order-card__headline")?.textContent;
+  const stepsOf = (page, id) => [...cardOf(page, id).querySelectorAll(".tracker__step")]
+    .map(li => (li.classList.contains("is-done") ? "done" : "todo") + (li.getAttribute("aria-current") ? "*" : ""));
 
-  test("lists orders with status, items and totals; tracking timeline for shipped orders", async () => {
+  test("a plain headline for every state, and the meta line: placed date · items · courier", async () => {
     const page = await openPage("Pages/COpage/orders.html", { api });
-    const cards = page.$$("[data-order]");
-    expect(cards.map(c => c.dataset.order)).toEqual(["45", "44", "43"]);
-    expect(cards[0].textContent).toContain("Waiting for payment");
-    expect(cards[1].textContent).toContain("2 × Fuser unit");
-    expect(cards[1].querySelector(".price").textContent).toBe("₱600.00");
-
-    // only shipped/delivered orders ask for tracking
-    expect(page.calls.filter(c => c.url.includes("/tracking")).map(c => c.url)).toEqual(["/v1/orders/44/tracking"]);
-    const t = cards[1].querySelector(".tracking");
-    expect(t.hidden).toBe(false);
-    expect(t.textContent).toContain("J&T Express");
-    expect(t.textContent).toContain("JT0001234567");
-    expect(t.querySelector("a").href).toBe("https://www.jtexpress.ph/track?waybill=JT0001234567");
-    const steps = [...t.querySelectorAll(".timeline li")];
-    expect(steps.map(li => li.querySelector(".timeline__status").textContent))
-      .toEqual(["In transit", "Handed to courier"]);   // newest first
-    expect(steps[0].classList.contains("is-latest")).toBe(true);
-    expect(steps[1].querySelector(".timeline__note").textContent).toBe("Dropped off at J&T Express");
-    expect(steps.every(li => li.querySelector(".timeline__time").textContent.trim().length > 0)).toBe(true);
-
-    // a paid order not yet shipped shows no tracking box
-    expect(cards[2].querySelector(".tracking").hidden).toBe(true);
+    expect(page.$$(".order-card").map(c => c.dataset.order)).toEqual(["46", "45", "44", "43", "42", "41", "40"]);
+    expect(headlineOf(page, 46)).toBe("Pay to confirm your order");
+    expect(headlineOf(page, 45)).toBe("Payment received — we're packing your order");
+    expect(headlineOf(page, 44)).toBe("Packed — handing it to the courier soon");
+    expect(headlineOf(page, 43)).toBe("Your rider is on the way");
+    expect(headlineOf(page, 42)).toBe("Your parcel is with J&T Express");
+    expect(headlineOf(page, 41)).toBe("Delivered Oct 4");
+    expect(headlineOf(page, 40)).toBeUndefined();
+    expect(cardOf(page, 40).textContent).toContain("Expired");
+    expect(cardOf(page, 46).querySelector(".order-card__meta").textContent)
+      .toBe("Placed Oct 14, 2026 · 1 item · LBC Express · unpaid orders cancel after 24 hours");
+    expect(cardOf(page, 45).querySelector(".order-card__meta").textContent).toBe("Placed Oct 12, 2026 · 2 items · J&T Express");
+    // The courier actually used, once shipped.
+    expect(cardOf(page, 41).querySelector(".order-card__meta").textContent).toContain("LBC Express");
+    // No tracking requests until a card is opened.
+    expect(page.calls.filter(c => c.url.includes("/tracking"))).toEqual([]);
     page.close();
   });
 
-  test("Pay now only on unpaid orders, and it opens PayMongo for that order", async () => {
+  test("the 4-step tracker: finished steps green with their date, the current step marked; none when unpaid or expired", async () => {
     const page = await openPage("Pages/COpage/orders.html", { api });
-    const buttons = page.$$("[data-pay]");
-    expect(buttons.map(b => b.dataset.pay)).toEqual(["45"]);
-    buttons[0].click();
+    expect(cardOf(page, 46).querySelector(".tracker")).toBeNull();
+    expect(cardOf(page, 40).querySelector(".tracker")).toBeNull();
+    expect(stepsOf(page, 45)).toEqual(["done*", "todo", "todo", "todo"]);
+    expect(stepsOf(page, 44)).toEqual(["done", "done*", "todo", "todo"]);
+    expect(stepsOf(page, 42)).toEqual(["done", "done", "done*", "todo"]);
+    expect(stepsOf(page, 41)).toEqual(["done", "done", "done", "done*"]);
+    const steps = [...cardOf(page, 41).querySelectorAll(".tracker__step")];
+    const label = (li) => [...li.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join("");
+    expect(steps.map(label)).toEqual(["Paid", "Packed", "Shipped", "Delivered"]);
+    expect(steps.map(li => li.querySelector("small")?.textContent)).toEqual(["Oct 1", "Oct 2", "Oct 2", "Oct 4"]);
+    expect(cardOf(page, 45).querySelectorAll(".tracker__step small")).toHaveLength(1);   // only Paid has a date yet
+    page.close();
+  });
+
+  test("one button per card: Pay now when unpaid, Track, or Details when delivered", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api });
+    expect(page.$$("[data-pay]").map(b => b.dataset.pay)).toEqual(["46"]);
+    expect(cardOf(page, 46).querySelector("[data-toggle]")).toBeNull();
+    expect(cardOf(page, 45).querySelector("[data-toggle]").textContent.trim()).toBe("Track");
+    expect(cardOf(page, 41).querySelector("[data-toggle]").textContent.trim()).toBe("Details");
+    expect(cardOf(page, 42).querySelector(".order-card__total .price").textContent).toBe("₱600.00");
+
+    page.$("[data-pay]").click();
     await page.settle();
-    expect(page.calls).toContainEqual({ url: "/v1/payments/checkout", method: "POST", body: { order_id: 45 } });
+    expect(page.calls).toContainEqual({ url: "/v1/payments/checkout", method: "POST", body: { order_id: 46 } });
+    page.close();
+  });
+
+  test("Track on a J&T order: tracking number + Copy + courier site, updates newest first, items", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api });
+    const button = cardOf(page, 42).querySelector("[data-toggle]");
+    const panel = cardOf(page, 42).querySelector(".order-card__details");
+    expect(panel.hidden).toBe(true);
+    button.click();
+    await page.until(() => panel.querySelector(".updates"));
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(panel.hidden).toBe(false);
+    expect(page.calls.filter(c => c.url.includes("/tracking")).map(c => c.url)).toEqual(["/v1/orders/42/tracking"]);
+
+    const box = panel.querySelector(".courier-box");
+    expect(box.textContent).toContain("J&T Express");
+    expect(box.querySelector(".courier-box__tn").textContent).toBe("JT0001234567");
+    expect(box.querySelector("[data-copy]").dataset.copy).toBe("JT0001234567");
+    const link = box.querySelector("a");
+    expect(link.textContent).toBe("Track on J&T's site ↗");
+    expect(link.href).toBe("https://www.jtexpress.ph/track?waybill=JT0001234567");
+    expect(link.target).toBe("_blank");
+
+    const updates = [...panel.querySelectorAll(".updates li")].map(li => li.querySelector("span").firstChild.textContent);
+    expect(updates).toEqual(["In transit", "Handed to courier", "Packed", "Paid", "Order placed"]);
+    expect(panel.querySelector(".updates li:nth-child(2) .updates__note").textContent).toBe("Dropped off at J&T Express");
+    expect(panel.querySelector(".order-card__items").textContent).toContain("2 × Fuser unit");
+
+    // Copy: the browser's clipboard, then "Copied ✓".
+    let copied = null;
+    Object.defineProperty(page.window.navigator, "clipboard", { value: { writeText: async (t) => { copied = t; } }, configurable: true });
+    box.querySelector("[data-copy]").click();
+    await page.settle();
+    expect(copied).toBe("JT0001234567");
+    expect(box.querySelector("[data-copy]").textContent).toBe("Copied ✓");
+
+    // Closing and opening again doesn't load it twice.
+    button.click();
+    expect(panel.hidden).toBe(true);
+    button.click();
+    await page.settle();
+    expect(page.calls.filter(c => c.url.includes("/tracking"))).toHaveLength(1);
+    page.close();
+  });
+
+  test("Track on a Lalamove order: Open live tracking, and Lalamove's raw codes are not shown", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api });
+    cardOf(page, 43).querySelector("[data-toggle]").click();
+    const panel = cardOf(page, 43).querySelector(".order-card__details");
+    await page.until(() => panel.querySelector(".updates"));
+    const link = panel.querySelector(".courier-box a");
+    expect(link.textContent).toBe("Open live tracking ↗");
+    expect(link.href).toBe("https://share.lalamove.com/LLM1");
+    expect(panel.textContent).not.toContain("ON_GOING");
+    expect(panel.querySelector(".updates li").textContent).toContain("In transit");
+    page.close();
+  });
+
+  test("Track before shipping: the courier chosen and 'tracking number appears once shipped'", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api });
+    cardOf(page, 44).querySelector("[data-toggle]").click();
+    const panel = cardOf(page, 44).querySelector(".order-card__details");
+    await page.until(() => panel.querySelector(".updates"));
+    expect(panel.querySelector(".courier-box").textContent.replace(/\s+/g, " ").trim())
+      .toBe("J&T Express · tracking number appears once shipped");
+    expect(panel.querySelector(".courier-box a")).toBeNull();
+    expect([...panel.querySelectorAll(".updates li span")].map(s => s.textContent)).toEqual(["Packed", "Paid", "Order placed"]);
+    page.close();
+  });
+
+  test("a tracking error shows inside the panel", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api });
+    cardOf(page, 45).querySelector("[data-toggle]").click();   // the stub has no tracking for 45
+    const panel = cardOf(page, 45).querySelector(".order-card__details");
+    await page.until(() => panel.querySelector(".error-text"));
+    expect(panel.textContent).toContain("Couldn't load tracking: Order not found");
+    page.close();
+  });
+
+  test("opened with #order-<id> (the profile page's Track link): that card is expanded", async () => {
+    const page = await openPage("Pages/COpage/orders.html", { api, hash: "order-42" });
+    const panel = cardOf(page, 42).querySelector(".order-card__details");
+    await page.until(() => panel.querySelector(".updates"));
+    expect(panel.hidden).toBe(false);
+    expect(cardOf(page, 42).querySelector("[data-toggle]").getAttribute("aria-expanded")).toBe("true");
+    expect(cardOf(page, 43).querySelector(".order-card__details").hidden).toBe(true);
     page.close();
   });
 });

@@ -20,7 +20,7 @@ mysql -u root -p -e "CREATE DATABASE bongalink_dev CHARACTER SET utf8mb4 COLLATE
 mysql -u root -p bongalink_dev < Backend/database/bongalink_schema.sql
 for m in 003_ml_sync 004_api_integrations 005_product_history 006_chatbot 007_faq_no_repairs \
          008_admin_accounts 009_encrypt_personal_data 010_ml_training_runs 011_auth_recovery \
-         012_admin_notifications; do
+         012_admin_notifications 013_order_packed_at; do
   mysql -u root -p bongalink_dev < Backend/database/migrations/$m.sql
 done
 ```

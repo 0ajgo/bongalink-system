@@ -10,15 +10,6 @@
 <body class="app">
 <header id="site-header"></header>
 
-<!-- Integrated Dashboard (Sprint 3 "ERP Dashboard"): the owner's view of
-     sales, orders and inventory. Read-only, from existing endpoints:
-       GET /api/admin/ml/dashboard   stock counts, revenue today / this week / this month,
-                                     sales trend per day, week or month, top products
-       GET /api/v1/admin/orders/to-ship
-       GET /api/admin/ml/status      forecast model status
-       GET /api/admin/ml/predictions 7-day forecast per part (Forecast card)
-       GET /api/v1/admin/chat/summary  chat questions the AI assistant couldn't answer
-       GET /api/v1/admin/accounts/summary  accounts: total, new this week, suspended -->
 <main id="main" class="container page">
   <div class="page-head">
     <div>
@@ -33,7 +24,7 @@
     </div>
   </div>
 
-  <!-- Revenue (REQ001): Philippine dates, weeks from Monday; each vs the previous whole day / week / month -->
+  <!-- Revenue: each vs the previous whole day / week / month -->
   <div class="stat-grid stat-grid--3" aria-live="polite" id="revenueTiles">
     <div class="card stat" id="revToday">
       <span class="stat__label"><i data-icon="credit-card" data-size="16"></i> Revenue today</span>
@@ -90,7 +81,7 @@
     </a>
   </div>
 
-  <!-- RETRAINING (REQ028): the same "Update forecasts & trends" as the Forecasts page (js/ml-training.js) -->
+  <!-- "Update forecasts & trends" (js/ml-training.js) -->
   <section class="card section-card dash-training" id="dashTraining" aria-labelledby="dashTraining-title"></section>
 
   <div class="dash-grid">
@@ -125,7 +116,7 @@
       </div>
     </section>
 
-    <!-- Forecast: GET /api/admin/ml/predictions (the same list as Inventory > Forecast by part) -->
+    <!-- Forecast: the same list as Inventory > Forecast by part -->
     <section class="card" id="forecastCard" aria-labelledby="forecastCardTitle">
       <div class="card__header"><h2 id="forecastCardTitle">Forecast</h2><span class="muted">Next 7 days</span></div>
       <div class="card__body" id="forecastBody" aria-live="polite"></div>

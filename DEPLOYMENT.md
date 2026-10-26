@@ -158,6 +158,7 @@ and none can be skipped. The same list is in `Backend/tests/globalSetup.js` and 
 | 9 | `migrations/010_ml_training_runs.sql` | retraining runs |
 | 10 | `migrations/011_auth_recovery.sql` | password reset, "Remember me" sessions |
 | 11 | `migrations/012_admin_notifications.sql` | the admin bell |
+| 12 | `migrations/013_order_packed_at.sql` | when an order was packed (Admin > Deliveries) |
 
 Then `Backend/database/seed_data.sql` on a **fresh** database: the six categories and the hidden test
 products for the live payment test. A fresh schema has **no categories** without it. It is safe to run twice.

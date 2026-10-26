@@ -5,8 +5,7 @@
 
    Where the API is: config.js (window.BONGALINK_API_BASE_URL), or when
    that is blank, http://localhost:4000/api for a page opened from a
-   development server (port 5500: VS Code Live Server or Docker), and
-   /api on the same site anywhere else (production, DEPLOYMENT.md).
+   development server (port 5500), and /api on the same site anywhere else.
    ===================================================================== */
 
 const DEV_API_BASE_URL = "http://localhost:4000/api";
@@ -28,7 +27,7 @@ const authStore = {
   get(key) {
     try { return sessionStorage.getItem(key) ?? localStorage.getItem(key); } catch (e) { return null; }
   },
-  // data = { token, user: { role, username } } from POST /auth/login
+  // data: the answer to a successful login
   save(data, remember) {
     this.clear();
     const area = remember ? localStorage : sessionStorage;
@@ -78,12 +77,7 @@ async function logOut() {
 }
 
 /* A request that gets no answer fails after this long, so a page shows an
-   error instead of loading forever. Photo uploads get longer, and calls that
-   wait for another service pass their own `timeout` (always longer than the
-   server's own limit for that service):
-     API_TIMEOUT_LONG_MS (45 s): shipping quote, place order, open PayMongo
-       checkout, register / resend code / admin invite (they send an email)
-     API_TIMEOUT_CHAT_MS (60 s): chat message, booking a Lalamove rider */
+   error instead of loading forever. Slower calls pass a longer `timeout`. */
 const API_TIMEOUT_MS = 20000;
 const API_TIMEOUT_LONG_MS = 45000;
 const API_TIMEOUT_CHAT_MS = 60000;
@@ -146,11 +140,8 @@ async function apiFetch(path, { timeout, ...options } = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    // Every route in Backend/routes/*.js responds with { error: "..." }
-    // on failure, so this is what callers' catch(err) => err.message
-    // blocks are usually showing the user.
-    // status/code let callers react to specific cases, e.g.
-    // code "EMAIL_NOT_VERIFIED" on checkout.
+    // err.message is the server's own explanation, shown to the user;
+    // status/code let callers react to specific cases.
     const error = new Error(data.error || "Something went wrong.");
     error.status = response.status;
     error.code = data.code;
@@ -180,8 +171,7 @@ function isLoggedIn() {
   return authStore.get("bongalink_logged_in") === "true";
 }
 
-// UI hint only — the server enforces the real admin check on every
-// admin-only request via the requireAdmin middleware.
+// UI hint only — the server checks the admin role on every admin request.
 function isAdmin() {
   return isLoggedIn() && authStore.get("bongalink_role") === "admin";
 }

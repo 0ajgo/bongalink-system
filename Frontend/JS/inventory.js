@@ -1,9 +1,6 @@
-/* =====================================================================
-   inventory.js — admin Inventory & forecasts (Pages/Admin/inventory.html)
-   Requires api.js, icons.js, cart.js, ui.js, chart.js and forecast-ui.js.
-   Reads what the Python ML worker writes (via /api/admin/ml/*) and lets
-   the admin edit stock/price or remove products (via /api/products).
-   ===================================================================== */
+/* Admin › Inventory & forecasts. Requires api.js, icons.js, cart.js, ui.js,
+   chart.js and forecast-ui.js. Shows the stock forecasts and lets the
+   admin edit or hide parts. */
 
 renderHeader({ active: "inventory" });
 
@@ -38,7 +35,7 @@ const STATES = {
 
 async function loadStatus() {
   const s = await apiFetch("/admin/ml/status");
-  // Changes already queued count as "updating" even before the worker's next poll sees them.
+  // Changes already queued count as "updating" straight away.
   const state = s.state === "up_to_date" && s.pending_events > 0 ? STATES.updating : (STATES[s.state] || STATES.updating);
   const badge = document.getElementById("statusBadge");
   const shown = s.worker_online ? state : { label: "Worker offline", tone: "warning", icon: "triangle-alert" };
@@ -373,7 +370,7 @@ async function loadProducts() {
 }
 
 /* Hidden parts open and close from their title; collapsed by default. Each admin's
-   choice is remembered in this browser (localStorage, keyed by username). */
+   choice is remembered in this browser. */
 const HIDDEN_OPEN_KEY = `bongalink.inventory.hiddenOpen.${session.username}`;
 function setHiddenOpen(open, { save = true } = {}) {
   document.getElementById("hiddenToggle").setAttribute("aria-expanded", String(open));

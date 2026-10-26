@@ -1,11 +1,5 @@
-/* =====================================================================
-   BONGALINK — ADMIN SHIPPING RATES (Pages/Admin/rates.html)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET    /api/v1/admin/shipping-rates      rate card + last updated per courier
-     POST   /api/v1/admin/shipping-rates      add a bracket
-     PATCH  /api/v1/admin/shipping-rates/:id  edit a bracket
-     DELETE /api/v1/admin/shipping-rates/:id  delete a bracket
-   ===================================================================== */
+/* Admin › Shipping rates: the J&T / LBC rate card per courier; add, edit
+   or delete a weight bracket. Requires api.js, icons.js, cart.js and ui.js. */
 
 renderHeader({ active: "rates" });
 

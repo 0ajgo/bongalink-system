@@ -28,6 +28,7 @@ module.exports = async () => {
     await runSqlFile(connection, path.join(db, "migrations", "010_ml_training_runs.sql"));
     await runSqlFile(connection, path.join(db, "migrations", "011_auth_recovery.sql"));
     await runSqlFile(connection, path.join(db, "migrations", "012_admin_notifications.sql"));
+    await runSqlFile(connection, path.join(db, "migrations", "013_order_packed_at.sql"));
   } finally {
     await connection.end();
   }

@@ -14,28 +14,55 @@
   <div class="page-head">
     <div>
       <h1>Deliveries</h1>
-      <p>Ship paid orders and keep customers' tracking timelines up to date.</p>
+      <p>Every paid order moves left to right: pack it, ship it, then keep its tracking up to date.</p>
     </div>
     <button class="btn btn--secondary" id="refreshBtn" type="button"><i data-icon="refresh-cw" data-size="18"></i> Refresh</button>
   </div>
 
-  <!-- PAID ORDERS TO SHIP — GET /api/v1/admin/orders/awaiting-shipment -->
-  <section class="section" aria-labelledby="awaitingTitle">
-    <div class="section-head">
-      <h2 id="awaitingTitle">Paid orders to ship</h2>
-      <span class="muted" id="awaitingCount"></span>
+  <div class="pipe" role="tablist" aria-label="Delivery steps">
+    <button class="pipe__tab" type="button" role="tab" id="tab-pack" aria-controls="panel-pack" aria-selected="true" data-tab="pack">
+      <span class="pipe__num" aria-hidden="true">1</span>
+      <span class="pipe__text"><span class="pipe__title">To pack</span><span class="pipe__desc">Paid, not packed yet</span></span>
+      <span class="pipe__count" id="countPack" aria-label="0 orders">0</span>
+    </button>
+    <button class="pipe__tab" type="button" role="tab" id="tab-ship" aria-controls="panel-ship" aria-selected="false" tabindex="-1" data-tab="ship">
+      <span class="pipe__num" aria-hidden="true">2</span>
+      <span class="pipe__text"><span class="pipe__title">Ready to ship</span><span class="pipe__desc">Packed, waiting for the courier</span></span>
+      <span class="pipe__count" id="countShip" aria-label="0 orders">0</span>
+    </button>
+    <button class="pipe__tab" type="button" role="tab" id="tab-out" aria-controls="panel-out" aria-selected="false" tabindex="-1" data-tab="out">
+      <span class="pipe__num" aria-hidden="true">3</span>
+      <span class="pipe__text"><span class="pipe__title">Outgoing</span><span class="pipe__desc">With the courier</span></span>
+      <span class="pipe__count" id="countOut" aria-label="0 deliveries">0</span>
+    </button>
+  </div>
+
+  <section class="card" id="panel-pack" role="tabpanel" aria-labelledby="tab-pack">
+    <div class="card__header">
+      <h2>To pack</h2>
+      <span class="muted">Oldest payment first</span>
     </div>
-    <div id="awaitingList" aria-live="polite"></div>
-    <div class="alert alert--info section-note"><i data-icon="info" data-size="18"></i>
-      <span>J&amp;T and LBC: book the parcel at the branch or in the courier's app, then enter the waybill number — the customer
-      is emailed the tracking details. Lalamove books a rider through its API and is only offered when Lalamove is configured
-      and the customer pinned their address.</span></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Order</th><th>Items to pack</th><th>Ship to</th><th>Courier chosen</th><th><span class="sr-only">Action</span></th></tr>
+        </thead>
+        <tbody id="packRows" aria-live="polite"></tbody>
+      </table>
+    </div>
   </section>
 
-  <!-- OUTGOING DELIVERIES — GET /api/v1/admin/shipments?status= -->
-  <section class="card" aria-labelledby="outgoingTitle">
+  <section class="card" id="panel-ship" role="tabpanel" aria-labelledby="tab-ship" hidden>
     <div class="card__header">
-      <h2 id="outgoingTitle">Outgoing deliveries</h2>
+      <h2>Ready to ship</h2>
+      <span class="muted">The action matches the courier the customer chose</span>
+    </div>
+    <div id="shipList" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="panel-out" role="tabpanel" aria-labelledby="tab-out" hidden>
+    <div class="card__header">
+      <h2>Outgoing deliveries</h2>
       <label class="sr-only" for="statusFilter">Filter by status</label>
       <select class="select select--sm" id="statusFilter"><option value="">All statuses</option></select>
     </div>
@@ -48,6 +75,11 @@
       </table>
     </div>
   </section>
+
+  <div class="alert alert--info section-note"><i data-icon="info" data-size="18"></i>
+    <span>J&amp;T and LBC: book the parcel at the branch or in the courier's app, then enter the waybill number — the customer
+    is emailed the tracking details. Lalamove books a rider through its API and is only offered when Lalamove is configured
+    and the customer pinned their address.</span></div>
 </main>
 
 <footer class="site-footer">

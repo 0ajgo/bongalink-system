@@ -57,15 +57,13 @@ function stockBadge(available) {
 }
 
 /* --- A new password (register, reset, set up, change) ----------------
-   Same rule as the server (Backend/lib/passwordRule.js). The length is
-   checked here so the form answers at once; the server also refuses
-   well-known passwords and answers with code WEAK_PASSWORD, which the
-   forms show next to the password field too. Logging in never checks it. */
+   The length is checked here so the form answers at once; the server
+   checks the full rule. Logging in never checks it. */
 const PASSWORD_MIN = 10;
-const PASSWORD_MAX_BYTES = 72;   // bcrypt ignores the rest
+const PASSWORD_MAX_BYTES = 72;
 function newPasswordProblem(password) {
   if (password.length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters for your password.`;
-  // UTF-8 bytes, as bcrypt counts them: 1 to 4 per character.
+  // UTF-8 bytes: 1 to 4 per character.
   const bytes = [...password].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
   if (bytes > PASSWORD_MAX_BYTES) {
     return "That password is too long: use at most 72 characters (fewer if it has emoji or accented letters).";
@@ -313,9 +311,7 @@ function paintHeaderCartCount(count) {
 }
 
 /* --- Admin: paid orders waiting to ship -------------------------------
-   Header badge linking to Deliveries. The shop also gets an email per
-   payment (ADMIN_ALERT_EMAIL); this is the on-screen alert. Polls
-   GET /api/v1/admin/orders/to-ship every 30 seconds. */
+   Header badge linking to Deliveries, refreshed every 30 seconds. */
 const TO_SHIP_POLL_MS = 30000;
 const BASE_TITLE = document.title;
 
@@ -337,22 +333,15 @@ function startToShipBadge() {
 }
 
 /* --- Admin: notification bell -----------------------------------------
-   Sales, payments to review, expired orders, shipments, low and out of
-   stock, new customers and chat questions the assistant couldn't answer
-   (Backend/routes/notifications.js). New ones arrive live over a
-   Server-Sent Events stream, opened with a single-use ticket so the login
-   token never goes in a URL. If the stream can't connect or drops, the
-   unread count is polled every 30 seconds while the stream is retried
+   New notifications arrive live; while the live connection is down the
+   unread count is refreshed every 30 seconds and the connection retried
    after 2 s, 4 s, 8 s ... up to a minute.
 
-   One stream per browser, not one per tab: browsers open at most 6
-   connections to the API's host, so a stream in every admin tab would
-   leave the pages' other requests waiting for a free one. The tabs elect
-   one holder with the Web Locks API; it opens the stream and passes each
-   notification to the other tabs over a BroadcastChannel, and when it
-   closes another tab takes over. Each tab keeps its own unread count (tabs
-   can be logged in as different admins). Browsers without those APIs give
-   each tab its own stream, closed while the tab is hidden. */
+   One live connection per browser, not one per tab: one tab holds it
+   (Web Locks API) and passes each notification to the other tabs over a
+   BroadcastChannel; when it closes another tab takes over. Each tab keeps
+   its own unread count. Browsers without those APIs give each tab its own
+   connection, closed while the tab is hidden. */
 const NOTIF_POLL_MS = 30000;
 const NOTIF_RETRY_MS = [2000, 4000, 8000, 16000, 30000, 60000];
 const NOTIF_CHANNEL = "bongalink-notifications";
@@ -377,7 +366,7 @@ function timeAgo(value) {
   return days < 7 ? `${days} days ago` : formatDate(value);
 }
 
-// Links are pages under Pages/ written by the server; anything else is ignored.
+// Only links to pages under Pages/ are followed; anything else is ignored.
 const notifHref = (link) => (/^[A-Za-z]+\/[A-Za-z0-9_-]+\.html([?#][A-Za-z0-9_=&#-]*)?$/.test(link || "") ? UI_ROOT + link : null);
 
 function startNotificationBell(root) {

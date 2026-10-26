@@ -1,18 +1,12 @@
-/* ==========================================================================
-   Bongalink — cart (requires api.js; ui.js optional for the header count)
-
-   The SERVER cart (GET/POST/DELETE /api/cart) is the source of truth:
-   POST /api/orders builds the order from it. Every change goes through
-   the API and then refreshes a local copy (localStorage) that cart.html
-   and checkout.html render from, so what the customer sees is always
-   what will be ordered.
-   ========================================================================== */
+/* Cart (requires api.js; ui.js optional for the header count).
+   The cart saved on the server is the one that gets ordered. Every change
+   goes to the server first, then refreshes a local copy (localStorage)
+   that cart.html and checkout.html render from. */
 
 const CART_KEY = "bongalink.cart";
 
-/* PSGC regions for address forms. Shipping fees are NOT kept here:
-   checkout asks POST /api/v1/shipping/quote, and the server recomputes
-   the fee again when the order is placed (REQ015). */
+/* PSGC regions for address forms. Shipping fees are not kept here:
+   checkout asks the server for a quote. */
 const PSGC_REGIONS = [
   { code: "NCR",   label: "NCR — Metro Manila" },
   { code: "CAR",   label: "CAR — Cordillera Administrative Region" },
@@ -64,9 +58,7 @@ function paintCartCount(items) {
   if (typeof paintHeaderCartCount === "function") paintHeaderCartCount(countOf(items));
 }
 
-/* --- Server cart -------------------------------------------------------
-   GET /api/cart rows: { id, quantity, name, price, image, stock }
-   where stock is AVAILABLE stock (on hand minus unpaid reservations). */
+/* --- Server cart: `stock` is the AVAILABLE stock ------------------------ */
 const CART_API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 
 function fromServerRow(row) {

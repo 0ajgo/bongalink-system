@@ -60,7 +60,8 @@ describe("GET /api/v1/admin/orders/awaiting-shipment", () => {
       can_book_lalamove: false,
       items: [{ product_id: expect.any(Number), name: expect.stringMatching(/^Product/), quantity: 2, unit_price: "250.00" }]
     });
-    expect(res.body[0]).toMatchObject({ courier_chosen: "LBC", order_status: "packed" });
+    expect(res.body[0]).toMatchObject({ courier_chosen: "LBC", order_status: "packed", ship_city: "Makati" });
+    expect(res.body[1]).toHaveProperty("packed_at", null);
   });
 
   test("can_book_lalamove needs both the Lalamove keys and a map pin", async () => {
@@ -121,7 +122,24 @@ describe("GET /api/orders (customer's order page)", () => {
     expect(res.body.map(o => o.order_id)).toEqual([second, first]);
     expect(res.body[1]).toMatchObject({
       status: "paid", courier: "JNT", shipping_fee: "100.00",
+      packed_at: null, shipped_at: null, delivered_at: null, shipment_courier: null,
       items: [{ name: expect.any(String), quantity: 2, unit_price: "250.00" }]
+    });
+  });
+
+  test("each order carries the dates of its tracker steps and the courier actually used", async () => {
+    const orderId = await paidOrder({ courier: "JNT" });
+    await request(app).post(`/api/v1/admin/orders/${orderId}/packed`).set("Authorization", admin.auth);
+    await request(app).post(`/api/v1/admin/shipments/${orderId}/manual`).set("Authorization", admin.auth)
+      .send({ courier: "LBC", tracking_number: "LBC-998877" });
+    const [[d]] = await pool.query("SELECT delivery_id FROM deliveries WHERE order_id = ?", [orderId]);
+    await request(app).patch(`/api/v1/admin/shipments/${d.delivery_id}/status`).set("Authorization", admin.auth)
+      .send({ status: "DELIVERED" });
+
+    const [order] = (await request(app).get("/api/orders").set("Authorization", customer.auth)).body;
+    expect(order).toMatchObject({
+      order_id: orderId, status: "delivered", courier: "JNT", shipment_courier: "LBC",
+      paid_at: expect.any(String), packed_at: expect.any(String), shipped_at: expect.any(String), delivered_at: expect.any(String)
     });
   });
 });

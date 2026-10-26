@@ -88,11 +88,17 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 // Validation errors (bad upload, malformed JSON) keep their message so the
 // frontend can show it; PayMongo/Lalamove failures are 502; anything else is
-// an unexpected 500 and gets a generic message.
+// an unexpected 500 and gets a generic message. In production a 502 never
+// repeats the provider's own error text (it stays in the log).
+const PROVIDER_FAILED = {
+  PaymentError: "The payment service couldn't complete this. Please try again in a moment.",
+  LogisticsError: "The courier service couldn't complete this. Please try again in a moment.",
+};
 app.use((err, req, res, next) => {
   if (err instanceof PaymentError || err instanceof LogisticsError) {
     logError(err.constructor.name, err);
-    return res.status(502).json({ error: err.message });
+    const hide = err.fromProvider && process.env.NODE_ENV === "production";
+    return res.status(502).json({ error: hide ? PROVIDER_FAILED[err.constructor.name] : err.message });
   }
   const status = err instanceof multer.MulterError ? 400 : err.status || err.statusCode || 500;
   if (status < 500) {

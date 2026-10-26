@@ -127,6 +127,22 @@ describe("POST /api/v1/payments/checkout", () => {
     expect(res.status).toBe(502);
     expect(res.body.error).toBe("Payment method not activated");
   });
+
+  test("in production, PayMongo's own error text stays in the log, not in the answer", async () => {
+    paymongo.createCheckoutSession.mockRejectedValue(
+      Object.assign(new paymongo.PaymentError("API key sk_live_abc123 is not valid"), { fromProvider: true }));
+    const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+    const saved = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const res = await request(app).post("/api/v1/payments/checkout").set("Authorization", user.auth).send({ order_id: orderId });
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({ error: "The payment service couldn't complete this. Please try again in a moment." });
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = saved;
+    }
+  });
 });
 
 describe("POST /api/v1/webhooks/paymongo", () => {

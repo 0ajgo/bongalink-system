@@ -92,7 +92,7 @@ final totals, every product's photos) stop it before COMMIT if anything is off; 
 check shows as `ERROR 1242 ... Subquery returns more than 1 row` with the line of the check,
 whose comment says what failed. Running it again changes no rows and writes no history,
 `ml_events` or movement rows. Requires migrations 003 and 005 (triggers); the backend on
-this branch also needs 011 and 012.
+this branch also needs 011, 012 and 013.
 
 ## Sales reconciled with the 2026 sales sheet (`remove_test_orders.sql`)
 

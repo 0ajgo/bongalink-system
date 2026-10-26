@@ -23,8 +23,7 @@
     </div>
 
     <div class="layout-aside">
-      <!-- One form, five sections; js/checkout.js builds the POST /api/orders payload
-           { contact, recipient, address, courier, payment, consent } from it. -->
+      <!-- One form, five sections (js/checkout.js) -->
       <form id="checkout-form" novalidate>
 
         <section class="card checkout-section" aria-labelledby="contact-title">
@@ -52,8 +51,7 @@
               <select class="select" id="savedAddress"></select>
               <span class="hint">Manage saved addresses on your <a href="../Account/profile.html">profile</a>.</span>
             </div>
-            <!-- Map pin (js/map-picker.js): exact fees, and fills in region/province/city.
-                 The server takes the shipping zone from where the pin is. -->
+            <!-- Map pin (js/map-picker.js): exact fees, and fills in region/province/city. -->
             <div class="field" id="map-field">
               <span class="label">Pin your delivery location <span class="optional">(recommended for exact fees)</span></span>
               <div id="mapPicker"></div>
@@ -110,7 +108,7 @@
         <section class="card checkout-section" aria-labelledby="courier-title">
           <div class="card__header"><h2 id="courier-title">Courier</h2><p>Sets the shipping fee</p></div>
           <div class="card__body">
-            <!-- From POST /api/v1/shipping/quote; the server recomputes the fee when the order is placed. -->
+            <!-- Courier options, filled in by js/checkout.js -->
             <div class="quote-meta" id="quote-meta" hidden></div>
             <div class="choices" id="courier-choices"><p class="muted">Pin your location or choose your region to see shipping options.</p></div>
             <span class="error-text" data-error-for="courier"></span>
@@ -170,7 +168,7 @@
             <p class="muted">You'll pay on PayMongo's secure page. The server confirms the final total.</p>
           </div>
 
-          <!-- Shown when the server answers EMAIL_NOT_VERIFIED. -->
+          <!-- Shown when the email isn't verified yet -->
           <div class="verify-box" id="verify-box" hidden>
             <div class="alert alert--warning"><i data-icon="mail" data-size="18"></i>
               <span>Verify your email before checking out. Enter the 6-digit code we emailed you.</span></div>

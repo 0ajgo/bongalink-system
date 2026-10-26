@@ -1,12 +1,6 @@
-/* =====================================================================
-   BONGALINK — PRODUCT PAGE (Pages/Homepage/product.html?id=<id>)
-   Requires api.js, icons.js, cart.js and ui.js.
-     GET /api/products/:id            the product (stock = available; hidden = 404)
-     GET /api/products?category=...   related products
-     cartApi.add()                    server cart (js/cart.js)
-   Before adding to the cart the product is fetched again, so a customer
-   who left the page open sees a clear message if stock has changed.
-   ===================================================================== */
+/* Product page (product.html?id=<id>). Requires api.js, icons.js, cart.js
+   and ui.js. Before adding to the cart the product is fetched again, so a
+   customer who left the page open sees a clear message if stock changed. */
 
 renderHeader({ active: "shop" });
 
