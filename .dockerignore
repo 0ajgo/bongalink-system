@@ -7,7 +7,6 @@
 **/.env.*
 Backend/uploads
 ml/worker/models
-ml/backend/target
 # Never sent to Docker: database dumps, the real inventory workbook/photos zip and the sales sheet
 backups
 imports

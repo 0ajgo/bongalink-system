@@ -559,12 +559,6 @@ on another machine, and run steps 3 and 6 against it.
 
 Decisions and checks still to do. Tick them off here as they're done.
 
-- [ ] **Delete the legacy Rust ML code** (`ml/backend/src/`, `Cargo.toml`, `Cargo.lock`,
-  `ml/backend/.env.example`, `ml/backend/.gitignore`) **after the adviser confirms** the Python worker
-  (`ml/worker`) as the ML runtime. Keep `ml/backend/models/`: it is the worker's starting model. Then
-  remove the LEGACY notices in `ml/README.md` and `ml/backend/README.md`, the `ml/backend/target` line in
-  `.dockerignore`, and the mentions of the Rust code in `ml/colab/build_notebook.py` and the worker's
-  comments. Until then, don't run it (`ml/backend/README.md` explains why).
 - [ ] **Lalamove webhook signature**: add the check once Lalamove documents it (section 10).
 - [ ] **PayMongo webhook age limit**: `PAYMONGO_WEBHOOK_TOLERANCE_SECONDS` stays off until the retry check
   in section 10 shows retries carry a new timestamp.

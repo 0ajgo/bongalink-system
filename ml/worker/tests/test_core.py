@@ -17,7 +17,7 @@ PARITY = json.loads((MODELS / "parity.json").read_text())
 
 
 class ParityWithNotebook(unittest.TestCase):
-    """Same numbers the Colab notebook exported (and that `cargo test` checks in Rust)."""
+    """Same numbers the Colab notebook exported."""
 
     def test_features(self):
         hist = PARITY["history"][-core.WINDOW:]
@@ -50,7 +50,7 @@ class Outlook(unittest.TestCase):
         self.assertTrue(o["reorder_recommended"])
         self.assertEqual(o["suggested_reorder_qty"], 42)          # 3/day x 14 days cover
 
-    def test_stockout_and_rounding_match_rust(self):
+    def test_stockout_and_rounding(self):
         o = core.stock_outlook(7.0, 5)                             # 1/day, 5 units -> 5.0 days
         self.assertEqual(o["days_until_stockout"], 5.0)
         self.assertTrue(o["reorder_recommended"])                  # < 7 days left
