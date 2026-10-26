@@ -309,8 +309,8 @@ stub (jsdom doesn't have one; real browsers do).
   (`HOLD_HOURS`); if the server's number ever changes, change both.
 - **Not part of this work, but on this branch:** when the branch was created, the working tree already had
   uncommitted changes from `cleanup/pre-defense` (`.dockerignore`, `DEPLOYMENT.md` §14 edits, `ml/` files, and
-  the **staged deletion of the legacy Rust code in `ml/backend/`**). They are still uncommitted. I will **not**
-  include them in the commit unless you say so.
+  the **staged deletion of the legacy Rust code in `ml/backend/`**). They were kept out of this work's commits
+  and later committed on their own as `1341def`, after you decided the Python worker is the ML runtime.
 
 ## How to try it yourself
 
@@ -391,7 +391,7 @@ PayMongo **test** key, Lalamove **sandbox**, database user `root`). There is no 
 
 | Item | State | What to do |
 |---|---|---|
-| Delete the legacy Rust ML code | ⚠️ needs you | Waiting for your adviser's confirmation. Your earlier work for it (the staged deletion of `ml/backend/src`, `Cargo.*`, and the matching README, `.dockerignore` and `DEPLOYMENT.md` edits) is still **uncommitted** in the working tree and was not touched. Commit it only after the adviser agrees. |
+| Delete the legacy Rust ML code | ✅ done | Removed in commit `1341def` (decision: the Python/TensorFlow worker in `ml/worker` is the ML runtime). `ml/backend/models/`, the worker's starting model, is kept. No mention of Rust or cargo is left; backend suite 650/650 and ML worker 30/30 passed before that commit. |
 | Lalamove webhook signature | ❌ blocked | See above. |
 | PayMongo webhook age limit | ⚠️ needs you | Stays off until the retry check. |
 | PayMongo "paid session" check | ⚠️ needs you | See above. |
@@ -410,3 +410,78 @@ PayMongo **test** key, Lalamove **sandbox**, database user `root`). There is no 
 | Demo-account check (§13) | ✅ ready | No rows. |
 | `docker compose config` is valid | ❌ blocked here | Docker isn't installed on this computer. The automated tests read `docker-compose.yml` and check its mounts and migration order (they pass), but only Docker itself can fully validate it. |
 | Full test suite passes | ✅ ready | After the clean-up: **55 suites, 650 tests, all passed** (`cd Backend && npm test`). The ML worker's own tests (`ml/worker`, 30 tests) also pass. |
+
+## Security check
+
+**The question:** can anything from the backend be **seen** or **changed** from the front end — in the browser,
+in DevTools, or by someone who skips the pages and calls the API directly with curl or Postman?
+
+**The short answer for the panel:** no. The browser only ever receives the pages and the product photos. All
+data goes through the API, and the API decides everything itself: who you are (from a signed login token,
+checked against the database on every request), what you may see (only your own orders, addresses and chats),
+and what things cost (prices and fees come from the database, never from the browser). Orders become *paid*
+only when PayMongo's signed message arrives, and Lalamove deliveries change only when Lalamove's own system
+confirms it. The admin pages' JavaScript can be read by anyone, like any website's, but without an admin login
+every admin request is refused. Each point below is proved by an automated test.
+
+Legend: **✅ safe** (already right; the test that proves it) · **🔧 fixed** (what changed) · **⚠️ needs you**.
+
+### Can't be seen
+
+| # | Point | Result | How it's proved / what changed |
+|---|---|---|---|
+| a | Only `Frontend/` and `/uploads` reachable; no folder listings | 🔧 fixed | **API:** anything that isn't `/api/…` or a photo now gets a short JSON 404 (before: Express's own HTML error page). 24 addresses are tested — `.env`, `Backend/server.js`, `package.json`, `node_modules`, `.git/config`, `backups/`, `ml/`, `deploy/`, `DEPLOYMENT.md`, `logs/`, `/uploads/` itself, hidden files in uploads, and `../` tricks (`securityCheck.test.js`). **nginx (both configs):** files only (`try_files $uri =404`, `autoindex off`), so a folder is 404, never a listing; dotfiles, `.md/.sql/.log/…`, `node_modules/`, `backups/` and `package*.json` are 404 (`frontendSource.test.js`). nginx only serves the `Frontend/` folder, so `Backend/`, `ml/` and `deploy/` aren't in its reach at all. **And** the API now listens on `127.0.0.1` only (see "fixed" below), so nobody can go around nginx. |
+| b | No secrets, internal addresses or server notes in the front end; no source maps | ✅ safe | `frontendSource.test.js`: no keys or secret names, no `/api/` lists, no table names or server details in any comment, no inline scripts or `on…=` handlers, no `sourceMappingURL`, only page files served. The only address written in the code is the development default `http://localhost:4000/api`, used only when a page is opened from a port-5500 dev server. |
+| c | Answers contain only what the page needs | 🔧 fixed | The public product list sent `created_by` (the user id of the admin who listed the product); removed. Tested (`securityCheck.test.js`): the catalog's exact fields (no admin ids, no raw/reserved stock, no hidden products); login and profile never contain the password hash, tokens, the email index or encrypted values (the email is decrypted for its owner only); tracking has no Lalamove/PayMongo ids, courier cost or admin ids. Customers' orders, addresses and chats are always selected `WHERE user_id = <the logged-in user>`. |
+| d | Errors in production: no stack traces, SQL, file paths or library names; no `X-Powered-By` | 🔧 fixed | Malformed JSON used to echo what was sent plus the JavaScript parser's wording, and a too-large body answered "request entity too large" (the library's text): both are now fixed messages ("The request couldn't be read.", "The request is too large."). Unknown URLs: JSON 404 (above). Database errors: generic 500 (`routeErrors.test.js`, `securityCheck.test.js`). PayMongo/Lalamove errors in production: generic (`payments.test.js`, Part 4). Webhook refusals: empty 400/401. Every response is checked for no `X-Powered-By`. |
+| e | `/uploads` serves only images, safely | ✅ safe | Uploads accept JPEG/PNG/WebP/GIF only, check the file's real content (an HTML or SVG file renamed to `.png` is refused), and save under a random name — the visitor's file name is never used (`productsAdmin.test.js`). Photos are served with the right image type, `X-Content-Type-Options: nosniff` and a policy that runs nothing; `../` and hidden files are 404 (`securityCheck.test.js`). |
+
+### Can't be changed
+
+| # | Point | Result | How it's proved / what changed |
+|---|---|---|---|
+| f | Every admin route checks the admin login on the server | ✅ safe | `adminRoutes.test.js` reads the API's own route list and calls **all 45 admin routes**: no login → 401, a customer's login → 403. Hiding buttons in the page is not what protects them. |
+| g | Customers reach only their own data | ✅ safe (+ new tests) | Another customer's tracking (`logistics.test.js`), addresses (`account.test.js`), orders asked about in the chat (`chat.test.js`) → 404 / "not found". **New:** another customer's payment status and "Pay now" → 404, and nothing is created (`securityCheck.test.js`). The order list shows only your own orders. |
+| h | The server never trusts values from the browser | ✅ safe (+ new tests) | **New tests** (`securityCheck.test.js`): register with `role: "admin"`, a user id and a "verified" email → a plain, unverified customer; profile update with `role`/`user_id`/`status` → only username and email change; checkout with fake prices, total, fee, `status: "paid"` and someone else's `user_id` → the server's own prices and fee (₱1,100.00, not ₱2), *pending payment*, the caller's order; cart with a fake price → the database price. Existing: the browser's shipping fee is ignored (`orders.test.js`). |
+| i | Only PayMongo (valid signature) can mark an order paid; only Lalamove can move a Lalamove delivery | ✅ safe | The code sets an order to *paid* in exactly one place, inside the PayMongo webhook after the signature check. Tampered body, wrong secret or missing signature → 401 and nothing changes; a test-mode event can't pay an order on a live shop (`payments.test.js`). Lalamove: an update without our API key → 401, and the real status is re-read from Lalamove instead of trusting the message (`logistics.test.js`). **New:** a customer trying the admin pack/ship routes, made-up `PATCH/PUT /api/orders/:id`, or the return page's `?payment=success` → the order stays unpaid (`securityCheck.test.js`). |
+| j | Login tokens | ✅ safe (+ new tests) | The role always comes from the database, never from the token or `localStorage` (`middleware/auth.js`). **New:** a correctly signed token that claims `role: "admin"` for a customer → still refused on admin routes (403); a token edited by hand → 401; signed with another secret → 401. Existing: other algorithms and unsigned tokens refused (`jwtAlgorithm.test.js`); logout ends that device's session at once, and a password change, reset, suspension or role change ends every login (`sessions.test.js`). |
+| k | CORS only allows the shop's address; rate limits on | ✅ safe / ⚠️ | Only origins in `CORS_ORIGIN` may call the API (`cors.test.js`); in production the API refuses to start if it's empty and warns if it isn't `https://`. Rate limits on login, register, email codes, password reset and chat (`rateLimits.test.js`, `passwordReset.test.js`, `chat.test.js`). ⚠️ On the server: `CORS_ORIGIN=https://<your domain>` and every `RATE_LIMIT_*` blank. |
+
+### What was fixed, in plain words
+
+1. **The API listened on every network address.** On a server without Docker, port 4000 could be reached from
+   the internet directly, going around nginx — and since the API trusts nginx to say who the visitor is, someone
+   calling port 4000 directly could invent a new IP address on every request and step around the login rate
+   limit. Now the API listens on `127.0.0.1` (this machine only) unless `HOST` says otherwise; Docker sets
+   `HOST=0.0.0.0` inside its container, whose port is already published on `127.0.0.1` only. (`server.js`,
+   `docker-compose.yml`, `Backend/.env.example`, `DEPLOYMENT.md` §3.)
+2. **Unknown addresses** got Express's HTML error page; now a short JSON "Not found." (`server.js`).
+3. **Unreadable request bodies** repeated what was sent and named the parser; now fixed messages (`server.js`).
+4. **The public product list** included the admin's user id; removed (`routes/products.js`).
+5. **nginx** now serves files only (no folder listing, a folder is 404) and also refuses `node_modules/`,
+   `backups/` and `package*.json` (both configs).
+
+Left as it is on purpose: the login route still accepts an old `role` field from the time the login page had a
+User/Admin tab. It is checked only *after* the password and can only refuse a login, never grant a role.
+
+### ⚠️ For you, on the server
+
+- nginx isn't installed on this computer, so the nginx rules are checked by reading the config, not by running
+  it. After setting up the server, run `nginx -t`, then confirm these all answer **404**:
+  ```bash
+  for p in /.env /.git/config /Backend/server.js /package.json /DEPLOYMENT.md /Pages/ /backups/x.sql /api/nope; do
+    printf '%s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "https://<domain>$p"; done
+  ```
+  and that `curl -s -o /dev/null -w '%{http_code}' http://<server-ip>:4000/api/health` from **another** computer
+  fails to connect (the API is not reachable from outside).
+- A firewall is a good second layer: allow only SSH, 80 and 443 (e.g. `ufw allow OpenSSH; ufw allow 80; ufw allow 443; ufw enable`).
+- `CORS_ORIGIN` and `APP_URL` = `https://<your domain>`; every `RATE_LIMIT_*` blank (§10 checklist).
+
+### Tests for this check
+
+- New: `Backend/tests/securityCheck.test.js` (41 tests: the 24 blocked addresses, photo headers, production
+  errors, exact response fields, other customers' orders, fake browser values, forged and edited tokens, the
+  API listening on `127.0.0.1`); `frontendSource.test.js` gained checks for inline scripts, inline event
+  handlers, source maps and the stricter nginx rules.
+- `cd Backend && npm test`: **56 suites, 692 tests, all passed** (650 before this check). ML worker
+  (`ml/worker`): **30 tests passed**.

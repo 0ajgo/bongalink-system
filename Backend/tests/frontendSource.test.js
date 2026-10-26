@@ -128,10 +128,23 @@ test("no secrets or keys in the served files", () => {
   expect(pages.filter((f) => secretRe.test(read(f))).map(rel)).toEqual([]);
 });
 
-test("both nginx configs refuse dotfiles and notes", () => {
+test("no inline scripts, inline event handlers or source-map links in the pages", () => {
+  for (const f of pages.filter((p) => p.endsWith(".html"))) {
+    const html = read(f);
+    expect({ f: rel(f), inline: [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].length }).toEqual({ f: rel(f), inline: 0 });
+    expect({ f: rel(f), handler: /<[^>]+\son[a-z]+\s*=/i.test(html) }).toEqual({ f: rel(f), handler: false });
+  }
+  expect(pages.filter((f) => /sourceMappingURL/.test(read(f))).map(rel)).toEqual([]);
+});
+
+test("both nginx configs serve files only: no folder listings, dotfiles, notes or package files", () => {
   for (const conf of ["frontend.conf.template", "production.conf.example"]) {
     const text = read(path.join(__dirname, "..", "..", "deploy", "nginx", conf));
     expect(text).toContain("location ~ /\\.(?!well-known/) { return 404; }");
-    expect(text).toMatch(/location ~\* \\\.\(md\|map\|[^)]*\)\$ \{ return 404; \}/);
+    expect(text).toMatch(/location ~\* \\\.\(md\|map\|[^)]*sql[^)]*\)\$ \{ return 404; \}/);
+    expect(text).toContain("location ~* /(node_modules|backups)/|/package(-lock)?\\.json$ { return 404; }");
+    expect(text).toContain("try_files $uri =404;");
+    expect(text).not.toMatch(/\$uri\/|autoindex on/);
+    expect(text).toContain("autoindex off;");
   }
 });
