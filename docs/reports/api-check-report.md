@@ -139,11 +139,7 @@ On the server, in this order:
    - Put `API_DB_PASSWORD` and `ML_DB_PASSWORD` from `/opt/bongalink/.env` into `deploy/mysql/create_app_users.sql`, with `@app_host = '%'` for Docker.
    - Run it (DEPLOYMENT.md, section 5).
 3. **Start:** `docker compose up -d --build`, then load the `bongalink_real` backup and copy the photos (DEPLOYMENT.md, section 6).
-4. **Cloudflare:**
-   - Set SSL/TLS mode to **Full (strict)**. With "Flexible", nginx's http→https redirect loops forever.
-   - If the Cloudflare proxy is **on (orange cloud)**: every request reaches nginx from a Cloudflare address, so `TRUST_PROXY=1` gives the API Cloudflare's address instead of the visitor's, and the per-IP limits (logins, sign-ups, chat) would treat many visitors as one.
-     - The fix is in nginx: `real_ip_header CF-Connecting-IP;` with a `set_real_ip_from` line for each of Cloudflare's published IP ranges. This needs no app change.
-     - The alternative: keep the record **DNS only (grey cloud)**, and then nothing changes.
+4. **HTTPS:** the domain uses Hostinger's DNS with no proxy in front (A `@` and CNAME `www` to the server), so nginx sees each visitor's own address and `TRUST_PROXY=1` is right. certbot on the server issues and renews the certificate (DEPLOYMENT.md, section 8).
 5. **New PayMongo webhook, once `https://<domain>` works:**
    - Create it: PayMongo Dashboard, **Live mode** > Developers > Webhooks > Create, URL `https://<domain>/api/v1/webhooks/paymongo`, event `checkout_session.payment.paid`.
    - Put its `whsk_…` in `PAYMONGO_WEBHOOK_SECRET` in `/opt/bongalink/.env`, then `docker compose up -d api`.
