@@ -17,7 +17,7 @@ function showSkeleton() {
   view.setAttribute("aria-busy", "true");
   view.innerHTML = `
     <div class="product product-skeleton" aria-hidden="true">
-      <span class="skeleton skeleton--media"></span>
+      <span class="skeleton skeleton--media skeleton--square"></span>
       <div class="product__info">
         <span class="skeleton skeleton--text skeleton--short"></span>
         <span class="skeleton skeleton--title"></span>
@@ -54,6 +54,7 @@ function render() {
   const p = product;
   const available = Number(p.stock) || 0;
   const photos = p.images || [];
+  photoIndex = 0;   // the gallery starts on the first photo
   document.title = `${p.name} — Bongalink`;
   view.setAttribute("aria-busy", "false");
 
@@ -77,15 +78,7 @@ function render() {
 
   view.innerHTML = `
     <article class="product">
-      <div class="gallery">
-        <button class="gallery__main" type="button" id="mainPhoto" ${photos.length ? "" : "disabled"}
-                aria-label="${photos.length ? "View larger photo" : "No photo yet"}">
-          ${photos.length ? `<img src="${escapeHTML(imageUrl(photos[0]))}" alt="${escapeHTML(p.name)}">` : icon("package", { size: 96 })}
-        </button>
-        ${photos.length > 1 ? `<div class="gallery__thumbs" role="list">${photos.map((src, i) => `
-          <button class="gallery__thumb" type="button" role="listitem" data-photo="${i}" aria-current="${i === 0}"
-                  aria-label="Photo ${i + 1} of ${photos.length}"><img src="${escapeHTML(imageUrl(src))}" alt=""></button>`).join("")}</div>` : ""}
-      </div>
+      ${galleryMarkup(p, photos)}
 
       <div class="product__info">
         <span class="eyebrow">${escapeHTML(p.category)}</span>
@@ -124,9 +117,7 @@ function stockAlert(html, tone = "warning") {
 }
 
 function wireProduct() {
-  const photos = product.images || [];
-  $("mainPhoto").addEventListener("click", () => photos.length && openPhoto(photoIndex));
-  view.querySelectorAll("[data-photo]").forEach(b => b.addEventListener("click", () => selectPhoto(Number(b.dataset.photo))));
+  wireGallery();
   if (isAdmin()) return;
   $("askAbout")?.addEventListener("click", () => ChatWidget.askAbout({ id: product.id, name: product.name }));
   $("qtyDown").addEventListener("click", () => setQty(Number($("qty").value) - 1));
@@ -176,32 +167,158 @@ async function addToCart() {
 }
 
 /* ---------------------------------------------------------------------
-   PHOTOS — thumbnails switch the main photo; click it for a larger view
+   PHOTOS — the gallery swipes (scroll-snap); the counter, thumbnails,
+   arrows and arrow keys move it; tapping a photo opens the full-screen
+   viewer, where a tap zooms 2x.
    --------------------------------------------------------------------- */
-function selectPhoto(i) {
-  const photos = product.images;
-  photoIndex = (i + photos.length) % photos.length;
-  $("mainPhoto").querySelector("img").src = imageUrl(photos[photoIndex]);
-  view.querySelectorAll("[data-photo]").forEach(b => b.setAttribute("aria-current", String(Number(b.dataset.photo) === photoIndex)));
+const scrollBehavior = () => (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+// Which photo a swipe row shows, and moving it to a photo.
+const shownIndex = (track) => Math.round(track.scrollLeft / Math.max(track.clientWidth, 1));
+function scrollToPhoto(track, i, behavior = scrollBehavior()) {
+  const left = i * track.clientWidth;
+  if (track.scrollTo) track.scrollTo({ left, behavior });
+  else track.scrollLeft = left;
+}
+// Calls fn(index) once a swipe settles on a photo.
+function onSwipe(track, fn) {
+  let frame = 0;
+  track.addEventListener("scroll", () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => fn(shownIndex(track)));
+  }, { passive: true });
 }
 
-const dialog = $("photoDialog");
-function openPhoto(i) {
-  selectPhoto(i);
-  const many = product.images.length > 1;
-  $("photoPrev").hidden = $("photoNext").hidden = !many;
-  $("photoLarge").src = imageUrl(product.images[photoIndex]);
-  $("photoLarge").alt = `${product.name}, photo ${photoIndex + 1} of ${product.images.length}`;
-  $("photoDialogTitle").textContent = product.name;
-  dialog.showModal();
+function galleryMarkup(p, photos) {
+  if (!photos.length) {
+    return `<div class="gallery"><div class="gallery__track"><div class="gallery__slide frame" id="mainPhoto">
+      ${icon("package", { size: 96 })}<span class="sr-only">No photo yet</span></div></div></div>`;
+  }
+  const n = photos.length;
+  const arrow = (dir, label) => `<button class="btn btn--secondary btn--icon gallery__arrow gallery__arrow--${dir}" type="button"
+      data-step="${dir === "prev" ? -1 : 1}">${icon("chevron-right", { size: 18, label, className: dir === "prev" ? "flip" : "" })}</button>`;
+  return `
+    <div class="gallery">
+      <div class="gallery__stage">
+        <div class="gallery__track" id="galleryTrack" role="group" aria-roledescription="carousel" aria-label="Photos of ${escapeHTML(p.name)}">
+          ${photos.map((src, i) => `
+          <button class="gallery__slide frame" type="button" data-open="${i}" ${i === 0 ? 'id="mainPhoto"' : ""}
+                  aria-label="Photo ${i + 1} of ${n}: open full screen">
+            <img src="${escapeHTML(imageUrl(src))}" alt="" ${i ? 'loading="lazy"' : ""}></button>`).join("")}
+        </div>
+        ${n > 1 ? `${arrow("prev", "Previous photo")}${arrow("next", "Next photo")}
+        <span class="gallery__count" id="galleryCount" aria-hidden="true">1 / ${n}</span>` : ""}
+      </div>
+      ${n > 1 ? `<div class="gallery__thumbs" role="list">${photos.map((src, i) => `
+        <button class="gallery__thumb frame" type="button" role="listitem" data-photo="${i}" aria-current="${i === 0}"
+                aria-label="Show photo ${i + 1} of ${n}"><img src="${escapeHTML(imageUrl(src))}" alt=""></button>`).join("")}</div>` : ""}
+    </div>`;
 }
-$("photoPrev").addEventListener("click", () => openPhoto(photoIndex - 1));
-$("photoNext").addEventListener("click", () => openPhoto(photoIndex + 1));
-dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
-dialog.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowLeft" && product.images.length > 1) openPhoto(photoIndex - 1);
-  if (e.key === "ArrowRight" && product.images.length > 1) openPhoto(photoIndex + 1);
+
+// The gallery shows photo i: counter and thumbnails follow.
+function markPhoto(i) {
+  photoIndex = i;
+  const count = $("galleryCount");
+  if (count) count.textContent = `${i + 1} / ${product.images.length}`;
+  view.querySelectorAll("[data-photo]").forEach(b => b.setAttribute("aria-current", String(Number(b.dataset.photo) === i)));
+}
+
+function selectPhoto(i, behavior) {
+  const n = product.images.length;
+  const track = $("galleryTrack");
+  if (!n || !track) return;
+  const next = Math.min(Math.max(i, 0), n - 1);
+  markPhoto(next);
+  scrollToPhoto(track, next, behavior);
+}
+
+function wireGallery() {
+  const track = $("galleryTrack");
+  if (!track) return;
+  onSwipe(track, (i) => { if (i !== photoIndex) markPhoto(i); });
+  view.querySelectorAll("[data-photo]").forEach(b => b.addEventListener("click", () => selectPhoto(Number(b.dataset.photo))));
+  view.querySelectorAll(".gallery__arrow").forEach(b => b.addEventListener("click", () => selectPhoto(photoIndex + Number(b.dataset.step))));
+  track.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openPhoto(Number(b.dataset.open))));
+  track.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    selectPhoto(photoIndex + (e.key === "ArrowLeft" ? -1 : 1));
+    track.querySelector(`[data-open="${photoIndex}"]`)?.focus({ preventScroll: true });
+  });
+}
+
+/* --- Full-screen viewer --------------------------------------------- */
+const dialog = $("photoDialog");
+const viewerTrack = $("viewerTrack");
+let viewerIndex = 0;
+let lastZoomAt = 0;
+
+function viewerMark(i) {
+  viewerIndex = i;
+  const n = product.images.length;
+  $("viewerCount").textContent = `${i + 1} / ${n}`;
+  $("photoPrev").disabled = i === 0;
+  $("photoNext").disabled = i === n - 1;
+}
+
+function unzoom() {
+  viewerTrack.classList.remove("is-zoomed");
+  viewerTrack.querySelectorAll(".is-zoomed").forEach(s => s.classList.remove("is-zoomed"));
+}
+
+// Tap / click toggles 2x on the point tapped; a double-tap counts once (taps 300 ms apart).
+function toggleZoom(slide, event) {
+  const now = Date.now();
+  if (now - lastZoomAt < 300) return;
+  lastZoomAt = now;
+  if (slide.classList.contains("is-zoomed")) return unzoom();
+  const box = slide.getBoundingClientRect();
+  const x = event.clientX - box.left, y = event.clientY - box.top;
+  slide.classList.add("is-zoomed");
+  viewerTrack.classList.add("is-zoomed");
+  slide.scrollLeft = x * 2 - box.width / 2;
+  slide.scrollTop = y * 2 - box.height / 2;
+}
+
+function viewerGo(i) {
+  const n = product.images.length;
+  if (i < 0 || i >= n) return;
+  unzoom();
+  viewerMark(i);
+  scrollToPhoto(viewerTrack, i);
+}
+
+function openPhoto(i) {
+  const photos = product.images;
+  $("photoDialogTitle").textContent = product.name;
+  viewerTrack.innerHTML = photos.map((src, k) => `
+    <div class="viewer__slide"><img src="${escapeHTML(imageUrl(src))}" alt="${escapeHTML(product.name)}, photo ${k + 1} of ${photos.length}"></div>`).join("");
+  const many = photos.length > 1;
+  $("photoPrev").hidden = $("photoNext").hidden = !many;
+  viewerMark(i);
+  dialog.showModal();
+  scrollToPhoto(viewerTrack, i, "auto");
+}
+
+onSwipe(viewerTrack, (i) => { if (dialog.open && i !== viewerIndex && !viewerTrack.classList.contains("is-zoomed")) viewerMark(i); });
+viewerTrack.addEventListener("click", (e) => {
+  const slide = e.target.closest(".viewer__slide");
+  if (e.target.tagName === "IMG" && slide) toggleZoom(slide, e);
+  else dialog.close();                        // the dark area around the photo
 });
+dialog.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    viewerGo(viewerIndex + (e.key === "ArrowLeft" ? -1 : 1));
+  }
+});
+// Closing (×, Esc, the dark area) leaves the gallery on the photo last seen.
+dialog.addEventListener("close", () => {
+  unzoom();
+  selectPhoto(viewerIndex, "auto");
+});
+$("photoPrev").addEventListener("click", () => viewerGo(viewerIndex - 1));
+$("photoNext").addEventListener("click", () => viewerGo(viewerIndex + 1));
+dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
 
 /* ---------------------------------------------------------------------
    RELATED — same category, in stock first, up to 4

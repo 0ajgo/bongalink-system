@@ -16,7 +16,7 @@ function lineMarkup(item) {
     : icon("package", { size: 32 });
   return `
     <article class="line">
-      <span class="thumb">${media}</span>
+      <span class="thumb frame">${media}</span>
       <div>
         <h3 class="line__name">${escapeHTML(item.name)}</h3>
         <div class="line__meta">${formatMoney(item.unitPrice)} each ${stockBadge(available)}

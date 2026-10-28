@@ -67,7 +67,7 @@ function peRenderEditor() {
 
   pe$("coverPreview").innerHTML = p.image ? `<img src="${escapeHTML(imageUrl(p.image))}" alt="Current cover photo">` : icon("package", { size: 40 });
   pe$("gallery").innerHTML = p.gallery.map(g => `
-    <div class="photo-tile">
+    <div class="photo-tile frame">
       <img src="${escapeHTML(imageUrl(g.image_path))}" alt="">
       <button class="btn btn--danger btn--sm btn--icon" type="button" data-remove-photo="${g.image_id}">${icon("trash-2", { size: 14, label: "Remove photo" })}</button>
     </div>`).join("") || `<p class="muted">No extra photos.</p>`;

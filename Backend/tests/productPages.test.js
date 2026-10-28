@@ -41,13 +41,72 @@ describe("product page", () => {
     expect(page.$$("#breadcrumb a")[1].getAttribute("href")).toBe("homepage.html?category=Printer%20Parts#catalog");
     expect(page.$('a[href="homepage.html#catalog"]').textContent).toContain("Back to shop");
 
-    // gallery: thumbnails switch the main photo; clicking it opens the larger view
+    // gallery: one framed slide per photo, a counter, thumbnails and arrows that move it
+    expect(page.$$("#galleryTrack .gallery__slide.frame img").map(i => i.src)).toEqual(
+      ["cover", "side", "back"].map(f => `http://localhost:4000/uploads/${f}.jpg`));
+    expect(page.$("#galleryCount").textContent).toBe("1 / 3");
     expect(page.$$("[data-photo]")).toHaveLength(3);
     page.$('[data-photo="2"]').click();
-    expect(page.$("#mainPhoto img").src).toBe("http://localhost:4000/uploads/back.jpg");
-    page.$("#mainPhoto").click();
+    expect(page.$("#galleryCount").textContent).toBe("3 / 3");
+    expect(page.$$("[data-photo]").map(b => b.getAttribute("aria-current"))).toEqual(["false", "false", "true"]);
+    page.$(".gallery__arrow--next").click();                       // already the last one
+    expect(page.$("#galleryCount").textContent).toBe("3 / 3");
+    page.$(".gallery__arrow--prev").click();
+    expect(page.$("#galleryCount").textContent).toBe("2 / 3");
+    page.$("#galleryTrack").dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    expect(page.$("#galleryCount").textContent).toBe("1 / 3");
+
+    // tapping a photo opens the full-screen viewer on it, with every photo to swipe through
+    page.$('[data-open="2"]').click();
     expect(page.$("#photoDialog").open).toBe(true);
-    expect(page.$("#photoLarge").alt).toBe("Fuser unit L3110, photo 3 of 3");
+    expect(page.$("#photoDialogTitle").textContent).toBe("Fuser unit L3110");
+    expect(page.$$("#viewerTrack img").map(i => i.alt)).toEqual([1, 2, 3].map(k => `Fuser unit L3110, photo ${k} of 3`));
+    expect(page.$("#viewerCount").textContent).toBe("3 / 3");
+    expect(page.$("#photoNext").disabled).toBe(true);
+    page.$("#photoDialog").dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    expect(page.$("#viewerCount").textContent).toBe("2 / 3");
+    page.$("#photoPrev").click();
+    expect(page.$("#viewerCount").textContent).toBe("1 / 3");
+    expect(page.$("#photoPrev").disabled).toBe(true);
+
+    // a tap zooms 2x and a second tap zooms back out (a double-tap counts once)
+    const slide = page.$$(".viewer__slide")[0];
+    const tap = () => slide.querySelector("img").dispatchEvent(new page.window.MouseEvent("click", { bubbles: true, clientX: 10, clientY: 10 }));
+    tap();
+    expect(slide.classList.contains("is-zoomed")).toBe(true);
+    expect(page.$("#viewerTrack").classList.contains("is-zoomed")).toBe(true);
+    tap();                                                           // within 300 ms: the same double-tap
+    expect(slide.classList.contains("is-zoomed")).toBe(true);
+    const realNow = page.window.Date.now;
+    page.window.Date.now = () => realNow() + 1000;                    // a second, separate tap
+    tap();
+    page.window.Date.now = realNow;
+    expect(slide.classList.contains("is-zoomed")).toBe(false);
+
+    // tapping the dark area closes it; the gallery stays on the photo last seen
+    page.$("#photoNext").click();
+    slide.parentElement.children[1].click();
+    expect(page.$("#photoDialog").open).toBe(false);
+    page.$("#photoDialog").dispatchEvent(new page.window.Event("close"));
+    expect(page.$("#galleryCount").textContent).toBe("2 / 3");
+    page.close();
+  });
+
+  test("no photo yet: a placeholder frame, no counter, nothing opens", async () => {
+    const page = await openPage("Pages/Homepage/product.html", { query: "id=12", api: productApi({ product: fuser({ image: null, images: [] }) }) });
+    await page.until(() => page.$("h1"));
+    expect(page.$("#mainPhoto").classList.contains("frame")).toBe(true);
+    expect(page.$("#mainPhoto").textContent).toContain("No photo yet");
+    expect(page.$("#galleryCount")).toBeNull();
+    expect(page.$$("[data-open], [data-photo]")).toHaveLength(0);
+    page.close();
+  });
+
+  test("one photo: no counter, arrows or thumbnails", async () => {
+    const page = await openPage("Pages/Homepage/product.html", { query: "id=12", api: productApi({ product: fuser({ images: ["/uploads/cover.jpg"] }) }) });
+    await page.until(() => page.$("h1"));
+    expect(page.$$("#galleryTrack [data-open]")).toHaveLength(1);
+    expect(page.$("#galleryCount, .gallery__arrow, .gallery__thumbs")).toBeNull();
     page.close();
   });
 
@@ -238,5 +297,35 @@ describe("admin Edit part dialog", () => {
     expect(page.$("#editStatus").textContent).toBe("Hidden");
     expect(page.$("#editForm").elements.is_active.checked).toBe(false);
     page.close();
+  });
+});
+
+describe("photo frames", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const CSS = path.join(__dirname, "..", "..", "Frontend", "CSS");
+  const css = (f) => fs.readFileSync(path.join(CSS, f), "utf8");
+
+  test("one shared frame: the photo is out of the layout, so a tall photo can't stretch the box", () => {
+    const rule = css("design-system.css").match(/\.frame img \{([^}]*)\}/)[1];
+    expect(rule).toMatch(/position: absolute; inset: 0; width: 100%; height: 100%;/);
+    expect(css("design-system.css")).toMatch(/\.frame \{[^}]*position: relative; overflow: hidden; aspect-ratio: var\(--frame-ratio, 1 \/ 1\);/);
+    expect(css("design-system.css")).toMatch(/\.product-card__media \{ --frame-ratio: 1 \/ 1; --frame-fit: cover;/);
+    // No stylesheet sizes a photo the old way (an <img> as a 100%-tall grid item).
+    for (const f of fs.readdirSync(CSS).filter(f => f.endsWith(".css"))) {
+      expect([f, css(f).match(/[\w-]+ img \{ width: 100%; height: 100%; object-fit/g)]).toEqual([f, null]);
+    }
+  });
+
+  test("every photo box uses it", () => {
+    const front = (f) => fs.readFileSync(path.join(__dirname, "..", "..", "Frontend", f), "utf8");
+    expect(front("JS/ui.js")).toContain('<div class="product-card__media frame">');
+    expect(front("JS/cart-page.js")).toContain('<span class="thumb frame">');
+    expect(front("JS/checkout.js")).toContain('<span class="thumb thumb--sm frame">');
+    expect(front("JS/product-editor.js")).toContain('<div class="photo-tile frame">');
+    expect(front("Pages/Admin/inventory.html")).toContain('<div class="photo-preview frame" id="coverPreview">');
+    expect(front("Pages/Homepage/homepage.html")).toContain('<div class="image-preview frame" id="imagePreview">');
+    expect(front("JS/product.js")).toContain('class="gallery__slide frame"');
+    expect(front("JS/product.js")).toContain('class="gallery__thumb frame"');
   });
 });

@@ -34,17 +34,17 @@
   </div>
 </footer>
 
-<!-- Larger photo view -->
-<dialog class="modal modal--wide" id="photoDialog" aria-labelledby="photoDialogTitle">
-  <div class="modal__header">
-    <h2 id="photoDialogTitle">Photo</h2>
-    <button class="btn btn--ghost btn--icon" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
+<!-- Full-screen photo viewer -->
+<dialog class="viewer" id="photoDialog" aria-labelledby="photoDialogTitle" aria-describedby="viewerHelp">
+  <div class="viewer__bar">
+    <h2 class="viewer__title" id="photoDialogTitle">Photos</h2>
+    <span class="viewer__count" id="viewerCount" aria-live="polite"></span>
+    <button class="viewer__close" type="button" data-close><i data-icon="x" data-label="Close"></i></button>
   </div>
-  <div class="modal__body photo-viewer">
-    <button class="btn btn--secondary btn--icon" type="button" id="photoPrev"><i data-icon="chevron-right" data-label="Previous photo" class="flip"></i></button>
-    <img id="photoLarge" alt="">
-    <button class="btn btn--secondary btn--icon" type="button" id="photoNext"><i data-icon="chevron-right" data-label="Next photo"></i></button>
-  </div>
+  <div class="viewer__track" id="viewerTrack"></div>
+  <button class="viewer__arrow viewer__arrow--prev" type="button" id="photoPrev"><i data-icon="chevron-right" data-label="Previous photo" class="flip"></i></button>
+  <button class="viewer__arrow viewer__arrow--next" type="button" id="photoNext"><i data-icon="chevron-right" data-label="Next photo"></i></button>
+  <p class="sr-only" id="viewerHelp">Tap a photo to zoom in or out. Swipe, or use the arrow keys, for the next photo. Escape closes.</p>
 </dialog>
 
 <script src="../../JS/config.js"></script>

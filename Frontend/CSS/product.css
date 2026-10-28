@@ -1,4 +1,4 @@
-/* Product page: breadcrumb, gallery + details, larger photo view. */
+/* Product page: breadcrumb, gallery + details, full-screen photo viewer. */
 .product-topbar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-5); }
 .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); color: var(--color-ink-3); }
 .breadcrumb li + li::before { content: "›"; margin-right: var(--space-1); color: var(--color-line-strong); }
@@ -7,19 +7,27 @@
 .product { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-7); align-items: start; }
 @media (max-width: 960px) { .product { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); } }
 
-.gallery__main {
-  display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; padding: var(--space-4);
+/* Gallery: one square frame per photo in a row that swipes (scroll-snap); the whole photo is
+   always shown (contain), never cropped. Counter, arrows (mouse) and thumbnails move it. */
+.gallery__stage { position: relative; }
+.gallery__track {
+  display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none;
   background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius); box-shadow: var(--shadow);
-  cursor: zoom-in; color: var(--color-line-strong);
 }
-.gallery__main:disabled { cursor: default; }
-.gallery__main img { width: 100%; height: 100%; object-fit: contain; }
+.gallery__track::-webkit-scrollbar { display: none; }
+.gallery__slide { flex: 0 0 100%; --frame-pad: var(--space-4); scroll-snap-align: center; scroll-snap-stop: always; border: 0; cursor: zoom-in; }
+.gallery__slide:focus-visible { box-shadow: inset var(--focus-ring); }
+div.gallery__slide { cursor: default; }   /* "no photo yet" */
+.gallery__count {
+  position: absolute; right: var(--space-3); bottom: var(--space-3); padding: 2px var(--space-2); border-radius: 999px;
+  background: rgba(27, 36, 48, .72); color: #fff; font-size: var(--text-xs); font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.gallery__arrow, .viewer__arrow { position: absolute; top: 50%; transform: translateY(-50%); display: none; }
+.gallery__arrow--prev { left: var(--space-3); }
+.gallery__arrow--next { right: var(--space-3); }
+@media (hover: hover) and (pointer: fine) { .gallery__arrow, .viewer__arrow { display: grid; } }
 .gallery__thumbs { display: flex; gap: var(--space-2); margin-top: var(--space-3); overflow-x: auto; padding-bottom: var(--space-1); }
-.gallery__thumb {
-  flex: 0 0 72px; aspect-ratio: 4 / 3; padding: 2px; background: var(--color-surface);
-  border: 2px solid var(--color-line); border-radius: var(--radius); cursor: pointer;
-}
-.gallery__thumb img { width: 100%; height: 100%; object-fit: contain; }
+.gallery__thumb { flex: 0 0 64px; --frame-pad: 2px; border: 2px solid var(--color-line); border-radius: var(--radius); cursor: pointer; }
 .gallery__thumb[aria-current="true"] { border-color: var(--color-primary); }
 
 .product__info { display: grid; gap: var(--space-4); }
@@ -44,11 +52,37 @@
 
 .related { margin-top: var(--space-8); }
 
-/* Larger photo view */
-.modal--wide { width: min(960px, calc(100vw - 32px)); }
-.photo-viewer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
-.photo-viewer img { width: 100%; max-height: 70vh; object-fit: contain; }
+/* Full-screen photo viewer (a native <dialog>: focus stays inside, Esc closes). Dark, the whole
+   photo; swipe between photos; tap to zoom 2x, then drag to look around. */
+.viewer {
+  width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: #0c1016; color: #fff; overflow: hidden;
+}
+.viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.viewer::backdrop { background: rgba(12, 16, 22, .9); }
+.viewer__bar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); }
+.viewer__title { flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer__count { font-size: var(--text-sm); font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, .8); }
+.viewer__close, .viewer__arrow { width: 44px; height: 44px; place-items: center; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .12); color: #fff; cursor: pointer; }
+.viewer__close { display: grid; }
+.viewer__close:hover, .viewer__arrow:hover { background: rgba(255, 255, 255, .22); }
+.viewer__arrow--prev { left: var(--space-4); }
+.viewer__arrow--next { right: var(--space-4); }
+.viewer__track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior: contain; }
+.viewer__track::-webkit-scrollbar { display: none; }
+.viewer__track.is-zoomed { overflow: hidden; }          /* while zoomed, a drag moves the photo, not to the next one */
+.viewer__slide { position: relative; flex: 0 0 100%; overflow: hidden; scroll-snap-align: center; scroll-snap-stop: always; }
+.viewer__slide img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: var(--space-3);
+  cursor: zoom-in; touch-action: manipulation;          /* native pinch-zoom still works */
+}
+.viewer__slide.is-zoomed { overflow: auto; }
+.viewer__slide.is-zoomed img { inset: auto; left: 0; top: 0; width: 200%; height: 200%; max-width: none; padding: 0; cursor: zoom-out; }
 .flip { transform: scaleX(-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery__track, .viewer__track, .viewer__slide { scroll-behavior: auto; }
+}
 
 /* Loading skeleton for the product */
 .product-skeleton .skeleton--media { border-radius: var(--radius); }

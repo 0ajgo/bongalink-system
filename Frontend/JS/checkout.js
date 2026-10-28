@@ -48,7 +48,7 @@ function busy(button, on, label) {
 function renderSummary() {
   els.items.innerHTML = cart.map(item => `
     <div class="mini-line">
-      <span class="thumb thumb--sm">${item.image ? `<img src="${escapeHTML(item.image)}" alt="">` : icon("package", { size: 24 })}</span>
+      <span class="thumb thumb--sm frame">${item.image ? `<img src="${escapeHTML(item.image)}" alt="">` : icon("package", { size: 24 })}</span>
       <span><span class="mini-line__name">${escapeHTML(item.name)}</span><br>
         <span class="mini-line__qty">Qty ${item.quantity} × ${formatMoney(item.unitPrice)}</span></span>
       <span class="price">${formatMoney(item.unitPrice * item.quantity)}</span>

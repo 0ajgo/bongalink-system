@@ -302,11 +302,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: border-color .15s;
 }
 .product-card:hover { border-color: var(--color-line-strong); }
-.product-card__media {
-  aspect-ratio: 4 / 3; display: grid; place-items: center;
-  background: var(--color-surface); border-bottom: 1px solid var(--color-line);
+/* Photo frame: every product photo (cards, gallery, thumbnails, cart, admin previews).
+   The frame has a fixed shape and the photo is taken out of the layout to fill it, so a tall
+   phone photo can never stretch the box. Each use sets only its shape and fit:
+     --frame-ratio  the box's shape (default square)
+     --frame-fit    contain = the whole photo; cover = fills the box, edges cropped
+     --frame-pad    space around a contained photo
+   Anything else inside (a "no photo" icon) is centred. */
+.frame {
+  position: relative; overflow: hidden; aspect-ratio: var(--frame-ratio, 1 / 1);
+  display: grid; place-items: center;
+  background: var(--color-surface); color: var(--color-line-strong);
 }
-.product-card__media img { width: 100%; height: 100%; object-fit: contain; padding: var(--space-3); }
+.frame img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: var(--frame-fit, contain); object-position: center; padding: var(--frame-pad, 0);
+}
+
+/* Shop cards: square, filled photos, so every card's photo is the same height */
+.product-card__media { --frame-ratio: 1 / 1; --frame-fit: cover; border-bottom: 1px solid var(--color-line); }
 .product-card__placeholder { color: var(--color-line-strong); }
 .product-card__body { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; padding: var(--space-4); }
 .product-card__meta { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); min-height: 24px; }
@@ -398,6 +412,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .skeleton--short { width: 40%; }
 .skeleton--tiny { width: 30%; }
 .skeleton--media { aspect-ratio: 4 / 3; border-radius: 0; }
+.skeleton--square { aspect-ratio: 1 / 1; }   /* stands in for a product photo frame */
 @keyframes pulse { 50% { opacity: .5; } }
 
 /* ---------------------------------------------------------------- 14. HEADER + ACCOUNT */
@@ -598,7 +613,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .quote-meta { display: flex; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-sm); color: var(--color-ink-2); margin-bottom: var(--space-3); }
 
 /* Product card links: the whole image and the name open the product page */
-.product-card__media > a { display: grid; place-items: center; width: 100%; height: 100%; color: inherit; }
+.product-card__media > a { position: absolute; inset: 0; display: grid; place-items: center; color: inherit; }
 .product-card__name a { color: inherit; }
 .product-card__name a:hover { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
 /* A button that looks like a link (inline actions: open a row, Copy, Ship with J&T/LBC instead) */

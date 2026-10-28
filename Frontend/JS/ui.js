@@ -129,7 +129,7 @@ function passwordChecklist({ input, confirm, list, button, confirmError = null, 
 }
 
 /* --- Product card (catalog, related products) ------------------------
-   Consistent 4:3 image, name (2 lines max), price, stock badge from
+   Square photo frame, name (2 lines max), price, stock badge from
    AVAILABLE stock, Add to cart disabled when out. Image and name link to
    the product page. Admins get a remove button instead of Add to cart. */
 const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
@@ -146,7 +146,7 @@ function productCard(p, { admin = false } = {}) {
          ${icon("trash-2", { size: 16, label: `Remove ${p.name}` })}</button>` : "";
   return `
     <article class="product-card">
-      <div class="product-card__media"><a href="${productUrl(p.id)}" tabindex="-1" aria-hidden="true">${media}</a>${remove}</div>
+      <div class="product-card__media frame"><a href="${productUrl(p.id)}" tabindex="-1" aria-hidden="true">${media}</a>${remove}</div>
       <div class="product-card__body">
         <div class="product-card__meta"><span class="eyebrow">${escapeHTML(p.category)}</span>${stockBadge(available)}</div>
         <h3 class="product-card__name" title="${escapeHTML(p.name)}"><a href="${productUrl(p.id)}">${escapeHTML(p.name)}</a></h3>
@@ -190,7 +190,7 @@ const UIState = {
       ${retryId ? `<button class="btn btn--secondary" type="button" id="${retryId}">${icon("refresh-cw", { size: 16 })} Try again</button>` : ""}</div>`,
   productSkeletons: (count = 8) => Array.from({ length: count }, () => `
     <div class="product-card" aria-hidden="true">
-      <span class="skeleton skeleton--media"></span>
+      <span class="skeleton skeleton--media skeleton--square"></span>
       <div class="product-card__body">
         <span class="skeleton skeleton--text skeleton--short"></span>
         <span class="skeleton skeleton--title"></span>
