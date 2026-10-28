@@ -37,7 +37,7 @@ const router = express.Router();
 router.use(requireAdmin);
 
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;   // same rules as Account settings
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const { newEmailProblem } = require("../lib/emailRule");   // same rule as register
 const PER_PAGE = 20;
 
 const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
@@ -299,7 +299,8 @@ router.post("/", ah(async (req, res) => {
   const email = String(req.body?.email ?? "").trim().toLowerCase();
   const role = req.body?.role ?? "user";
   if (!USERNAME_RE.test(username)) throw fail(400, "Username: 3 to 50 letters, numbers, dots, dashes or underscores.");
-  if (!EMAIL_RE.test(email) || email.length > 150) throw fail(400, "Enter a valid email address.");
+  const badEmail = newEmailProblem(email);
+  if (badEmail) throw fail(400, badEmail.error, badEmail.code);
   if (!["user", "admin"].includes(role)) throw fail(400, "Choose Customer or Admin.");
 
   const passwordHash = await unusablePasswordHash();

@@ -27,6 +27,7 @@ async function checkLink() {
     const { username } = await apiFetch(`/auth/set-password?token=${encodeURIComponent(setToken)}`);
     document.getElementById("setUsername").value = username;
     setLead.textContent = `Choose a password for ${username}. You'll use it with your username to log in.`;
+    setChecklist.update();
     setForm.hidden = false;
     newPassword.focus();
   } catch (err) {
@@ -42,6 +43,9 @@ document.getElementById("toggleNew").addEventListener("click", (e) => {
   e.currentTarget.textContent = show ? "Hide" : "Show";
 });
 [newPassword, confirmPassword].forEach(i => i.addEventListener("input", () => fieldError(i, "")));
+const setAccount = () => ({ username: document.getElementById("setUsername").value });
+const setChecklist = passwordChecklist({ input: newPassword, confirm: confirmPassword, list: document.getElementById("newPasswordRules"),
+  button: document.getElementById("setSubmit"), confirmError: document.getElementById("confirmPasswordError"), account: setAccount });
 document.getElementById("setConsent").addEventListener("change", (e) => {
   document.getElementById("setConsentError").textContent = "";
   e.target.removeAttribute("aria-invalid");
@@ -50,7 +54,7 @@ document.getElementById("setConsent").addEventListener("change", (e) => {
 setForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const password = newPassword.value;
-  const weak = newPasswordProblem(password);
+  const weak = newPasswordProblem(password, setAccount());
   fieldError(newPassword, weak);
   fieldError(confirmPassword, !weak && confirmPassword.value !== password ? "The two passwords don't match." : "");
   if (weak) return newPassword.focus();
@@ -77,8 +81,8 @@ setForm.addEventListener("submit", async (event) => {
     } else {
       setMessage(escapeHTML(err.message), "error");
     }
-    submit.disabled = false;
     submit.classList.remove("is-loading");
+    setChecklist.update();
   }
 });
 

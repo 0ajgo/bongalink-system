@@ -9,10 +9,10 @@ const rateLimits = require("../lib/rateLimit");
 
 const lastCode = () => mail.verificationCode.mock.calls.at(-1)[2];
 
-async function register(email = "new@example.com") {
+async function register(email = "new@gmail.com") {
   const res = await request(app)
     .post("/api/auth/register")
-    .send({ username: email.split("@")[0], email, password: "secret-pass-123", privacy_consent: true });
+    .send({ username: email.split("@")[0], email, password: "Secret-pass-123", privacy_consent: true });
   return res;
 }
 
@@ -31,7 +31,7 @@ describe("email verification", () => {
 
     expect(mail.verificationCode).toHaveBeenCalledTimes(1);
     const [to, name, code, ttl] = mail.verificationCode.mock.calls[0];
-    expect(to).toBe("new@example.com");
+    expect(to).toBe("new@gmail.com");
     expect(name).toBe("new");
     expect(code).toMatch(/^\d{6}$/);
     expect(ttl).toBe(15);
@@ -41,11 +41,11 @@ describe("email verification", () => {
     expect(row.code_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(row.code_hash).not.toContain(code);
 
-    const ok = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "NEW@example.com", code });
+    const ok = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "NEW@gmail.com", code });
     expect(ok.status).toBe(200);
     expect(ok.body.message).toBe("Email verified");
 
-    const [[user]] = await pool.query("SELECT email_verified_at FROM users WHERE email_bidx = ?", [blindIndex("new@example.com")]);
+    const [[user]] = await pool.query("SELECT email_verified_at FROM users WHERE email_bidx = ?", [blindIndex("new@gmail.com")]);
     expect(user.email_verified_at).not.toBeNull();
   });
 
@@ -62,7 +62,7 @@ describe("email verification", () => {
     const spies = ["log", "info", "warn", "error"].map(m => jest.spyOn(console, m).mockImplementation(() => {}));
     await register();
     const code = lastCode();
-    await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code: "000000" });
+    await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code: "000000" });
     const logged = spies.flatMap(s => s.mock.calls.flat()).map(String).join("\n");
     expect(logged).not.toContain(code);
     spies.forEach(s => s.mockRestore());
@@ -73,15 +73,15 @@ describe("email verification", () => {
     const code = lastCode();
     const wrong = code === "123456" ? "654321" : "123456";
 
-    const first = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code: wrong });
+    const first = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code: wrong });
     expect(first.status).toBe(400);
     expect(first.body).toEqual({ error: "Incorrect code", attemptsLeft: 4 });
 
     for (let i = 0; i < 4; i++) {
-      await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code: wrong });
+      await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code: wrong });
     }
     // Even the right code is refused once the attempts are used up.
-    const locked = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code });
+    const locked = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code });
     expect(locked.status).toBe(429);
 
     const [[user]] = await pool.query("SELECT email_verified_at FROM users");
@@ -93,7 +93,7 @@ describe("email verification", () => {
     const code = lastCode();
     await pool.query("UPDATE email_verifications SET expires_at = NOW() - INTERVAL 1 MINUTE");
 
-    const res = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code });
+    const res = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Code expired. Request a new one.");
   });
@@ -102,24 +102,24 @@ describe("email verification", () => {
     await register();
     const firstCode = lastCode();
 
-    const tooSoon = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "new@example.com" });
+    const tooSoon = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "new@gmail.com" });
     expect(tooSoon.status).toBe(429);
 
     await pool.query("UPDATE email_verifications SET created_at = NOW() - INTERVAL 2 MINUTE");
-    const resend = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "new@example.com" });
+    const resend = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "new@gmail.com" });
     expect(resend.status).toBe(200);
     expect(mail.verificationCode).toHaveBeenCalledTimes(2);
 
     // The old code no longer works; the new one does.
     const newCode = lastCode();
     if (newCode !== firstCode) {
-      const old = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code: firstCode });
+      const old = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code: firstCode });
       expect(old.status).toBe(400);
     }
-    const ok = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@example.com", code: newCode });
+    const ok = await request(app).post("/api/v1/auth/verify-email/confirm").send({ email: "new@gmail.com", code: newCode });
     expect(ok.status).toBe(200);
 
-    const unknown = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "nobody@example.com" });
+    const unknown = await request(app).post("/api/v1/auth/verify-email/send").send({ email: "nobody@gmail.com" });
     expect(unknown.status).toBe(200);
     expect(unknown.body).toEqual(resend.body);
   });

@@ -30,6 +30,7 @@ async function checkResetLink() {
     const { username } = await apiFetch(`/auth/reset-password?token=${encodeURIComponent(resetToken)}`);
     document.getElementById("setUsername").value = username;
     resetLead.textContent = `Choose a new password for ${username}.`;
+    resetChecklist.update();
     resetForm.hidden = false;
     resetPassword.focus();
   } catch (err) {
@@ -45,11 +46,14 @@ document.getElementById("toggleNew").addEventListener("click", (e) => {
   e.currentTarget.textContent = show ? "Hide" : "Show";
 });
 [resetPassword, resetConfirm].forEach(i => i.addEventListener("input", () => resetFieldError(i, "")));
+const resetAccount = () => ({ username: document.getElementById("setUsername").value });
+const resetChecklist = passwordChecklist({ input: resetPassword, confirm: resetConfirm, list: document.getElementById("newPasswordRules"),
+  button: document.getElementById("setSubmit"), confirmError: document.getElementById("confirmPasswordError"), account: resetAccount });
 
 resetForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const password = resetPassword.value;
-  const weak = newPasswordProblem(password);
+  const weak = newPasswordProblem(password, resetAccount());
   resetFieldError(resetPassword, weak);
   resetFieldError(resetConfirm, !weak && resetConfirm.value !== password ? "The two passwords don't match." : "");
   if (weak) return resetPassword.focus();
@@ -71,8 +75,8 @@ resetForm.addEventListener("submit", async (event) => {
     } else {
       resetNotice(`${escapeHTML(err.message)} ${err.code === "ACCOUNT_SUSPENDED" ? "" : askAgain}`, "error");
     }
-    submit.disabled = false;
     submit.classList.remove("is-loading");
+    resetChecklist.update();
   }
 });
 

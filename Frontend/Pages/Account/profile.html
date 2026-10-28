@@ -56,7 +56,8 @@
         </div>
         <div class="field">
           <label class="label" for="infoEmail">Email</label>
-          <input class="input" id="infoEmail" type="email" autocomplete="email" required>
+          <input class="input" id="infoEmail" type="email" autocomplete="email" required aria-describedby="infoEmailHint">
+          <span class="hint" id="infoEmailHint">Use a Gmail or Yahoo address. We'll send a 6-digit code to verify it.</span>
         </div>
         <div class="field" id="infoPasswordField" hidden>
           <label class="label" for="infoPassword">Current password</label>
@@ -78,12 +79,14 @@
         </div>
         <div class="field">
           <label class="label" for="newPassword">New password</label>
-          <input class="input" id="newPassword" type="password" autocomplete="new-password" minlength="10" required aria-describedby="newPasswordHint passwordError">
-          <span class="hint" id="newPasswordHint">At least 10 characters, and not a common one like password123.</span>
+          <input class="input" id="newPassword" type="password" autocomplete="new-password" minlength="10" required aria-describedby="newPasswordRules newPasswordHint passwordError">
+          <ul id="newPasswordRules" aria-label="Password rules"></ul>
+          <span class="hint" id="newPasswordHint">And not a well-known one like Password123!</span>
         </div>
         <div class="field">
           <label class="label" for="confirmPassword">Confirm new password</label>
-          <input class="input" id="confirmPassword" type="password" autocomplete="new-password" required>
+          <input class="input" id="confirmPassword" type="password" autocomplete="new-password" required aria-describedby="confirmPasswordError">
+          <span class="error-text" id="confirmPasswordError" role="alert"></span>
         </div>
         <p class="error-text" id="passwordError" role="alert"></p>
         <div class="form-actions"><button class="btn btn--primary" type="submit" id="passwordSubmit">Change password</button></div>

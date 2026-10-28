@@ -49,8 +49,8 @@ afterAll(() => pool.end());
 describe("list and details", () => {
   test("search, filters, sorting and paging; order counts; deleted accounts hidden unless asked for", async () => {
     const admin = await createUser({ role: "admin", email: "owner@shop.ph" });
-    const maria = await createUser({ email: "maria@example.com" });
-    const pedro = await createUser({ email: "pedro@example.com", verified: false });
+    const maria = await createUser({ email: "maria@gmail.com" });
+    const pedro = await createUser({ email: "pedro@gmail.com", verified: false });
     await orderFor(maria, admin); await orderFor(maria, admin);
     await pool.query("UPDATE users SET status = 'suspended' WHERE user_id = ?", [pedro.id]);
     const gone = await createUser();
@@ -60,9 +60,9 @@ describe("list and details", () => {
     const all = (await get("sort=username&dir=asc")).body;
     expect(all.total).toBe(3);
     expect(all.accounts.map((a) => a.username)).toEqual([admin.username, maria.username, pedro.username].sort());
-    expect(all.accounts.find((a) => a.user_id === maria.id)).toMatchObject({ email: "m***@example.com", role: "user",
+    expect(all.accounts.find((a) => a.user_id === maria.id)).toMatchObject({ email: "m***@gmail.com", role: "user",
       status: "active", verified: true, order_count: 2 });
-    expect((await get("q=maria%40example.com")).body.accounts.map((a) => a.user_id)).toEqual([maria.id]);
+    expect((await get("q=maria%40gmail.com")).body.accounts.map((a) => a.user_id)).toEqual([maria.id]);
     expect((await get(`q=${maria.username.slice(0, -1)}`)).body.accounts.map((a) => a.user_id)).toContain(maria.id);   // part of a username
     // Emails are encrypted: only an exact email matches (blind index), in any case.
     expect((await get("q=OWNER%40shop.ph")).body.accounts.map((a) => a.user_id)).toEqual([admin.id]);
@@ -108,7 +108,7 @@ describe("list and details", () => {
     await pool.query("UPDATE users SET created_at = NOW() - INTERVAL 30 DAY WHERE user_id = ?", [old.id]);
     const s = await createUser();
     await pool.query("UPDATE users SET status = 'suspended' WHERE user_id = ?", [s.id]);
-    await as(admin).post(API, { username: "newstaff", email: "staff@example.com", role: "admin" });
+    await as(admin).post(API, { username: "newstaff", email: "staff@gmail.com", role: "admin" });
     expect((await as(admin).get(`${API}/summary`)).body).toEqual({ total: 4, admins: 2, new_this_week: 3, suspended: 1, invited: 1 });
   });
 });
@@ -117,13 +117,13 @@ describe("list and details", () => {
 describe("create account", () => {
   test("creates an invited account and emails a single-use set-password link; setting it verifies the email", async () => {
     const admin = await createUser({ role: "admin" });
-    const res = await as(admin).post(API, { username: "ana.reyes", email: "Ana@Example.com", role: "user" });
+    const res = await as(admin).post(API, { username: "ana.reyes", email: "Ana@Gmail.com", role: "user" });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ account: { username: "ana.reyes", email: "ana@example.com", role: "user", status: "invited" }, email_sent: true });
+    expect(res.body).toMatchObject({ account: { username: "ana.reyes", email: "ana@gmail.com", role: "user", status: "invited" }, email_sent: true });
     const id = res.body.account.user_id;
     expect(await userRow(id)).toMatchObject({ must_set_password: 1, email_verified_at: null, created_by: admin.id, status: "active" });
 
-    expect(mail.accountInvite).toHaveBeenCalledWith("ana@example.com", "ana.reyes", "user",
+    expect(mail.accountInvite).toHaveBeenCalledWith("ana@gmail.com", "ana.reyes", "user",
       expect.stringMatching(/^http:\/\/localhost:5500\/Pages\/Homepage\/set-password\.html\?token=[a-f0-9]{64}$/), 72);
     const token = mail.accountInvite.mock.calls[0][3].split("token=")[1];
     const [[stored]] = await pool.query("SELECT token_hash FROM password_setup_tokens WHERE user_id = ?", [id]);
@@ -137,37 +137,37 @@ describe("create account", () => {
     expect((await request(app).get(`/api/auth/set-password?token=${token}`)).body).toEqual({ username: "ana.reyes" });
     expect((await request(app).post("/api/auth/set-password").send({ token, password: "123", privacy_consent: true })).status).toBe(400);
     // The privacy notice must be accepted, and the acceptance is recorded.
-    const noConsent = await request(app).post("/api/auth/set-password").send({ token, password: "newpass123" });
+    const noConsent = await request(app).post("/api/auth/set-password").send({ token, password: "New-pass123" });
     expect(noConsent.body.code).toBe("PRIVACY_CONSENT_REQUIRED");
-    const set = await request(app).post("/api/auth/set-password").send({ token, password: "newpass123", privacy_consent: true });
+    const set = await request(app).post("/api/auth/set-password").send({ token, password: "New-pass123", privacy_consent: true });
     expect(set.body).toMatchObject({ username: "ana.reyes" });
     expect((await userRow(id)).email_verified_at).not.toBeNull();
     expect((await pool.query("SELECT consent_type, granted, source FROM consent_records WHERE user_id = ?", [id]))[0])
       .toEqual([{ consent_type: "PRIVACY_NOTICE", granted: 1, source: "account_setup" }]);
-    expect((await login("ana.reyes", "newpass123")).status).toBe(200);
+    expect((await login("ana.reyes", "New-pass123")).status).toBe(200);
     // Single use.
-    expect((await request(app).post("/api/auth/set-password").send({ token, password: "another123", privacy_consent: true })).status).toBe(400);
+    expect((await request(app).post("/api/auth/set-password").send({ token, password: "Another-123", privacy_consent: true })).status).toBe(400);
 
     expect((await auditRows()).map((a) => [a.action, a.target_user_id, a.new_value])).toEqual(
-      [["create_account", id, { username: "ana.reyes", email: "a***@example.com", role: "user" }]]);   // masked in the log
+      [["create_account", id, { username: "ana.reyes", email: "a***@gmail.com", role: "user" }]]);   // masked in the log
   });
 
   test("validation, duplicates, expired links and resend (which cancels the old link)", async () => {
     const admin = await createUser({ role: "admin" });
-    const juan = await createUser();
-    expect((await as(admin).post(API, { username: "x", email: "a@b.co" })).status).toBe(400);
+    const juan = await createUser({ email: "juan.taken@gmail.com" });
+    expect((await as(admin).post(API, { username: "x", email: "a@gmail.com" })).status).toBe(400);
     expect((await as(admin).post(API, { username: "valid_name", email: "nope" })).status).toBe(400);
-    expect((await as(admin).post(API, { username: "valid_name", email: "a@b.co", role: "owner" })).status).toBe(400);
-    expect((await as(admin).post(API, { username: juan.username, email: "new@b.co" })).body.error).toBe("That username is already taken.");
+    expect((await as(admin).post(API, { username: "valid_name", email: "a@gmail.com", role: "owner" })).status).toBe(400);
+    expect((await as(admin).post(API, { username: juan.username, email: "new@gmail.com" })).body.error).toBe("That username is already taken.");
     expect((await as(admin).post(API, { username: "fresh", email: juan.email })).body.error).toBe("An account with that email already exists.");
 
-    const { body } = await as(admin).post(API, { username: "staff2", email: "staff2@example.com", role: "admin" });
+    const { body } = await as(admin).post(API, { username: "staff2", email: "staff2@gmail.com", role: "admin" });
     const first = mail.accountInvite.mock.calls[0][3].split("token=")[1];
     expect((await as(admin).post(`${API}/${body.account.user_id}/resend-invite`)).status).toBe(200);
     const second = mail.accountInvite.mock.calls[1][3].split("token=")[1];
     expect((await request(app).get(`/api/auth/set-password?token=${first}`)).status).toBe(400);
     await pool.query("UPDATE password_setup_tokens SET expires_at = NOW() - INTERVAL 1 MINUTE WHERE used_at IS NULL");
-    expect((await request(app).post("/api/auth/set-password").send({ token: second, password: "newpass123", privacy_consent: true })).status).toBe(400);
+    expect((await request(app).post("/api/auth/set-password").send({ token: second, password: "New-pass123", privacy_consent: true })).status).toBe(400);
     expect((await as(admin).post(`${API}/${juan.id}/resend-invite`)).body.error).toBe("This account has already set its password.");
   });
 
@@ -175,7 +175,7 @@ describe("create account", () => {
     const admin = await createUser({ role: "admin" });
     mail.accountInvite.mockRejectedValueOnce(new Error("SMTP down"));
     const spy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const res = await as(admin).post(API, { username: "noemail", email: "noemail@example.com" });
+    const res = await as(admin).post(API, { username: "noemail", email: "noemail@gmail.com" });
     spy.mockRestore();
     expect(res.status).toBe(201);
     expect(res.body.email_sent).toBe(false);
@@ -310,7 +310,7 @@ describe("delete and anonymize", () => {
 
   test("with orders: anonymized; orders, items and sales totals are kept, personal info is gone everywhere", async () => {
     const admin = await createUser({ role: "admin" });
-    const juan = await userWithPassword({ email: "juan.delacruz@example.com" });
+    const juan = await userWithPassword({ email: "juan.delacruz@gmail.com" });
     const { orderId, addressId, productId } = await orderFor(juan, admin);
     await insertAddress(juan.id, { recipient_name: "Juan", street: "Saved St", barangay: "Poblacion", city: "Taguig", postal_code: "1630" });
     await pool.query("INSERT INTO chat_logs (session_id, user_id, message, reply, answered) VALUES ('s-12345678', ?, ?, ?, 1)",

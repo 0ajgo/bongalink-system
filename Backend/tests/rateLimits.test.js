@@ -93,7 +93,7 @@ describe("login", () => {
 
 describe("register", () => {
   const register = (server, n, overrides = {}) => request(server).post("/api/auth/register")
-    .send({ username: `new${n}`, email: `new${n}@example.com`, password: "a-long-password-1", privacy_consent: true, ...overrides });
+    .send({ username: `new${n}`, email: `new${n}@gmail.com`, password: "A-long-password-1", privacy_consent: true, ...overrides });
 
   test("5 new accounts per IP per hour, then 429 (each one sends an email)", async () => {
     for (let i = 1; i <= 5; i++) expect((await register(app, i)).status).toBe(201);
@@ -145,9 +145,9 @@ describe("the other per-IP limits a shared-IP session would hit are raisable too
 
 describe("changes that check the current password (per account)", () => {
   const change = (server, u, current) => request(server).post("/api/v1/account/password").set("Authorization", u.auth)
-    .send({ current_password: current, new_password: "another-pass-77" });
+    .send({ current_password: current, new_password: "Another-pass-77" });
   const emailChange = (u, current) => request(app).patch("/api/v1/account/me").set("Authorization", u.auth)
-    .send({ email: "other.address@example.com", current_password: current });
+    .send({ email: "other.address@gmail.com", current_password: current });
 
   test("10 failed tries in 15 minutes, then 429 even with the right password; other accounts unaffected", async () => {
     const juan = await userWithPassword();

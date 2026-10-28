@@ -5,9 +5,13 @@
      - at least 10 characters;
      - at most 72 bytes: bcrypt ignores everything after that, so a longer
        password would work with only its first 72 bytes typed;
+     - at least one uppercase letter, one lowercase letter, one number
+       and one symbol (anything that isn't A-Z, a-z or 0-9);
+     - not the username or the email's name (the part before the @) inside
+       it, ignoring case, when that name has 3+ characters;
      - not a well-known password, nor one character repeated.
-   The pages check the length too (Frontend/JS/ui.js) and show these
-   messages next to the password field (code WEAK_PASSWORD).
+   The pages show the same rules as a checklist (Frontend/JS/ui.js) and
+   these messages next to the password field (code WEAK_PASSWORD).
    ===================================================================== */
 
 const MIN_PASSWORD = 10;
@@ -34,14 +38,35 @@ const COMMON = new Set([
 const MESSAGES = {
   short: `Use at least ${MIN_PASSWORD} characters for your password.`,
   long: "That password is too long: use at most 72 characters (fewer if it has emoji or accented letters).",
+  upper: "Add an uppercase letter (A–Z) to your password.",
+  lower: "Add a lowercase letter (a–z) to your password.",
+  number: "Add a number (0–9) to your password.",
+  symbol: "Add a symbol (like ! @ # $ %) to your password.",
+  personal: "Your password can't contain your username or the name part of your email.",
   common: "That password is too common and easy to guess. Choose another.",
 };
 
+// The names a password must not contain: the username and the email's part before the @,
+// lower-cased, when 3+ characters long (shorter ones would rule out too many passwords).
+function personalNames({ username, email } = {}) {
+  const local = String(email ?? "").trim().split("@")[0];
+  return [username, local].map((n) => String(n ?? "").trim().toLowerCase()).filter((n) => n.length >= 3);
+}
+
 // -> null when the password is fine, otherwise { error, code: "WEAK_PASSWORD" } to send as a 400.
-function newPasswordProblem(password) {
-  const reason = typeof password !== "string" || password.length < MIN_PASSWORD ? "short"
-    : Buffer.byteLength(password, "utf8") > MAX_PASSWORD_BYTES ? "long"
-    : COMMON.has(password.toLowerCase()) || /^(.)\1*$/.test(password) ? "common"
+// `account` ({ username, email }) is whose password it is; without it the personal check is skipped.
+// The message names the first rule that fails, in the order of the pages' checklist.
+function newPasswordProblem(password, account) {
+  const p = typeof password === "string" ? password : "";
+  const lower = p.toLowerCase();
+  const reason = p.length < MIN_PASSWORD ? "short"
+    : Buffer.byteLength(p, "utf8") > MAX_PASSWORD_BYTES ? "long"
+    : !/[A-Z]/.test(p) ? "upper"
+    : !/[a-z]/.test(p) ? "lower"
+    : !/[0-9]/.test(p) ? "number"
+    : !/[^A-Za-z0-9]/.test(p) ? "symbol"
+    : personalNames(account).some((n) => lower.includes(n)) ? "personal"
+    : COMMON.has(lower) || /^(.)\1*$/.test(p) ? "common"
     : null;
   return reason && { error: MESSAGES[reason], code: "WEAK_PASSWORD" };
 }

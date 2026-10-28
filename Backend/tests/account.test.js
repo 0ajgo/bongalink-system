@@ -23,7 +23,7 @@ const api = (method, path) => request(app)[method](`/api/v1/account${path}`).set
 beforeEach(async () => {
   await resetDb();
   jest.clearAllMocks();
-  user = await withPassword(await createUser(), "secret-pass-123");
+  user = await withPassword(await createUser(), "Secret-pass-123");
 });
 afterAll(() => pool.end());
 
@@ -50,43 +50,43 @@ describe("GET/PATCH /api/v1/account/me", () => {
   });
 
   test("changing the email needs the current password, then unverifies it and sends a code", async () => {
-    const noPw = await api("patch", "/me").send({ email: "new@example.com" });
+    const noPw = await api("patch", "/me").send({ email: "new@gmail.com" });
     expect(noPw.status).toBe(400);
-    const wrongPw = await api("patch", "/me").send({ email: "new@example.com", current_password: "nope" });
+    const wrongPw = await api("patch", "/me").send({ email: "new@gmail.com", current_password: "nope" });
     expect(wrongPw.status).toBe(400);
 
-    const ok = await api("patch", "/me").send({ email: "New@Example.com", current_password: "secret-pass-123" });
+    const ok = await api("patch", "/me").send({ email: "New@Gmail.com", current_password: "Secret-pass-123" });
     expect(ok.status).toBe(200);
-    expect(ok.body).toMatchObject({ email: "new@example.com", email_verified_at: null, email_changed: true, email_sent: true });
-    expect(mail.verificationCode).toHaveBeenCalledWith("new@example.com", user.username, expect.stringMatching(/^\d{6}$/), 15);
+    expect(ok.body).toMatchObject({ email: "new@gmail.com", email_verified_at: null, email_changed: true, email_sent: true });
+    expect(mail.verificationCode).toHaveBeenCalledWith("new@gmail.com", user.username, expect.stringMatching(/^\d{6}$/), 15);
   });
 
   test("rejects a username or email someone else has, and bad formats", async () => {
-    const other = await createUser();
+    const other = await createUser({ email: "taken@gmail.com" });
     const takenName = await api("patch", "/me").send({ username: other.username });
     expect(takenName.status).toBe(409);
     expect(takenName.body.error).toMatch(/username/);
-    const takenEmail = await api("patch", "/me").send({ email: other.email, current_password: "secret-pass-123" });
+    const takenEmail = await api("patch", "/me").send({ email: other.email, current_password: "Secret-pass-123" });
     expect(takenEmail.status).toBe(409);
     expect((await api("patch", "/me").send({ username: "a b" })).status).toBe(400);
-    expect((await api("patch", "/me").send({ email: "not-an-email", current_password: "secret-pass-123" })).status).toBe(400);
+    expect((await api("patch", "/me").send({ email: "not-an-email", current_password: "Secret-pass-123" })).status).toBe(400);
   });
 });
 
 describe("POST /api/v1/account/password", () => {
   test("changes the password when the current one is right", async () => {
-    const res = await api("post", "/password").send({ current_password: "secret-pass-123", new_password: "newsecret9" });
+    const res = await api("post", "/password").send({ current_password: "Secret-pass-123", new_password: "New-secret9" });
     expect(res.status).toBe(200);
-    const login = await request(app).post("/api/auth/login").send({ username: user.username, password: "newsecret9" });
+    const login = await request(app).post("/api/auth/login").send({ username: user.username, password: "New-secret9" });
     expect(login.status).toBe(200);
-    const old = await request(app).post("/api/auth/login").send({ username: user.username, password: "secret-pass-123" });
+    const old = await request(app).post("/api/auth/login").send({ username: user.username, password: "Secret-pass-123" });
     expect(old.status).toBe(401);
   });
 
   test("rejects a wrong current password, a short one, or the same password", async () => {
-    expect((await api("post", "/password").send({ current_password: "wrong", new_password: "newsecret9" })).status).toBe(400);
-    expect((await api("post", "/password").send({ current_password: "secret-pass-123", new_password: "123" })).status).toBe(400);
-    const same = await api("post", "/password").send({ current_password: "secret-pass-123", new_password: "secret-pass-123" });
+    expect((await api("post", "/password").send({ current_password: "wrong", new_password: "New-secret9" })).status).toBe(400);
+    expect((await api("post", "/password").send({ current_password: "Secret-pass-123", new_password: "123" })).status).toBe(400);
+    const same = await api("post", "/password").send({ current_password: "Secret-pass-123", new_password: "Secret-pass-123" });
     expect(same.status).toBe(400);
     expect(same.body.error).toMatch(/different/);
   });

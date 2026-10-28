@@ -40,6 +40,7 @@ function renderHead() {
   $("infoUsername").value = me.username;
   $("infoEmail").value = me.email;
   $("infoPasswordField").hidden = true;
+  passwordRules.update();
 }
 
 /* ---------------------------------------------------------------------
@@ -88,6 +89,12 @@ $("infoForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("infoError").textContent = "";
   const body = { username: $("infoUsername").value.trim(), email: $("infoEmail").value.trim() };
+  // A NEW email must be Gmail or Yahoo; an older address can stay as it is.
+  const badEmail = body.email.toLowerCase() !== me.email.toLowerCase() && newEmailProblem(body.email);
+  if (badEmail) {
+    $("infoError").textContent = badEmail;
+    return $("infoEmail").focus();
+  }
   if (!$("infoPasswordField").hidden) body.current_password = $("infoPassword").value;
   busy($("infoSubmit"), true);
   try {
@@ -109,11 +116,15 @@ $("infoForm").addEventListener("submit", async (event) => {
 /* ---------------------------------------------------------------------
    CHANGE PASSWORD
    --------------------------------------------------------------------- */
+const myAccount = () => ({ username: me ? me.username : "", email: me ? me.email : "" });
+const passwordRules = passwordChecklist({ input: $("newPassword"), confirm: $("confirmPassword"), list: $("newPasswordRules"),
+  button: $("passwordSubmit"), confirmError: $("confirmPasswordError"), account: myAccount });
+
 $("passwordForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("passwordError").textContent = "";
   const current = $("currentPassword").value, next = $("newPassword").value;
-  const weak = newPasswordProblem(next);
+  const weak = newPasswordProblem(next, myAccount());
   if (weak) return ($("passwordError").textContent = weak);
   if (next !== $("confirmPassword").value) return ($("passwordError").textContent = "The new passwords don't match.");
   busy($("passwordSubmit"), true);
@@ -122,11 +133,13 @@ $("passwordForm").addEventListener("submit", async (event) => {
     const result = await apiFetch("/v1/account/password", { method: "POST", body: JSON.stringify({ current_password: current, new_password: next }) });
     authStore.update("bongalink_token", result.token);
     $("passwordForm").reset();
+    passwordRules.update();
     toast("Password changed. You were logged out on every other device.", "success");
   } catch (err) {
     $("passwordError").textContent = err.message;
   } finally {
     busy($("passwordSubmit"), false);
+    passwordRules.update();
   }
 });
 

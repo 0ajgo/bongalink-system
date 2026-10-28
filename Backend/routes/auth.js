@@ -23,6 +23,7 @@ const { PRIVACY_POLICY_VERSION } = require("../lib/privacy");
 const notifications = require("../services/notifications");
 const { MINUTE, HOUR, envLimit, limiter, resetAll, RATE_LIMIT_DEFAULTS } = require("../lib/rateLimit");
 const { newPasswordProblem } = require("../lib/passwordRule");
+const { newEmailProblem } = require("../lib/emailRule");
 
 const router = express.Router();
 
@@ -53,7 +54,9 @@ router.post("/register", registerPerHour, registerPerDay, ah(async (req, res) =>
     if (!username || !email || !password) {
       return res.status(400).json({ error: "Please fill in all fields." });
     }
-    const weak = newPasswordProblem(password);
+    const badEmail = newEmailProblem(email);
+    if (badEmail) return res.status(400).json(badEmail);
+    const weak = newPasswordProblem(password, { username, email });
     if (weak) return res.status(400).json(weak);
     if (req.body.privacy_consent !== true) {
       return res.status(400).json({ error: "Please read and accept the privacy notice to create an account.", code: "PRIVACY_CONSENT_REQUIRED" });

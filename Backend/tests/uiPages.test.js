@@ -169,7 +169,7 @@ describe("checkout page", () => {
   test("loads the server cart and fills in the default saved address", async () => {
     const page = await openPage("Pages/COpage/checkout.html", { api: async ({ url }) => {
       if (url === "/cart") return { body: [{ id: 7, quantity: 2, name: "Fuser unit", price: "500.00", image: null, stock: 5 }] };
-      if (url === "/v1/account/me") return { body: { email: "juan@example.com" } };
+      if (url === "/v1/account/me") return { body: { email: "juan@gmail.com" } };
       if (url === "/v1/account/addresses") return { body: [{ address_id: 3, recipient_name: "Juan Dela Cruz", recipient_phone: "09171234567",
         street: "123 Street", barangay: "Pembo", city: "Makati", province: null, region: "NCR", postal_code: "1218", landmark: null, is_default: true }] };
       if (url === "/v1/shipping/quote") return { body: { zone: "NCR", options: [{ courier: "JNT", label: "J&T Express", fee: 100, eta: "1-3 days" }] } };
@@ -178,7 +178,7 @@ describe("checkout page", () => {
     await page.until(() => page.$('input[name="courier"]'));
     const f = page.$("#checkout-form").elements;
     expect([f.email.value, f.firstName.value, f.lastName.value, f.city.value, page.$("#region").value])
-      .toEqual(["juan@example.com", "Juan", "Dela Cruz", "Makati", "NCR"]);
+      .toEqual(["juan@gmail.com", "Juan", "Dela Cruz", "Makati", "NCR"]);
     expect(page.$("#sum-subtotal").textContent).toBe("₱1,000.00");
     expect(page.calls.find(c => c.url === "/v1/shipping/quote").body.items).toEqual([{ product_id: 7, quantity: 2 }]);
     page.close();
@@ -186,7 +186,7 @@ describe("checkout page", () => {
 });
 
 describe("profile page", () => {
-  const me = (overrides = {}) => ({ user_id: 5, username: "juan", email: "juan@example.com", role: "user",
+  const me = (overrides = {}) => ({ user_id: 5, username: "juan", email: "juan@gmail.com", role: "user",
     created_at: "2026-01-15T00:00:00Z", email_verified_at: "2026-01-15T00:00:00Z", ...overrides });
   const profileApi = (user, extra = {}) => async (call) => {
     if (extra[call.url]) return extra[call.url](call);
@@ -202,7 +202,7 @@ describe("profile page", () => {
     const page = await openPage("Pages/Account/profile.html", { api: profileApi(me()) });
     await page.until(() => page.$("#profileName"));
     const head = page.$("#profileHead").textContent;
-    expect(head).toContain("juan@example.com");
+    expect(head).toContain("juan@gmail.com");
     expect(head).toContain("Customer");
     expect(head).toContain("Email verified");
     expect(head).toMatch(/Member since Jan 15, 2026/);
@@ -222,7 +222,7 @@ describe("profile page", () => {
     expect(page.$("#verifyPanel").hidden).toBe(false);
     page.$("#resendCode").click();
     await page.settle();
-    expect(page.calls).toContainEqual({ url: "/v1/auth/verify-email/send", method: "POST", body: { email: "juan@example.com" } });
+    expect(page.calls).toContainEqual({ url: "/v1/auth/verify-email/send", method: "POST", body: { email: "juan@gmail.com" } });
     page.close();
   });
 
@@ -241,12 +241,12 @@ describe("profile page", () => {
     }) });
     await page.until(() => page.$("#profileName"));
     expect(page.$("#infoPasswordField").hidden).toBe(true);
-    page.$("#infoEmail").value = "new@example.com";
+    page.$("#infoEmail").value = "new@gmail.com";
     page.$("#infoEmail").dispatchEvent(new page.window.Event("input"));
     expect(page.$("#infoPasswordField").hidden).toBe(false);
 
-    page.$("#newPassword").value = "abcdef-1234";
-    page.$("#confirmPassword").value = "abcdef-1235";
+    page.$("#newPassword").value = "Abcdef-1234";
+    page.$("#confirmPassword").value = "Abcdef-1235";
     page.$("#passwordForm").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
     expect(page.$("#passwordError").textContent).toBe("The new passwords don't match.");
     expect(page.calls.some(c => c.url === "/v1/account/password")).toBe(false);

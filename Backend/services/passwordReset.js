@@ -74,6 +74,12 @@ async function completeReset(token, password) {
       await conn.rollback();
       return { error: 'Your account is suspended. Contact the shop.', code: 'ACCOUNT_SUSPENDED' };
     }
+    // Now that the account is known: not its username or email name inside the password.
+    const personal = newPasswordProblem(password, { username: reset.username, email: dec('users', 'email', reset.email) });
+    if (personal) {
+      await conn.rollback();
+      return personal;
+    }
     // token_version + 1 ends every existing login on every device.
     await conn.query(
       `UPDATE users SET password_hash = ?, token_version = token_version + 1, must_set_password = 0,

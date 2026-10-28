@@ -185,7 +185,7 @@ describe("events", () => {
 
   test("a new customer account, without their email", async () => {
     const res = await request(app).post("/api/auth/register")
-      .send({ username: "newbuyer", email: "newbuyer@example.com", password: "secret-pass-123", privacy_consent: true });
+      .send({ username: "newbuyer", email: "newbuyer@gmail.com", password: "Secret-pass-123", privacy_consent: true });
     expect(res.status).toBe(201);
     const [n] = await notes("new_customer");
     const [[user]] = await pool.query("SELECT user_id FROM users WHERE username = 'newbuyer'");
@@ -346,7 +346,7 @@ describe("live stream", () => {
     expect(s.events[1]).toEqual({ event: "notification", data: expect.objectContaining({ id, type: "sale", title: "New sale: order #7", read: false }) });
 
     // Registration writes its notification inside its transaction: it arrives after the commit.
-    await request(app).post("/api/auth/register").send({ username: "livebuyer", email: "live@example.com", password: "secret-pass-123", privacy_consent: true });
+    await request(app).post("/api/auth/register").send({ username: "livebuyer", email: "live@gmail.com", password: "Secret-pass-123", privacy_consent: true });
     expect(await s.until((x) => x.events.length >= 3, 3000)).toBe(true);
     expect(s.events[2].data).toMatchObject({ type: "new_customer", title: "New customer: livebuyer" });
   });

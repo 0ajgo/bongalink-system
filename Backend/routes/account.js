@@ -43,7 +43,7 @@ const passwordCheckLimit = limiter({ windowMs: 15 * MINUTE, limit: envLimit(proc
   message: { error: "Too many failed tries. Please wait 15 minutes and try again." } });
 
 const { newPasswordProblem } = require("../lib/passwordRule");   // same rule as POST /api/auth/register
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const { newEmailProblem } = require("../lib/emailRule");          // same rule as POST /api/auth/register
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
 const PHONE_RE = /^(09\d{9}|639\d{9})$/;
 const MAX_ADDRESSES = 10;
@@ -74,9 +74,10 @@ router.patch("/me", passwordCheckLimit, ah(async (req, res) => {
   if (!USERNAME_RE.test(username)) {
     return res.status(400).json({ error: "Username must be 3–50 letters, numbers, dots, dashes or underscores." });
   }
-  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: "Enter a valid email address." });
-
+  // Only a NEW address must be Gmail/Yahoo: an older account keeps its address when saving other changes.
   const emailChanged = email !== current.email.toLowerCase();
+  const badEmail = emailChanged && newEmailProblem(email);
+  if (badEmail) return res.status(400).json(badEmail);
   if (emailChanged) {
     const [[row]] = await pool.query("SELECT password_hash FROM users WHERE user_id = ?", [req.user.userId]);
     const ok = req.body.current_password && await bcrypt.compare(String(req.body.current_password), row.password_hash);
@@ -114,9 +115,9 @@ router.patch("/me", passwordCheckLimit, ah(async (req, res) => {
 /* ---------------------------------------------------------------- password */
 router.post("/password", passwordCheckLimit, ah(async (req, res) => {
   const { current_password, new_password } = req.body || {};
-  const weak = newPasswordProblem(new_password);
+  const [[row]] = await pool.query("SELECT username, email, password_hash FROM users WHERE user_id = ?", [req.user.userId]);
+  const weak = newPasswordProblem(new_password, row && { username: row.username, email: dec("users", "email", row.email) });
   if (weak) return res.status(400).json(weak);
-  const [[row]] = await pool.query("SELECT password_hash FROM users WHERE user_id = ?", [req.user.userId]);
   if (!row || !current_password || !(await bcrypt.compare(String(current_password), row.password_hash))) {
     return res.status(400).json({ error: "Your current password is incorrect." });
   }

@@ -2,7 +2,7 @@
 // suspended or logged out by an account change - in jsdom with a stubbed API.
 const { openPage } = require("./pageHarness");
 
-const account = (id, extra = {}) => ({ user_id: id, username: `user${id}`, email: `user${id}@example.com`, role: "user",
+const account = (id, extra = {}) => ({ user_id: id, username: `user${id}`, email: `user${id}@gmail.com`, role: "user",
   status: "active", verified: true, created_at: "2026-10-01T08:00:00Z", last_login_at: "2026-10-14T08:00:00Z", order_count: 2, ...extra });
 const summary = { total: 57, admins: 1, new_this_week: 4, suspended: 2, invited: 1 };
 const allowed = { allowed: true, reason: null };
@@ -129,7 +129,7 @@ describe("Accounts page", () => {
     expect(page.$("#detailDialog").open).toBe(true);
     expect(page.$("#detailTitle").textContent).toBe("maria");
     const body = page.$("#detailBody").textContent.replace(/\s+/g, " ");
-    expect(body).toContain("user5@example.com");
+    expect(body).toContain("user5@gmail.com");
     expect(body).toContain("Maria Santos");
     expect(body).toContain("#41");
     expect(body).toContain("1 order · ₱1,950.00 paid");
@@ -244,12 +244,12 @@ describe("Accounts page", () => {
     page.$("#newEmail").value = "not-an-email";
     submit(page, "#createForm");
     expect(page.$("#newEmailError").textContent).toBe("Enter a valid email address.");
-    page.$("#newEmail").value = "ana@example.com";
+    page.$("#newEmail").value = "ana@gmail.com";
     page.$('input[name="newRole"][value="admin"]').checked = true;
     submit(page, "#createForm");
     await page.until(() => page.calls.some(c => c.method === "POST"));
     expect(page.calls.find(c => c.method === "POST")).toEqual({ url: "/v1/admin/accounts", method: "POST",
-      body: { username: "ana.reyes", email: "ana@example.com", role: "admin" } });
+      body: { username: "ana.reyes", email: "ana@gmail.com", role: "admin" } });
     await page.until(() => !page.$("#createDialog").open);
     await page.settle();
     page.close();
@@ -259,7 +259,7 @@ describe("Accounts page", () => {
     const page = await open({ answers: { "POST /v1/admin/accounts": () => ({ status: 409, body: { error: "That username is already taken." } }) } });
     page.$("#createAccount").click();
     page.$("#newUsername").value = "maria";
-    page.$("#newEmail").value = "m2@example.com";
+    page.$("#newEmail").value = "m2@gmail.com";
     submit(page, "#createForm");
     await page.until(() => page.$("#newUsernameError").textContent);
     expect(page.$("#newUsernameError").textContent).toBe("That username is already taken.");
@@ -316,11 +316,11 @@ describe("set-password page", () => {
     page.$("#newPassword").value = "abc";
     submit(page, "#setForm");
     expect(page.$("#newPasswordError").textContent).toBe("Use at least 10 characters for your password.");
-    page.$("#newPassword").value = "goodpass-111";
+    page.$("#newPassword").value = "Goodpass-111";
     page.$("#confirmPassword").value = "goodpass-222";
     submit(page, "#setForm");
     expect(page.$("#confirmPasswordError").textContent).toBe("The two passwords don't match.");
-    page.$("#confirmPassword").value = "goodpass-111";
+    page.$("#confirmPassword").value = "Goodpass-111";
     submit(page, "#setForm");
     // The privacy notice has to be accepted, with the error next to the checkbox.
     expect(page.$("#setConsentError").textContent).toBe("Please accept the Privacy Policy to finish setting up your account.");
@@ -328,7 +328,7 @@ describe("set-password page", () => {
     page.$("#setConsent").checked = true;
     submit(page, "#setForm");
     await page.until(() => !page.$("#setMessage").hidden);
-    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "goodpass-111", privacy_consent: true } });
+    expect(page.calls[1]).toEqual({ url: "/auth/set-password", method: "POST", body: { token: TOKEN, password: "Goodpass-111", privacy_consent: true } });
     expect(page.$("#setMessage").textContent).toContain("Your password is set and your email is confirmed.");
     expect(page.$("#setMessage a").getAttribute("href")).toBe("login.html");
     page.close();
@@ -347,9 +347,9 @@ describe("set-password page", () => {
 describe("registration privacy notice and the Privacy Policy page", () => {
   const fill = (page) => {
     page.$("#regUsername").value = "ana";
-    page.$("#regEmail").value = "ana@example.com";
-    page.$("#regPassword").value = "secret-pass-123";
-    page.$("#regConfirmPassword").value = "secret-pass-123";
+    page.$("#regEmail").value = "ana@gmail.com";
+    page.$("#regPassword").value = "Secret-pass-123";
+    page.$("#regConfirmPassword").value = "Secret-pass-123";
   };
 
   test("the notice says what's collected and why, links the policy, and consent is required", async () => {
@@ -373,7 +373,7 @@ describe("registration privacy notice and the Privacy Policy page", () => {
     submit(page, "#registerForm");
     await page.until(() => page.calls.length);
     expect(page.calls[0]).toEqual({ url: "/auth/register", method: "POST",
-      body: { username: "ana", email: "ana@example.com", password: "secret-pass-123", privacy_consent: true } });
+      body: { username: "ana", email: "ana@gmail.com", password: "Secret-pass-123", privacy_consent: true } });
     await page.settle();
     page.close();
   });

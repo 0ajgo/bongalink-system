@@ -104,27 +104,27 @@ describe("events that end every login, Remember me or not", () => {
   });
 
   test("a password change ends every other login; this device gets a new one kept the same way", async () => {
-    const juan = await userWithPassword({ email: "juan@example.com" });
+    const juan = await userWithPassword({ email: "juan@gmail.com" });
     const here = (await login(juan.username, true)).body.token;
     const elsewhere = (await login(juan.username, false)).body.token;
     const res = await request(app).post("/api/v1/account/password").set("Authorization", `Bearer ${here}`)
-      .send({ current_password: "secret123", new_password: "brand-new-pass9" });
+      .send({ current_password: "secret123", new_password: "Brand-new-pass9" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ message: "Password changed. Every other device was logged out.", remember: true });
     expect(lifetimeDays(res.body.token)).toBe(30);
     expect((await me(res.body.token)).status).toBe(200);
     expect((await me(here)).body.code).toBe("SESSION_ENDED");
     expect((await me(elsewhere)).body.code).toBe("SESSION_ENDED");
-    expect(mail.passwordChanged).toHaveBeenCalledWith("juan@example.com", juan.username);
+    expect(mail.passwordChanged).toHaveBeenCalledWith("juan@gmail.com", juan.username);
   });
 
   test("a password reset ends Remember-me logins too", async () => {
-    const juan = await userWithPassword({ email: "juan@example.com" });
+    const juan = await userWithPassword({ email: "juan@gmail.com" });
     const remembered = (await login(juan.username, true)).body.token;
-    await request(app).post("/api/auth/forgot-password").send({ email: "juan@example.com" });
+    await request(app).post("/api/auth/forgot-password").send({ email: "juan@gmail.com" });
     for (let i = 0; i < 100 && !mail.passwordReset.mock.calls.length; i++) await new Promise((r) => setTimeout(r, 10));
     const token = mail.passwordReset.mock.calls[0][2].split("token=")[1];
-    await request(app).post("/api/auth/reset-password").send({ token, password: "brand-new-pass9" });
+    await request(app).post("/api/auth/reset-password").send({ token, password: "Brand-new-pass9" });
     expect((await me(remembered)).body.code).toBe("SESSION_ENDED");
     expect(await raw("SELECT COUNT(*) AS n FROM user_sessions WHERE revoked_at IS NULL")).toEqual([{ n: 0 }]);
   });

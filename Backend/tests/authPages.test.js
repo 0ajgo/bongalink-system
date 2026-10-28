@@ -97,10 +97,10 @@ describe("login page: Forgot password?", () => {
     expect(page.$("#forgotEmailError").textContent).toBe("Enter the email address of your account.");
     expect(page.calls).toEqual([]);
 
-    page.$("#forgotEmail").value = "juan@example.com";
+    page.$("#forgotEmail").value = "juan@gmail.com";
     submit(page, "#forgotForm");
     await page.until(() => !page.$("#forgotMessage").hidden);
-    expect(page.calls).toEqual([{ url: "/auth/forgot-password", method: "POST", body: { email: "juan@example.com" } }]);
+    expect(page.calls).toEqual([{ url: "/auth/forgot-password", method: "POST", body: { email: "juan@gmail.com" } }]);
     expect(page.$("#forgotMessage").textContent).toContain(SAME);
 
     page.$("#backToLogin").click();
@@ -119,7 +119,7 @@ describe("login page: Forgot password?", () => {
     const page = await openPage("Pages/Homepage/login.html", { role: null, api: async () =>
       ({ status: 429, body: { error: "Too many reset requests. Please wait a while and try again.", code: "RATE_LIMITED" } }) });
     page.$("#forgotPassword").click();
-    page.$("#forgotEmail").value = "juan@example.com";
+    page.$("#forgotEmail").value = "juan@gmail.com";
     submit(page, "#forgotForm");
     await page.until(() => !page.$("#forgotMessage").hidden);
     expect(page.$("#forgotMessage").className).toContain("alert--error");
@@ -139,14 +139,14 @@ describe("reset page", () => {
     page.$("#newPassword").value = "abc";
     submit(page, "#setForm");
     expect(page.$("#newPasswordError").textContent).toBe("Use at least 10 characters for your password.");
-    page.$("#newPassword").value = "newpass-1212";
-    page.$("#confirmPassword").value = "newpass-1313";
+    page.$("#newPassword").value = "Newpass-1212";
+    page.$("#confirmPassword").value = "Newpass-1313";
     submit(page, "#setForm");
     expect(page.$("#confirmPasswordError").textContent).toBe("The two passwords don't match.");
-    page.$("#confirmPassword").value = "newpass-1212";
+    page.$("#confirmPassword").value = "Newpass-1212";
     submit(page, "#setForm");
     await page.until(() => !page.$("#setMessage").hidden);
-    expect(page.calls[1]).toEqual({ url: "/auth/reset-password", method: "POST", body: { token: TOKEN, password: "newpass-1212" } });
+    expect(page.calls[1]).toEqual({ url: "/auth/reset-password", method: "POST", body: { token: TOKEN, password: "Newpass-1212" } });
     expect(page.$("#setMessage").textContent).toContain("every device that was logged in has been logged out");
     expect(page.$('#setMessage a[href="login.html"]').textContent).toBe("Log in as juan");
     page.close();

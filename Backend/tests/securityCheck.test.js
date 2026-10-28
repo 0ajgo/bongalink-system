@@ -108,8 +108,8 @@ describe("can't be seen: answers carry only what the page needs", () => {
 
   test("login and profile: never the password hash, tokens, the email index or encrypted values", async () => {
     const loginUser = await createUser();
-    await pool.query("UPDATE users SET password_hash = ? WHERE user_id = ?", [await bcrypt.hash("correct horse battery", 4), loginUser.id]);
-    const login = await request(app).post("/api/auth/login").send({ username: loginUser.username, password: "correct horse battery" });
+    await pool.query("UPDATE users SET password_hash = ? WHERE user_id = ?", [await bcrypt.hash("Correct horse battery 9", 4), loginUser.id]);
+    const login = await request(app).post("/api/auth/login").send({ username: loginUser.username, password: "Correct horse battery 9" });
     expect(login.status).toBe(200);
     expect(Object.keys(login.body).sort()).toEqual(["expires_at", "remember", "token", "user"]);
     expect(login.body.user).toEqual({ username: loginUser.username, role: "user" });
@@ -159,7 +159,7 @@ describe("can't be changed: customers only reach their own orders", () => {
 describe("can't be changed: values sent by the browser are ignored", () => {
   test("register with role admin, a user_id and a verified email: a plain, unverified customer", async () => {
     const res = await request(app).post("/api/auth/register").send({
-      username: "sneaky", email: "sneaky@example.com", password: "a long enough password", privacy_consent: true,
+      username: "sneaky", email: "sneaky@gmail.com", password: "A long enough password 1", privacy_consent: true,
       role: "admin", user_id: 1, email_verified_at: "2026-01-01", status: "active", token_version: 99,
     });
     expect(res.status).toBe(201);

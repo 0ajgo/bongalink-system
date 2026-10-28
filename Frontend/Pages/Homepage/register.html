@@ -28,24 +28,27 @@
           </div>
           <div class="field">
             <label class="label" for="regEmail">Email</label>
-            <input class="input" id="regEmail" type="email" autocomplete="email" required>
-            <span class="hint">We'll send a 6-digit code to verify it.</span>
+            <input class="input" id="regEmail" type="email" autocomplete="email" required aria-describedby="regEmailHint regEmailError">
+            <span class="hint" id="regEmailHint">Use a Gmail or Yahoo address. We'll send a 6-digit code to verify it.</span>
+            <span class="error-text" id="regEmailError" role="alert"></span>
           </div>
           <div class="field">
             <label class="label" for="regPassword">Password</label>
             <div class="password-field">
-              <input class="input" id="regPassword" type="password" autocomplete="new-password" minlength="10" required aria-describedby="regPasswordHint regPasswordError">
+              <input class="input" id="regPassword" type="password" autocomplete="new-password" minlength="10" required aria-describedby="regPasswordRules regPasswordHint regPasswordError">
               <button class="btn btn--ghost btn--sm" type="button" data-toggle="regPassword">Show</button>
             </div>
-            <span class="hint" id="regPasswordHint">At least 10 characters, and not a common one like password123.</span>
+            <ul id="regPasswordRules" aria-label="Password rules"></ul>
+            <span class="hint" id="regPasswordHint">And not a well-known one like Password123!</span>
             <span class="error-text" id="regPasswordError" role="alert"></span>
           </div>
           <div class="field">
             <label class="label" for="regConfirmPassword">Confirm password</label>
             <div class="password-field">
-              <input class="input" id="regConfirmPassword" type="password" autocomplete="new-password" required>
+              <input class="input" id="regConfirmPassword" type="password" autocomplete="new-password" required aria-describedby="regConfirmPasswordError">
               <button class="btn btn--ghost btn--sm" type="button" data-toggle="regConfirmPassword">Show</button>
             </div>
+            <span class="error-text" id="regConfirmPasswordError" role="alert"></span>
           </div>
           <div class="privacy-notice" id="privacyNotice">
             <h2>How we use your information</h2>

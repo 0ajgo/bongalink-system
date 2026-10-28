@@ -11,6 +11,7 @@ const { mail } = require('./mailer');
 const { PRIVACY_POLICY_VERSION } = require('../lib/privacy');
 
 const { newPasswordProblem } = require('../lib/passwordRule');   // same rule as POST /api/auth/register
+const { dec } = require('../lib/pii');
 
 const SETUP_HOURS = 72;
 
@@ -35,7 +36,7 @@ async function sendSetupLink(user, adminId) {
 async function findSetup(token, conn = pool, lock = false) {
   if (!/^[a-f0-9]{64}$/.test(String(token || ''))) return null;
   const [[row]] = await conn.query(
-    `SELECT t.token_id, u.user_id, u.username, u.role
+    `SELECT t.token_id, u.user_id, u.username, u.email, u.role
        FROM password_setup_tokens t JOIN users u ON u.user_id = t.user_id
       WHERE t.token_hash = ? AND t.purpose = 'setup' AND t.used_at IS NULL AND t.expires_at > NOW()
         AND u.must_set_password = 1 AND u.status = 'active'${lock ? ' FOR UPDATE' : ''}`,
@@ -55,6 +56,12 @@ async function completeSetup(token, password) {
     if (!setup) {
       await conn.rollback();
       return { error: 'This link is invalid, already used or expired. Ask the shop to send a new one.' };
+    }
+    // Now that the account is known: not its username or email name inside the password.
+    const personal = newPasswordProblem(password, { username: setup.username, email: dec('users', 'email', setup.email) });
+    if (personal) {
+      await conn.rollback();
+      return personal;
     }
     await conn.query(
       `UPDATE users SET password_hash = ?, must_set_password = 0, email_verified_at = COALESCE(email_verified_at, NOW())

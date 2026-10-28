@@ -225,6 +225,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .input[aria-invalid="true"], .select[aria-invalid="true"] { border-color: var(--color-error); }
 .hint  { font-size: var(--text-xs); color: var(--color-ink-3); }
 .error-text { font-size: var(--text-xs); color: var(--color-error); min-height: 1em; }
+/* The new-password checklist (register, reset, set up, profile): each rule turns green as it passes. */
+.pw-rules { list-style: none; margin: var(--space-1) 0 0; padding: 0; font-size: var(--text-xs); }
+.pw-rules li { display: flex; gap: var(--space-2); align-items: center; padding: 1px 0; color: var(--color-ink-3); }
+.pw-rules li::before { content: "○"; width: 14px; text-align: center; }
+.pw-rules li.is-ok { color: var(--color-success); }
+.pw-rules li.is-ok::before { content: "✓"; font-weight: var(--weight-semibold); }
 
 /* Search box with a leading icon */
 .input-icon { position: relative; }

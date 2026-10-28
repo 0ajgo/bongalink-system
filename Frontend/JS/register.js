@@ -37,17 +37,46 @@ document.getElementById("regConsent").addEventListener("change", (e) => {
 
 document.getElementById("regPassword").addEventListener("input", () => { document.getElementById("regPasswordError").textContent = ""; });
 
+// Email: Gmail or Yahoo only. The message shows when leaving the field and clears as soon as it's fixed.
+const regEmail = document.getElementById("regEmail");
+const regEmailError = document.getElementById("regEmailError");
+function showEmailProblem(always) {
+  const problem = regEmail.value.trim() ? newEmailProblem(regEmail.value) : "";
+  if (!always && !regEmailError.textContent) return;
+  regEmailError.textContent = problem;
+  if (problem) regEmail.setAttribute("aria-invalid", "true");
+  else regEmail.removeAttribute("aria-invalid");
+}
+regEmail.addEventListener("blur", () => showEmailProblem(true));
+
+const regAccount = () => ({ username: document.getElementById("regUsername").value.trim(), email: regEmail.value });
+const regChecklist = passwordChecklist({
+  input: document.getElementById("regPassword"), confirm: document.getElementById("regConfirmPassword"),
+  list: document.getElementById("regPasswordRules"), button: document.getElementById("registerSubmit"),
+  confirmError: document.getElementById("regConfirmPasswordError"), account: regAccount,
+  ready: () => Boolean(regAccount().username) && !newEmailProblem(regEmail.value),
+});
+// The username and email are part of the rules ("doesn't contain your username or email name").
+["regUsername", "regEmail"].forEach(id => document.getElementById(id).addEventListener("input", () => {
+  if (id === "regEmail") showEmailProblem(false);
+  regChecklist.update();
+}));
+
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const username = document.getElementById("regUsername").value.trim();
-  const email = document.getElementById("regEmail").value.trim();
+  const email = regEmail.value.trim();
   const password = document.getElementById("regPassword").value;
   const confirmPassword = document.getElementById("regConfirmPassword").value;
 
   const passwordError = document.getElementById("regPasswordError");
   passwordError.textContent = "";
   if (!username || !email || !password || !confirmPassword) return showAlert("registerMessage", "Please fill in all fields.", "error");
-  const weak = newPasswordProblem(password);
+  if (newEmailProblem(email)) {
+    showEmailProblem(true);
+    return regEmail.focus();
+  }
+  const weak = newPasswordProblem(password, { username, email });
   if (weak) {
     passwordError.textContent = weak;
     return document.getElementById("regPassword").focus();
@@ -71,9 +100,16 @@ registerForm.addEventListener("submit", async (event) => {
       document.getElementById("regPassword").focus();
       return;
     }
+    if (err.code === "EMAIL_DOMAIN_NOT_ALLOWED" || err.code === "INVALID_EMAIL") {
+      regEmailError.textContent = err.message;
+      regEmail.setAttribute("aria-invalid", "true");
+      regEmail.focus();
+      return;
+    }
     showAlert("registerMessage", err.message || "Registration failed.", "error");
   } finally {
     busy(button, false);
+    regChecklist.update();
   }
 });
 

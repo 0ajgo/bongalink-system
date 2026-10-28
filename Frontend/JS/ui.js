@@ -56,19 +56,76 @@ function stockBadge(available) {
   return `<span class="badge badge--success">In stock</span>`;
 }
 
+/* --- A new email (register, profile) ----------------------------------
+   Only Gmail and Yahoo addresses, so the 6-digit code reaches a real
+   inbox. Logging in and "Forgot password?" accept any address. */
+const EMAIL_DOMAINS = ["gmail.com", "googlemail.com", "yahoo.com", "yahoo.com.ph", "ymail.com"];
+const EMAIL_DOMAIN_MESSAGE = "Only Gmail (@gmail.com) or Yahoo (@yahoo.com, @yahoo.com.ph) addresses are accepted.";
+function newEmailProblem(email) {
+  const value = String(email || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value) || value.length > 150) return "Enter a valid email address.";
+  // The whole part after the @ must be on the list (gmail.co or gmail.com.evil.com are not).
+  if (!EMAIL_DOMAINS.includes(value.slice(value.lastIndexOf("@") + 1).toLowerCase())) return EMAIL_DOMAIN_MESSAGE;
+  return "";
+}
+
 /* --- A new password (register, reset, set up, change) ----------------
-   The length is checked here so the form answers at once; the server
-   checks the full rule. Logging in never checks it. */
+   The same rules as the server's, shown as a checklist that turns green
+   rule by rule; the server also refuses well-known passwords. Logging in
+   never checks them, so older passwords keep working. */
 const PASSWORD_MIN = 10;
 const PASSWORD_MAX_BYTES = 72;
-function newPasswordProblem(password) {
-  if (password.length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters for your password.`;
-  // UTF-8 bytes: 1 to 4 per character.
-  const bytes = [...password].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
-  if (bytes > PASSWORD_MAX_BYTES) {
+// The username and the email's part before the @, when 3+ characters, must not be in the password.
+const personalNames = ({ username, email } = {}) =>
+  [username, String(email || "").trim().split("@")[0]].map(n => String(n || "").trim().toLowerCase()).filter(n => n.length >= 3);
+const PASSWORD_RULES = [
+  { key: "len", label: `At least ${PASSWORD_MIN} characters`, message: `Use at least ${PASSWORD_MIN} characters for your password.`,
+    test: (p) => p.length >= PASSWORD_MIN },
+  { key: "up", label: "An uppercase letter (A–Z)", message: "Add an uppercase letter (A–Z) to your password.", test: (p) => /[A-Z]/.test(p) },
+  { key: "low", label: "A lowercase letter (a–z)", message: "Add a lowercase letter (a–z) to your password.", test: (p) => /[a-z]/.test(p) },
+  { key: "num", label: "A number (0–9)", message: "Add a number (0–9) to your password.", test: (p) => /[0-9]/.test(p) },
+  { key: "sym", label: "A symbol (! @ # $ % …)", message: "Add a symbol (like ! @ # $ %) to your password.", test: (p) => /[^A-Za-z0-9]/.test(p) },
+  { key: "nouser", label: "Doesn't contain your username or email name",
+    message: "Your password can't contain your username or the name part of your email.",
+    test: (p, names) => p !== "" && !names.some(n => p.toLowerCase().includes(n)) },
+];
+const utf8Bytes = (s) => [...s].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
+
+// "" when the password passes, otherwise the message of the first rule it fails.
+function newPasswordProblem(password, account) {
+  if (password.length >= PASSWORD_MIN && utf8Bytes(password) > PASSWORD_MAX_BYTES) {
     return "That password is too long: use at most 72 characters (fewer if it has emoji or accented letters).";
   }
-  return "";
+  const names = personalNames(account);
+  const failed = PASSWORD_RULES.find(r => !r.test(password, names));
+  return failed ? failed.message : "";
+}
+
+// The live checklist under a new-password field. Fills `list` (a <ul>) with the rules, ticks each
+// one as it passes, and keeps `button` disabled until every rule passes, the confirmation matches
+// and ready() (the form's other fields) is true. account() gives { username, email }.
+function passwordChecklist({ input, confirm, list, button, confirmError = null, account = () => ({}), ready = () => true }) {
+  list.classList.add("pw-rules");
+  list.innerHTML = PASSWORD_RULES.map(r =>
+    `<li data-rule="${r.key}">${escapeHTML(r.label)}<span class="sr-only">: not yet</span></li>`).join("");
+  function update() {
+    const p = input.value;
+    const names = personalNames(account());
+    let all = true;
+    for (const r of PASSWORD_RULES) {
+      const ok = r.test(p, names);
+      all = all && ok;
+      const li = list.querySelector(`[data-rule="${r.key}"]`);
+      li.classList.toggle("is-ok", ok);
+      li.querySelector(".sr-only").textContent = ok ? ": done" : ": not yet";
+    }
+    const mismatch = confirm.value !== "" && confirm.value !== p;
+    if (confirmError) confirmError.textContent = mismatch ? "The two passwords don't match." : "";
+    button.disabled = !(all && confirm.value === p && ready());
+  }
+  [input, confirm].forEach(el => el.addEventListener("input", update));
+  update();
+  return { update };
 }
 
 /* --- Product card (catalog, related products) ------------------------
