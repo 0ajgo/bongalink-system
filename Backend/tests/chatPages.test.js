@@ -153,6 +153,25 @@ describe("chat widget", () => {
     page.close();
   });
 
+  test("a slow reply keeps the typing dots for up to 60 s, then shows the friendly fallback, not an error", async () => {
+    let clock = 0;
+    const page = await openPage(HOME, { role: null, fastTimers: true, api: shopApi({ reply: () => new Promise(() => {}) }),
+      setup: (w) => { const now = w.Date.now.bind(w.Date); w.Date.now = () => now() + clock; } });
+    chat(page).launcher.click();
+    type(page, "Is this part in stock?");
+    pressEnter(page);
+    await page.until(() => page.$(".chat-typing"));
+    clock = 59000;
+    await page.settle();
+    expect(page.$(".chat-typing")).not.toBeNull();   // still waiting at 59 s
+    clock = 61000;
+    await page.until(() => !page.$(".chat-typing"));
+    const reply = page.$$(".chat-msg--bot").pop();
+    expect(reply.textContent).toContain("Sorry, our chat assistant isn't available right now.");
+    expect(page.$(".chat-msg--error")).toBeNull();
+    page.close();
+  });
+
   test("messages over 500 characters are not sent", async () => {
     const page = await openPage(HOME, { role: null, api: shopApi() });
     chat(page).launcher.click();

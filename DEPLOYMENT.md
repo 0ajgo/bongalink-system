@@ -104,6 +104,7 @@ changing anything.
 | `NOMINATIM_URL` | | public server | Map-pin lookup server. |
 | `GEMINI_API_KEY` | for the chat | — | Google AI Studio key. Blank = the chat gives the shop's contact details instead. |
 | `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | | `gemini-3.8-flash`, `gemini-3.5-flash-lite` | The chat's model, and the one tried once when it is busy. |
+| `GEMINI_TIMEOUT_MS` | | `30000` | How long one Gemini request may take (ms). The whole reply still ends within 45 s. |
 | `TRACKING_URL_JNT`, `TRACKING_URL_LBC` | | — | Courier tracking page templates, `{tn}` = tracking number. Blank = show the number only. |
 
 ### ML worker (`ml/worker/.env`)
