@@ -88,6 +88,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
+      GEMINI_TIMEOUT_MS: ${GEMINI_TIMEOUT_MS:-}
       STORE_EMAIL: ${STORE_EMAIL:-}
       APP_URL: ${APP_URL:-http://localhost:5500}
       # Email verification, PayMongo and Lalamove — see Backend/.env.example

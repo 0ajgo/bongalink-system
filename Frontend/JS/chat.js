@@ -16,6 +16,9 @@ const ChatWidget = (() => {
   const SUGGESTIONS = ["Is this part in stock?", "How much is shipping to Cebu?", "Where is my order?"];
   const PRODUCT_SUGGESTIONS = ["Is this part in stock?", "How much is shipping to Cebu?", "Will this fit my model?"];
   const GREETING = "Hi! I'm Bongalink's AI assistant. Ask me about parts, stock, shipping or your order, in English or Filipino.";
+  // The server's own fallback reply, without the contact details it adds.
+  const TIMEOUT_REPLY = "Sorry, our chat assistant isn't available right now. Please try again in a moment, or contact the shop directly. " +
+    "You can still browse parts and order online any time.";
 
   let state = load();
   let busy = false;
@@ -104,6 +107,12 @@ const ChatWidget = (() => {
         body: JSON.stringify({ session_id: state.sessionId, message: text, ...(state.product ? { product_id: state.product.id } : {}) }) });
       state.messages.push({ role: "bot", text: data.reply || "Sorry, I have no answer for that." });
     } catch (err) {
+      // The page stopped waiting (API_TIMEOUT_CHAT_MS): the same friendly answer the server gives
+      // when the assistant can't reply, not an error.
+      if (err.code === "TIMEOUT") {
+        state.messages.push({ role: "bot", text: TIMEOUT_REPLY });
+        return;
+      }
       const offline = !err.status;
       state.messages.push({ role: "bot", error: true, retry: offline || err.status >= 500,
         text: offline ? "I can't reach the shop right now. Check your connection and try again." : err.message });

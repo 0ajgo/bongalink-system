@@ -302,6 +302,49 @@ describe("limits and failures", () => {
     expect(await lastLog()).toMatchObject({ answered: 0, unanswered_reason: "service_down", model: null });
   });
 
+  test("each Gemini request waits 30 s (GEMINI_TIMEOUT_MS); a timed-out one moves on to the fallback model", async () => {
+    const { DEFAULT_TIMEOUT_MS } = require("../services/chatbot");
+    expect(DEFAULT_TIMEOUT_MS).toBe(30000);
+    const timeout = jest.spyOn(AbortSignal, "timeout");
+    const aborted = () => Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
+    mockGenerate.mockRejectedValueOnce(aborted());
+    script(say("Hello! How can I help?"));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await send("Hello");
+    expect(res.body.reply).toBe("Hello! How can I help?");
+    expect(timeout.mock.calls[0][0]).toBe(30000);
+    expect(mockGenerate.mock.calls.map((c) => c[0].model)).toEqual(["gemini-test-model", "gemini-test-fallback"]);
+    expect(await lastLog()).toMatchObject({ answered: 1, model: "gemini-test-fallback" });
+
+    // Set in .env: used as is.
+    process.env.GEMINI_TIMEOUT_MS = "12000";
+    timeout.mockClear();
+    script(say("Hi again."));
+    await send("Hi");
+    expect(timeout.mock.calls[0][0]).toBe(12000);
+    delete process.env.GEMINI_TIMEOUT_MS;
+    warn.mockRestore();
+    timeout.mockRestore();
+  });
+
+  test("Gemini 3 models are asked with thinkingLevel LOW, older ones without it; the fallback chain still works", async () => {
+    const saved = { main: process.env.GEMINI_MODEL, fallback: process.env.GEMINI_FALLBACK_MODEL };
+    process.env.GEMINI_MODEL = "gemini-3.8-flash";
+    process.env.GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
+    mockGenerate.mockRejectedValueOnce(busy());
+    script(say("Yes, we have RAM."));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await send("Do you have RAM?");
+    warn.mockRestore();
+    Object.assign(process.env, { GEMINI_MODEL: saved.main, GEMINI_FALLBACK_MODEL: saved.fallback });
+    expect(res.body.reply).toBe("Yes, we have RAM.");
+    const [first, second] = mockGenerate.mock.calls.map((c) => c[0]);
+    expect(first.model).toBe("gemini-3.8-flash");
+    expect(first.config.thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+    expect(second.model).toBe("gemini-2.5-flash");
+    expect(second.config).not.toHaveProperty("thinkingConfig");
+  });
+
   test("the whole reply has a 45 s deadline: slow tool rounds end in the fallback in time, not on the fallback model", async () => {
     const { DEADLINE_MS } = require("../services/chatbot");
     expect(DEADLINE_MS).toBe(45000);

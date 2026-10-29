@@ -25,7 +25,7 @@ const MAX_MESSAGE = 500;            // characters per customer message
 const HISTORY_TURNS = 6;            // earlier exchanges sent as context
 const MAX_TOOL_ROUNDS = 5;
 const MAX_CALLS_PER_ROUND = 6;
-const TIMEOUT_MS = 15000;           // per Gemini request
+const DEFAULT_TIMEOUT_MS = 30000;   // per Gemini request (GEMINI_TIMEOUT_MS); a simple answer can take 10-25 s
 const DEADLINE_MS = 45000;          // the whole reply, tool rounds and fallback model included
                                     // (the chat page waits 60 s: Frontend/JS/chat.js)
 const MAX_REPLY = 2500;
@@ -34,6 +34,16 @@ const model = () => (process.env.GEMINI_MODEL || '').trim() || DEFAULT_MODEL;
 const fallbackModel = () => (process.env.GEMINI_FALLBACK_MODEL || '').trim() || DEFAULT_FALLBACK_MODEL;
 // Primary first, then the fallback (unless it's the same model).
 const models = () => [...new Set([model(), fallbackModel()].filter(Boolean))];
+const requestTimeoutMs = () => {
+  const ms = Number(process.env.GEMINI_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
+};
+// Low thinking answers faster. Only Gemini 3 and later take thinkingLevel (2.x models refuse it),
+// so other models are asked with their own default.
+const thinkingFor = (modelName) => {
+  const major = Number(/^gemini-(\d+)/.exec(modelName)?.[1]);
+  return major >= 3 ? { thinkingConfig: { thinkingLevel: 'LOW' } } : {};
+};
 
 // Worth trying another model: rate limited, overloaded, server error, or timed out.
 const retryable = (err) => [429, 500, 502, 503, 504].includes(err.status) || ['AbortError', 'TimeoutError'].includes(err.name);
@@ -156,7 +166,7 @@ async function askGemini(ai, { modelName, contents, config, ctx, toolsUsed, dead
     if (left <= 0) throw deadlineError();
     const response = await ai.models.generateContent({
       model: modelName, contents: [...contents],
-      config: { ...config, abortSignal: AbortSignal.timeout(Math.min(TIMEOUT_MS, left)) },
+      config: { ...config, ...thinkingFor(modelName), abortSignal: AbortSignal.timeout(Math.min(requestTimeoutMs(), left)) },
     });
     const calls = response.functionCalls || [];
     if (!calls.length) return (response.text || '').trim();
@@ -246,4 +256,4 @@ async function handleMessage({ sessionId, message, user = null, productId = null
   return { reply, products: products.map((p) => ({ id: p.id, name: p.name })), answered: !reason, chat_id: chatId };
 }
 
-module.exports = { handleMessage, systemInstruction, fallbackReply, contactText, MAX_MESSAGE, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL, DEADLINE_MS };
+module.exports = { handleMessage, systemInstruction, fallbackReply, contactText, MAX_MESSAGE, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL, DEADLINE_MS, DEFAULT_TIMEOUT_MS };
